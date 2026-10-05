@@ -7,8 +7,8 @@ components:
     commit: 0bddd0f
   Orchestr.AI:
     repo: https://github.com/nlesc-nano/Orchestr.AI.git
-    branch: camilo          # feature/qd-properties branches from here
-    commit: dba7514
+    branch: feature/qd-properties   # from camilo (dba7514); local until pushed
+    commit: 431fe0c
   QDSpaceWebApp:
     repo: git@github.com:nlesc-nano/QDSpaceWebApp.git
     branch: library-builder-series
