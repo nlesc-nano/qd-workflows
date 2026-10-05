@@ -130,6 +130,8 @@ def prepare(
         "NTASKS": res.cores,
         "MEM_PER_CPU": res.mem_per_cpu,
         "QOS": qos or cluster.get("qos", "regular"),
+        # Shell setup the job needs whatever shell submitted it (e.g. Lmod for `module`).
+        "SETUP": "\n".join(cluster.get("setup", [])),
         "MODULE": cp["module"],
         "OMP_NUM_THREADS": cp.get("omp_num_threads", 1),
         "EXECUTABLE": cp["executable"],

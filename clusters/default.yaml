@@ -9,6 +9,10 @@ request: cores
 min_cores: 48
 mem_per_cpu: 2g
 qos: regular
+# Run at the top of every job script: a job submitted from a non-login shell
+# (ssh host 'sbatch ...') does not inherit the `module` function.
+setup:
+  - source /etc/profile.d/lmod.sh
 
 cp2k:
   module: CP2K/2026.2-foss-2025a
