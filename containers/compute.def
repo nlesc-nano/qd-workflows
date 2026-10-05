@@ -1,0 +1,36 @@
+# Apptainer image for the GPU compute track (MACE-MH-1, ASE, GFN2-xTB, g-xTB).
+# UNTESTED: written on a Mac without Apptainer; build and check it on the cluster.
+#
+#   1. Download the static Linux g-xTB binary from https://github.com/grimme-lab/g-xtb
+#      (GPL-3.0) into third_party/gxtb/ (bin/xtb plus its licence).
+#   2. apptainer build qdw-compute.sif containers/compute.def   (from the repo root)
+#   3. apptainer exec --nv -B /scratch qdw-compute.sif python -m ...
+#
+# The image holds the environment only. QD_builder, Orchestr.AI and QDEX are
+# installed from the cluster checkouts pinned in components.yaml
+# (pip install --no-deps -e <checkout>), so a code change needs no rebuild.
+# The MACE-MH-1 model file is not in the image: point QDPROPS_MACE_MODEL at it.
+
+Bootstrap: docker
+From: mambaorg/micromamba:2.0-ubuntu24.04
+
+%files
+    envs/compute-gpu.yml /opt/qdw/compute-gpu.yml
+    third_party/gxtb /opt/gxtb
+
+%post
+    micromamba create -y -p /opt/env -f /opt/qdw/compute-gpu.yml
+    micromamba clean -a -y
+    chmod +x /opt/gxtb/bin/xtb
+
+%environment
+    export PATH=/opt/env/bin:$PATH
+    export QDPROPS_XTB=/opt/env/bin/xtb
+    export QDPROPS_GXTB=/opt/gxtb/bin/xtb
+    export OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
+
+%runscript
+    exec /opt/env/bin/python "$@"
+
+%labels
+    org.qd-workflows.component compute-gpu
