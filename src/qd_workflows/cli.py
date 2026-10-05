@@ -40,6 +40,14 @@ def _cp2k(args) -> int:
     return 0
 
 
+def _props(args) -> int:
+    from .props import prepare
+    info = prepare(args.records, args.out, load_cluster(args.cluster), steps=args.steps.split(",") if args.steps else None,
+                   time=args.time, qos=args.qos, max_atoms=args.max_atoms, name=args.name)
+    print(json.dumps(info, indent=1))
+    return 0
+
+
 def _compare(args) -> int:
     from .compare import compare
     res = compare(args.ref, args.new, args.rtol)
@@ -90,6 +98,17 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True, help="cp2k.out")
     p.add_argument("--forces", required=True, help="forces.xyz")
 
+    pp = sub.add_parser("props", help="Orchestr.AI PROPS runs on a GPU cluster").add_subparsers(dest="action", required=True)
+    p = pp.add_parser("prepare", help="config.yaml and GPU job script for a set of records")
+    p.add_argument("records", nargs="+", help="record directories (record.json + start.xyz)")
+    p.add_argument("--out", required=True)
+    p.add_argument("--cluster", default="default")
+    p.add_argument("--steps", help="comma-separated steps (default: all)")
+    p.add_argument("--max-atoms", type=int)
+    p.add_argument("--time")
+    p.add_argument("--qos")
+    p.add_argument("--name", default="props")
+
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref")
     p.add_argument("new")
@@ -97,7 +116,7 @@ def main(argv=None) -> int:
     p.add_argument("--show", type=int, default=30)
 
     args = ap.parse_args(argv)
-    return {"cp2k": _cp2k, "compare": _compare}[args.group](args)
+    return {"cp2k": _cp2k, "props": _props, "compare": _compare}[args.group](args)
 
 
 if __name__ == "__main__":
