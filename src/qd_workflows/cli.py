@@ -40,6 +40,17 @@ def _cp2k(args) -> int:
     return 0
 
 
+def _compare(args) -> int:
+    from .compare import compare
+    res = compare(args.ref, args.new, args.rtol)
+    print(f"{res['compared']} values compared, {res['failed']} outside tolerance")
+    for f in res["failures"][: args.show]:
+        print(f"  {f['key']}: ref {f['ref']:.6g}  new {f['new']:.6g}  diff {f['diff']:+.3g}")
+    if res["only_in_ref"] or res["only_in_new"]:
+        print(f"  only in ref: {len(res['only_in_ref'])}  only in new: {len(res['only_in_new'])}")
+    return 1 if res["failed"] else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="qdw", description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -77,8 +88,14 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True, help="cp2k.out")
     p.add_argument("--forces", required=True, help="forces.xyz")
 
+    p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
+    p.add_argument("ref")
+    p.add_argument("new")
+    p.add_argument("--rtol", type=float, default=1e-3)
+    p.add_argument("--show", type=int, default=30)
+
     args = ap.parse_args(argv)
-    return {"cp2k": _cp2k}[args.group](args)
+    return {"cp2k": _cp2k, "compare": _compare}[args.group](args)
 
 
 if __name__ == "__main__":

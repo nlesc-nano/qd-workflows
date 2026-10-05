@@ -17,6 +17,9 @@ templates and glue code (`src/qd_workflows`).
 | `src/qd_workflows/templates/cp2k/` | CP2K inputs (geo_opt, PDOS, TREXIO, sample energy-force) with `{{PLACEHOLDERS}}` |
 | `src/qd_workflows/templates/slurm/` | job scripts |
 | `src/qd_workflows/cp2k/` | input generation, MO window, TREXIO trimming, force parsing |
+| `src/qd_workflows/compare.py` | `qdw compare`: two `props/properties.json` value by value, with tolerances (Phase 0 gate) |
+| `schema/` | `qd-schema`, the shared file formats (ensemble manifest, CP2K summary; later the library record) |
+| `envs/compute-gpu.yml`, `containers/compute.def` | GPU compute environment and its Apptainer image (untested) |
 
 ## CP2K track (webapp structures up to 2,000 atoms)
 
@@ -43,3 +46,17 @@ qdw cp2k trim run/trexio/orbitals.h5 run/orbitals.h5 --window run/window.json
 Resources come from the cluster profile: the core count scales with the square
 of the number of basis functions, calibrated on a 4.2 nm CdSe run (24k basis
 functions, 240 cores, 340 GB).
+
+## Phase 0 gate
+
+Run the properties of Cd16Se13Cl6 and Cd68Se55Cl26 on the cluster with
+Orchestr.AI (`run_type: PROPS`, branch `feature/qd-properties`) and compare with
+the Mac results:
+
+```bash
+qdw compare <webapp>/.../CdSe-Se-Cd16Se13Cl6-clean/props/properties.json <cluster run>/props/properties.json
+```
+
+The Mac ran on the Apple GPU in float32 and the cluster runs CUDA in float64,
+so values are compared with tolerances (2 cm-1, 2 meV, 0.5 meV/atom, 2e-3 Å,
+relative 1e-3).
