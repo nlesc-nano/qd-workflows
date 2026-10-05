@@ -16,7 +16,7 @@ def _cp2k(args) -> int:
         window = json.loads(open(args.window).read()) if args.window else None
         info = inputs.prepare(args.xyz, args.step, args.project, args.out, load_cluster(args.cluster),
                               wfn=args.wfn, window=window, charge=args.charge, optimizer=args.optimizer,
-                              data_dir=args.data_dir)
+                              data_dir=args.data_dir, time=args.time, qos=args.qos)
         print(json.dumps({k: info[k] for k in ("project", "step", "n_atoms", "basis_functions",
                                                 "occupied_mos", "cell_A", "resources")}, indent=1))
     elif args.action == "window":
@@ -67,6 +67,8 @@ def main(argv=None) -> int:
     p.add_argument("--charge", type=int, default=0)
     p.add_argument("--optimizer", default="auto", help="geo_opt: auto (LBFGS above 1,000 atoms), BFGS or LBFGS")
     p.add_argument("--data-dir", help="local copy of the CP2K data files (default: $QDW_CP2K_DATA, then the cluster path)")
+    p.add_argument("--time", help="wall time, overriding the cluster profile (e.g. 00:10:00)")
+    p.add_argument("--qos", help="QoS, overriding the cluster profile (e.g. test)")
 
     p = cp.add_parser("window", help="MO window from the pdos step")
     p.add_argument("pdos", nargs="+")

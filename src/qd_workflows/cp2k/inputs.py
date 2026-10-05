@@ -67,13 +67,16 @@ def prepare(
     charge: int = 0,
     optimizer: str = "auto",
     data_dir: str | None = None,
+    time: str | None = None,
+    qos: str | None = None,
 ) -> dict:
     """
     Write `<out_dir>/{cp2k.inp, geom.xyz, job.sh, job.json}` for one step.
 
     `wfn` is the geo_opt restart file every later step reads (a path relative to
     out_dir or absolute); geo_opt restarts from its own. `window` (from
-    `outputs.mo_window`) sets ADDED_MOS for the trexio step.
+    `outputs.mo_window`) sets ADDED_MOS for the trexio step. `time` and `qos`
+    override the cluster profile (e.g. a short test queue).
     """
     if step not in STEPS:
         raise ValueError(f"unknown step {step!r}; one of {', '.join(STEPS)}")
@@ -123,10 +126,10 @@ def prepare(
     res = cp2k_resources(cluster, n_bf)
     job = {
         "JOB_NAME": f"{step}-{project}"[:64],
-        "TIME": cp["time"][step],
+        "TIME": time or cp["time"][step],
         "NTASKS": res.cores,
         "MEM_PER_CPU": res.mem_per_cpu,
-        "QOS": cluster.get("qos", "regular"),
+        "QOS": qos or cluster.get("qos", "regular"),
         "MODULE": cp["module"],
         "OMP_NUM_THREADS": cp.get("omp_num_threads", 1),
         "EXECUTABLE": cp["executable"],
