@@ -1,0 +1,61 @@
+# OT single point, from Ivan's cp2k_dos.in (2026-10-05). Used for two steps:
+#   pdos:   RUN_TYPE ENERGY, DFT print = DOS over all unoccupied MOs + PDOS
+#   sample: RUN_TYPE ENERGY_FORCE, forces written to forces.xyz, no restart file
+&FORCE_EVAL
+  &DFT
+    CHARGE {{CHARGE}}
+    BASIS_SET_FILE_NAME {{BASIS_FILE}}
+    POTENTIAL_FILE_NAME {{POTENTIAL_FILE}}
+    &MGRID
+      CUTOFF  400
+      REL_CUTOFF  60
+      NGRIDS  4
+    &END
+    &POISSON
+       POISSON_SOLVER MULTIPOLE
+       PERIODIC None
+    &END
+    &QS
+      METHOD  gapw
+      FORCE_PAW T             # makes Cd and S GAPW atoms
+      GAPW_ACCURATE_XCINT T   # CP2K >= 2026.2
+    &END
+{{DFT_PRINT}}
+    &SCF
+      &OT
+        N_DIIS  7
+        MINIMIZER  DIIS
+        PRECONDITIONER FULL_KINETIC
+      &END
+      EPS_SCF  1e-6
+      MAX_SCF 200
+      SCF_GUESS  restart
+{{SCF_PRINT}}
+    &END
+    WFN_RESTART_FILE_NAME {{WFN_FILE}}
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END
+    &END
+  &END
+  &SUBSYS
+    &TOPOLOGY
+      COORDINATE XYZ
+      COORD_FILE_NAME {{COORD_FILE}}
+      &CENTER_COORDINATES
+      &END
+    &END
+    &CELL
+      ABC {{CELL}}
+      PERIODIC None
+    &END
+{{KINDS}}
+  &END
+{{FORCE_EVAL_PRINT}}
+&END
+
+&GLOBAL
+  PRINT_LEVEL low
+  PROJECT  {{PROJECT}}
+  RUN_TYPE {{RUN_TYPE}}
+&END

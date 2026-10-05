@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qd-workflows"
+version = "0.1.0"
+description = "Workflows tying QD_builder, Orchestr.AI, CP2K and QDEX together"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pyyaml",
+  "h5py",
+]
+
+[project.scripts]
+qdw = "qd_workflows.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+qd_workflows = ["templates/*/*"]
