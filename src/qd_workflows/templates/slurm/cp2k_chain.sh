@@ -16,19 +16,23 @@ set -e
 
 P={{PROJECT}}
 QDW_PY={{QDW_PYTHON}}
-# qdw runs in its own environment; its libraries do not leak into CP2K's.
-qdw() { LD_LIBRARY_PATH=$(dirname "$(dirname "$QDW_PY")")/lib "$QDW_PY" -m qd_workflows.cli "$@"; }
+# qdw runs in its own environment: the CP2K module's PYTHONPATH (its own numpy) and
+# libraries must not leak into it, nor its libraries into CP2K.
+qdw() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDW_PY")")/lib "$QDW_PY" -m qd_workflows.cli "$@"; }
 cp2k() { mpirun -np ${SLURM_NTASKS} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
 
 # 1. geo_opt (from the MACE-relaxed structure)
 cd geo_opt
 if ! grep -q "GEOMETRY OPTIMIZATION COMPLETED" cp2k.out 2>/dev/null; then
-    if [ -s "$P-pos-1.xyz" ]; then      # continue from the last geometry of a stopped run
-        n=$(ls cp2k.out.prev-* 2>/dev/null | wc -l)
+    if [ -s "$P-pos-1.xyz" ]; then      # keep the trajectory of a stopped run
+        n=$(ls "$P-pos-1.xyz.prev-"* 2>/dev/null | wc -l)
         mv cp2k.out "cp2k.out.prev-$n" 2>/dev/null || true
         mv "$P-pos-1.xyz" "$P-pos-1.xyz.prev-$n"
-        qdw cp2k relaxed "$P-pos-1.xyz.prev-$n" -o geom.xyz
+    fi
+    last=$(ls -t "$P-pos-1.xyz.prev-"* 2>/dev/null | head -1 || true)
+    if [ -n "$last" ] && [ "$last" -nt geom.xyz ]; then   # continue from its last geometry
+        qdw cp2k relaxed "$last" -o geom.xyz
     fi
     echo "[chain] geo_opt"; cp2k
 fi
