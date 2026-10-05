@@ -35,3 +35,20 @@ cp2k:
     basis_functions: 24000
     cores: 240
     memory_gb: 340
+
+# GPU jobs (Orchestr.AI run_type PROPS). Paths are the Phase 0 test layout.
+props:
+  partition: general
+  gres: gpu:a100:1
+  cpus: 16                 # g-xTB / GFN2-xTB run on these while the GPU does MACE
+  mem: 64G
+  time: "01:00:00"
+  conda_init: source /scicomp/builds/Rocky/8.7/Common/software/Mamba/23.11.0-0/etc/profile.d/conda.sh
+  conda_env: qdw-compute
+  model: /scratch/iinfante/escience/qdw-test/models/macemh1model
+  head: omat_pbe
+  gxtb: /scratch/iinfante/xtb/xtb-6.7.1/bin/gxtb
+  cif_dirs:
+    - /scratch/iinfante/escience/qdw-test/QD_Builder/examples/cifs
+    - /scratch/iinfante/escience/qdw-test/QD_Builder/examples/library/cifs
+  refs: /scratch/iinfante/escience/qdw-test/references

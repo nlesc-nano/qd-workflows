@@ -2,6 +2,10 @@
 # NVIDIA GPUs. Versions follow the Mac setup that produced the Cd16 and Cd68
 # results (torch 2.10, mace-torch 0.3.16, ASE 3.29, xtb 6.7.1); torch comes
 # from the CUDA 12.8 wheels, which run on A100 and B200.
+#
+# After `conda activate`, put $CONDA_PREFIX/lib first on LD_LIBRARY_PATH:
+# torch's wheels otherwise load the system libstdc++, which numpy cannot use
+# (GLIBCXX_3.4.29 missing on Rocky 8). The job templates do this.
 name: qdw-compute
 channels:
   - conda-forge
