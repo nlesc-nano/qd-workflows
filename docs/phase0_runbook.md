@@ -39,18 +39,32 @@ export ORCHESTRAI_SINGLE_ENV=1                            # one environment: no 
 ## 3. Properties (MACE track)
 
 Copy `record.json` and `start.xyz` of both records (QDSpaceWebApp
-`qd-frontend/public/II-VI/CdSe/builder/<id>/`) to a run directory, point
-`Orchestr.AI/config_files/postprocessing/props/config_props.yaml` at them and set
-`model_path`, then on a GPU node:
+`qd-frontend/public/II-VI/CdSe/builder/<id>/`) to `run/<id>/`, set the paths in
+the cluster profile's `props` section, then:
 
 ```bash
-python -m orchestr_ai.postprocessing config_props.yaml
+qdw props prepare run/CdSe-Se-Cd16Se13Cl6-clean --out jobs/props_cd16 --time 00:10:00 --qos test
+(cd jobs/props_cd16 && sbatch job.sh)
 qdw compare <webapp>/.../CdSe-Se-Cd16Se13Cl6-clean/props/properties.json run/CdSe-Se-Cd16Se13Cl6-clean/props/properties.json
-qdw compare <webapp>/.../CdSe-Se-Cd68Se55Cl26-clean/props/properties.json run/CdSe-Se-Cd68Se55Cl26-clean/props/properties.json
 ```
+
+A run killed at the time limit continues where it stopped when resubmitted
+(every step is cached in `props/`).
 
 Gate: no value outside tolerance, or every difference explained by float32
 (Mac) vs float64 (cluster).
+
+### hyperion notes
+
+- `sbatch` from a non-interactive shell (`ssh hyperion 'sbatch ...'`) does not
+  pass the `module` function on: the profile's `setup` sources
+  `/etc/profile.d/lmod.sh` in every job.
+- GPU model: `--gres=gpu:1 --constraint=a100` (`--gres=gpu:a100:1` is refused).
+- torch's pip wheels load the system `libstdc++` (Rocky 8, no GLIBCXX_3.4.29)
+  before numpy: put `$CONDA_PREFIX/lib` first on `LD_LIBRARY_PATH` (the GPU job
+  template does).
+- QoS `test`: 10 minutes, at most 2 nodes per user at a time; a 48-core job may
+  be spread over two nodes and then blocks the next test job.
 
 ## 4. CP2K track (CPU nodes), Cd16
 
