@@ -128,6 +128,7 @@ def prepare(
         "JOB_NAME": f"{step}-{project}"[:64],
         "TIME": time or cp["time"][step],
         "NTASKS": res.cores,
+        "NODES": -(-res.cores // int(cluster["cores_per_node"])),   # as few nodes as the cores need
         "MEM_PER_CPU": res.mem_per_cpu,
         "QOS": qos or cluster.get("qos", "regular"),
         # Shell setup the job needs whatever shell submitted it (e.g. Lmod for `module`).

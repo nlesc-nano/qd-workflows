@@ -28,7 +28,11 @@
         PRECONDITIONER FULL_KINETIC
       &END
       EPS_SCF  1e-6
-      MAX_SCF 200
+      MAX_SCF 50              # inner OT steps; the outer loop restarts DIIS (Ivan's template: MAX_SCF 200, no outer loop)
+      &OUTER_SCF
+        EPS_SCF 1e-6
+        MAX_SCF 10
+      &END
       SCF_GUESS  restart
 {{SCF_PRINT}}
     &END
