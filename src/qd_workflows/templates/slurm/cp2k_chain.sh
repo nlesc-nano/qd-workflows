@@ -50,7 +50,7 @@ if ! ls pdos/*.pdos >/dev/null 2>&1; then echo "[chain] pdos"; (cd pdos && cp2k)
 # 4. TREXIO single point (one diagonalisation, ADDED_MOS = virtual MOs in the window)
 [ -d trexio ] || qdw cp2k prepare relaxed.xyz --step trexio --project "$P-trexio" --wfn "../geo_opt/$P-RESTART.wfn" --window window.json --out trexio $EXTRA
 T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio 2>/dev/null | head -1 || true)
-if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio | head -1); fi
+if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio 2>/dev/null | head -1); fi
 
 # 5. Keep only the window's MOs
 [ -s orbitals.h5 ] || qdw cp2k trim "$T" orbitals.h5 --window window.json
