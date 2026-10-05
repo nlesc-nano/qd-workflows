@@ -25,11 +25,8 @@
         PRECONDITIONER FULL_KINETIC
       &END
       EPS_SCF  1e-6
-      MAX_SCF 50              # inner OT steps; the outer loop restarts DIIS (Ivan's template: MAX_SCF 200, no outer loop)
-      &OUTER_SCF
-        EPS_SCF 1e-6
-        MAX_SCF 10
-      &END
+      MAX_SCF 200
+      IGNORE_CONVERGENCE_FAILURE  # the first geo_opt step usually needs all 200 cycles; later steps far fewer
       SCF_GUESS  restart      # falls back to an atomic guess when the .wfn does not exist
     &END
     WFN_RESTART_FILE_NAME {{WFN_FILE}}

@@ -28,11 +28,8 @@
         PRECONDITIONER FULL_KINETIC
       &END
       EPS_SCF  1e-6
-      MAX_SCF 50              # inner OT steps; the outer loop restarts DIIS (Ivan's template: MAX_SCF 200, no outer loop)
-      &OUTER_SCF
-        EPS_SCF 1e-6
-        MAX_SCF 10
-      &END
+      MAX_SCF 200             # restarts from the geo_opt .wfn; no IGNORE_CONVERGENCE_FAILURE: an
+                              # unconverged sample must fail, not become a label
       SCF_GUESS  restart
 {{SCF_PRINT}}
     &END
