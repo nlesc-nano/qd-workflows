@@ -40,7 +40,8 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
     (out / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     job = {
         "JOB_NAME": name[:64], "TIME": time or pp.get("time", "01:00:00"), "PARTITION": pp["partition"],
-        "QOS": qos or cluster.get("qos", "regular"), "GRES": pp["gres"], "CPUS": pp.get("cpus", 8),
+        "QOS": qos or cluster.get("qos", "regular"), "GRES": pp["gres"],
+        "CONSTRAINT": f"#SBATCH --constraint={pp['constraint']}\n" if pp.get("constraint") else "", "CPUS": pp.get("cpus", 8),
         "MEM": pp.get("mem", "32G"), "SETUP": "\n".join(cluster.get("setup", [])),
         "CONDA_INIT": pp.get("conda_init", ""), "CONDA_ENV": pp["conda_env"], "MODEL": pp["model"],
         "GXTB": pp["gxtb"], "CIF_DIRS": os.pathsep.join(pp.get("cif_dirs", [])), "REFS": pp["refs"],

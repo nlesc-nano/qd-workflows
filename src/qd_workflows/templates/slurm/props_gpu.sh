@@ -4,7 +4,7 @@
 #SBATCH -p {{PARTITION}}
 #SBATCH --qos={{QOS}}
 #SBATCH --gres={{GRES}}
-#SBATCH -c {{CPUS}}
+{{CONSTRAINT}}#SBATCH -c {{CPUS}}
 #SBATCH --mem={{MEM}}
 {{SETUP}}
 {{CONDA_INIT}}

@@ -39,7 +39,8 @@ cp2k:
 # GPU jobs (Orchestr.AI run_type PROPS). Paths are the Phase 0 test layout.
 props:
   partition: general
-  gres: gpu:a100:1
+  gres: gpu:1
+  constraint: a100         # hyperion: the GPU model goes in --constraint, not --gres
   cpus: 16                 # g-xTB / GFN2-xTB run on these while the GPU does MACE
   mem: 64G
   time: "01:00:00"
