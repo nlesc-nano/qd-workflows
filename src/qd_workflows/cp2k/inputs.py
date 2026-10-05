@@ -152,3 +152,32 @@ def prepare(
         info["window"] = window
     (out / "job.json").write_text(json.dumps(info, indent=2))
     return info
+
+
+def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: str = "default",
+          charge: int = 0, optimizer: str = "auto", data_dir: str | None = None,
+          time: str | None = None, qos: str | None = None) -> dict:
+    """
+    One job for the whole CP2K track of a structure: `<out_dir>/geo_opt/` is
+    prepared now; `<out_dir>/chain.sh` runs geo_opt, then prepares and runs the
+    PDOS and TREXIO steps and trims the TREXIO file, skipping finished steps.
+    Cores and memory are sized for the structure, the same for every step.
+    """
+    out = Path(out_dir)
+    info = prepare(xyz, "geo_opt", project, str(out / "geo_opt"), cluster, charge=charge,
+                   optimizer=optimizer, data_dir=data_dir, time=time, qos=qos)
+    cp = cluster["cp2k"]
+    res = info["resources"]
+    py = cluster.get("qdw_python")
+    if not py:
+        raise KeyError("cluster profile needs qdw_python (the python with qd_workflows installed)")
+    total_time = time or cp["time"].get("chain", cp["time"]["geo_opt"])
+    job = {
+        "JOB_NAME": f"cp2k-{project}"[:64], "TIME": total_time, "NTASKS": res["cores"],
+        "NODES": -(-res["cores"] // int(cluster["cores_per_node"])), "MEM_PER_CPU": res["mem_per_cpu"],
+        "QOS": qos or cluster.get("qos", "regular"), "SETUP": "\n".join(cluster.get("setup", [])),
+        "MODULE": cp["module"], "OMP_NUM_THREADS": cp.get("omp_num_threads", 1), "EXECUTABLE": cp["executable"],
+        "PROJECT": project, "QDW_PYTHON": py, "CLUSTER": cluster_ref,
+    }
+    (out / "chain.sh").write_text(render((TEMPLATES / "slurm" / "cp2k_chain.sh").read_text(), job))
+    return {**info, "chain": str(out / "chain.sh")}

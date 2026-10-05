@@ -19,6 +19,11 @@ def _cp2k(args) -> int:
                               data_dir=args.data_dir, time=args.time, qos=args.qos)
         print(json.dumps({k: info[k] for k in ("project", "step", "n_atoms", "basis_functions",
                                                 "occupied_mos", "cell_A", "resources")}, indent=1))
+    elif args.action == "chain":
+        info = inputs.chain(args.xyz, args.project, args.out, load_cluster(args.cluster), cluster_ref=args.cluster,
+                            charge=args.charge, optimizer=args.optimizer, data_dir=args.data_dir,
+                            time=args.time, qos=args.qos)
+        print(json.dumps({k: info[k] for k in ("project", "n_atoms", "basis_functions", "resources", "chain")}, indent=1))
     elif args.action == "window":
         win = outputs.mo_window(args.pdos, args.below, args.above)
         text = json.dumps(win, indent=1)
@@ -77,6 +82,17 @@ def main(argv=None) -> int:
     p.add_argument("--data-dir", help="local copy of the CP2K data files (default: $QDW_CP2K_DATA, then the cluster path)")
     p.add_argument("--time", help="wall time, overriding the cluster profile (e.g. 00:10:00)")
     p.add_argument("--qos", help="QoS, overriding the cluster profile (e.g. test)")
+
+    p = cp.add_parser("chain", help="one job for geo_opt, PDOS, window, TREXIO and trim")
+    p.add_argument("xyz", help="MACE-relaxed structure")
+    p.add_argument("--project", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--cluster", default="default")
+    p.add_argument("--charge", type=int, default=0)
+    p.add_argument("--optimizer", default="auto")
+    p.add_argument("--data-dir")
+    p.add_argument("--time", help="wall time of the whole chain")
+    p.add_argument("--qos")
 
     p = cp.add_parser("window", help="MO window from the pdos step")
     p.add_argument("pdos", nargs="+")
