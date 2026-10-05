@@ -2,6 +2,7 @@
 #SBATCH -J {{JOB_NAME}}
 #SBATCH -t {{TIME}}
 #SBATCH -n {{NTASKS}}
+#SBATCH -N {{NODES}}
 #SBATCH --mem-per-cpu={{MEM_PER_CPU}}
 #SBATCH --qos={{QOS}}
 {{SETUP}}
