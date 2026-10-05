@@ -1,0 +1,23 @@
+# Packages this workflow version is built on. A result records the commits it
+# was made with; update a commit here only together with the code that needs it.
+components:
+  QD_builder:
+    repo: git@github.com:nlesc-nano/QD_Builder.git
+    branch: docs
+    commit: 0bddd0f
+  Orchestr.AI:
+    repo: https://github.com/nlesc-nano/Orchestr.AI.git
+    branch: camilo          # feature/qd-properties branches from here
+    commit: dba7514
+  QDSpaceWebApp:
+    repo: git@github.com:nlesc-nano/QDSpaceWebApp.git
+    branch: library-builder-series
+    commit: 833dff98
+  QDEX:                     # local checkout: miniBSE
+    repo: git@github.com:nlesc-nano/QDEX.git
+    branch: claude/gallant-wright-6u105o
+    commit: 511fe6c
+external:
+  CP2K: "2026.2"            # GAPW_ACCURATE_XCINT needs 2026.2 or newer
+  g-xTB: https://github.com/grimme-lab/g-xtb   # static Linux binary, GPL-3.0
+  xtb: "6.7.1"              # GFN2-xTB

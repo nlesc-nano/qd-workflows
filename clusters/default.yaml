@@ -1,0 +1,33 @@
+# First HPC cluster (CPU nodes shared between jobs). Copy this file for another
+# cluster and change what differs.
+name: default
+scheduler: slurm
+cores_per_node: 48
+# "cores": nodes are shared, a job asks for a core count (-n); "nodes": a job
+# asks for whole nodes and cores are rounded up to cores_per_node.
+request: cores
+min_cores: 48
+mem_per_cpu: 2g
+qos: regular
+
+cp2k:
+  module: CP2K/2026.2-foss-2025a
+  executable: cp2k.popt
+  omp_num_threads: 1
+  data_dir: /scratch/iinfante/cp2k_basis
+  basis_file: BASIS_MOLOPT_UZH
+  potential_file: POTENTIAL_UZH
+  basis: DZVP-MOLOPT-GGA-GTH        # + -q<valence charge>, read from the basis file
+  potential: GTH-GGA                # + -q<valence charge>
+  # Wall time per step (placeholders until measured).
+  time:
+    geo_opt: "24:00:00"
+    pdos: "06:00:00"
+    trexio: "06:00:00"
+    sample: "02:00:00"
+  # Cores and memory grow with the square of the basis-function count,
+  # calibrated on a 4.2 nm CdSe dot (~1,300 atoms).
+  calibration:
+    basis_functions: 24000
+    cores: 240
+    memory_gb: 340

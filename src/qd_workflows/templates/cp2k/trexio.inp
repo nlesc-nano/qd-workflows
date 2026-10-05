@@ -1,0 +1,66 @@
+# TREXIO single point, from Ivan's cp2k_sp.in (2026-10-05): one diagonalisation
+# cycle reading the geo_opt .wfn. ADDED_MOS = the virtual MOs up to 5 eV above
+# the conduction band edge (from the pdos step); the occupied MOs below the
+# window are trimmed from the .h5 afterwards (qdw cp2k trim).
+&FORCE_EVAL
+  &DFT
+    CHARGE {{CHARGE}}
+    BASIS_SET_FILE_NAME {{BASIS_FILE}}
+    POTENTIAL_FILE_NAME {{POTENTIAL_FILE}}
+    &MGRID
+      CUTOFF  400
+      REL_CUTOFF  60
+      NGRIDS  4
+    &END
+    &POISSON
+       POISSON_SOLVER MULTIPOLE
+       PERIODIC None
+    &END
+    &QS
+      METHOD  gapw
+      FORCE_PAW T             # makes Cd and S GAPW atoms
+      GAPW_ACCURATE_XCINT T   # CP2K >= 2026.2
+    &END
+    &PRINT
+      &TREXIO
+        FILENAME orbitals
+        CARTESIAN F
+      &END TREXIO
+    &END PRINT
+    &SCF
+      ADDED_MOS {{ADDED_MOS}}
+      EPS_SCF  1e-6
+      MAX_SCF 1
+      SCF_GUESS  restart
+      IGNORE_CONVERGENCE_FAILURE
+      &PRINT
+        &RESTART OFF
+        &END
+      &END
+    &END
+    WFN_RESTART_FILE_NAME {{WFN_FILE}}
+    &XC
+      &XC_FUNCTIONAL PBE
+      &END
+    &END
+  &END
+  &SUBSYS
+    &TOPOLOGY
+      COORDINATE XYZ
+      COORD_FILE_NAME {{COORD_FILE}}
+      &CENTER_COORDINATES
+      &END
+    &END
+    &CELL
+      ABC {{CELL}}
+      PERIODIC None
+    &END
+{{KINDS}}
+  &END
+&END
+
+&GLOBAL
+  PRINT_LEVEL low
+  PROJECT  {{PROJECT}}
+  RUN_TYPE ENERGY
+&END
