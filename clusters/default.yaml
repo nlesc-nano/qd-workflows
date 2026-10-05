@@ -13,6 +13,8 @@ qos: regular
 # (ssh host 'sbatch ...') does not inherit the `module` function.
 setup:
   - source /etc/profile.d/lmod.sh
+# Python with qd_workflows installed, for the qdw calls inside CP2K chain jobs.
+qdw_python: /dipc/iinfante/.conda/envs/qdw-compute/bin/python
 
 cp2k:
   module: CP2K/2026.2-foss-2025a
@@ -29,6 +31,7 @@ cp2k:
     pdos: "06:00:00"
     trexio: "06:00:00"
     sample: "02:00:00"
+    chain: "48:00:00"               # geo_opt + pdos + trexio in one job
   # Cores and memory grow with the square of the basis-function count,
   # calibrated on a 4.2 nm CdSe dot (~1,300 atoms).
   calibration:
