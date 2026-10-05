@@ -4,7 +4,7 @@
 #SBATCH -n {{NTASKS}}
 #SBATCH --mem-per-cpu={{MEM_PER_CPU}}
 #SBATCH --qos={{QOS}}
-
+{{SETUP}}
 module purge
 module load {{MODULE}}
 
