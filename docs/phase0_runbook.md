@@ -8,9 +8,9 @@ dashboards for Cd16.
 ## 1. Code
 
 ```bash
-git clone -b feature/qd-properties https://github.com/nlesc-nano/Orchestr.AI.git   # once pushed
-git clone git@github.com:nlesc-nano/QD_Builder.git                                  # CIFs (examples/)
-git clone <qd-workflows>                                                            # once published
+git clone -b feature/qd-properties git@github.com:nlesc-nano/Orchestr.AI.git
+git clone git@github.com:nlesc-nano/QD_Builder.git          # bulk CIFs (examples/)
+git clone git@github.com:nlesc-nano/qd-workflows.git        # private repository
 ```
 
 ## 2. Environment (GPU node)
