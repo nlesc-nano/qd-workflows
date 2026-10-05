@@ -13,6 +13,7 @@ from pathlib import Path
 
 # (key fragment, absolute tolerance); the first fragment found in a key's path wins.
 TOLERANCES = (
+    ("dipole_D", 1e-3),      # Debye; symmetric dots sit at numerical zero
     ("cm1", 2.0),            # frequencies, cm-1
     ("meV", 0.5),            # meV and meV/atom
     ("eV_A", 2e-3),          # forces, eV/Å
@@ -21,7 +22,8 @@ TOLERANCES = (
     ("_K", 1.0),
 )
 DEFAULT_RTOL = 1e-3
-SKIP = ("time", "seconds", "wall", "steps", "timestamp", "date", "sha256", "commit", "dirty", "device", "dtype",
+# Bookkeeping, not results: timings, cache reuse counters, versions and paths.
+SKIP = ("from_checkpoint", "relaxations_new", "lazy_checks", "time", "seconds", "wall", "steps", "timestamp", "date", "sha256", "commit", "dirty", "device", "dtype",
         "torch", "mace", "xtb", "binary", "path", "file")
 
 
