@@ -122,6 +122,7 @@ def summary(qdex_dir: str, window_path: str, bright_f: float = BRIGHT_F) -> dict
             soc["qp_lumo_ev"] = sf["qp_lumo_ev"] + soc["dft_lumo_ev"] - sf["dft_lumo_ev"]
         soc["qp_gap_ev"] = _number(r"Final SOC QP Gap\s*:\s*(-?[\d.]+)", text)
     soc.update(_excitons(d / "exciton_results_soc.csv", bright_f))
-    sf, soc = ({k: (round(v, 6) if isinstance(v, float) else v) for k, v in x.items()} for x in (sf, soc))
+    sf, soc = ({k: (round(v, 6) if k.endswith("_ev") and v is not None else v) for k, v in x.items()}
+               for x in (sf, soc))      # energies to 1 µeV; oscillator strengths as printed
     return {"bright_f": bright_f, "spin_free": sf, "soc": soc,
             "files": sorted(p.name for p in d.iterdir() if p.suffix in (".csv", ".html"))}
