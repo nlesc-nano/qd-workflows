@@ -59,6 +59,24 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
     (out / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     wall = time or pp.get("time", "01:00:00")
     run = RUN_PIECES.format(seconds=max(_seconds(wall) - 60, 60), run=RUN) if pieces else RUN
+    (out / "job.sh").write_text(_job(cluster, name, wall, qos, run))
+    return {"records": recs, "config": str(out / "config.yaml"), "job": str(out / "job.sh")}
+
+
+def bench(out_dir: str, cluster: dict, *, sizes: str = "100,300,1000,2000,5000", time: str = "01:00:00",
+          qos: str | None = None, extra: str = "") -> dict:
+    """GPU job for the size benchmark (orchestr_ai.qd.bench): force calls and Hessians vs atom count."""
+    pp = cluster["props"]
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    run = (f"python -m orchestr_ai.qd.bench --model {pp['model']} --head {pp.get('head', 'omat_pbe')} "
+           f"--sizes {sizes} -o bench.json {extra}".rstrip())
+    (out / "job.sh").write_text(_job(cluster, "bench-mace", time, qos, run))
+    return {"job": str(out / "job.sh"), "run": run}
+
+
+def _job(cluster: dict, name: str, wall: str, qos: str | None, run: str) -> str:
+    pp = cluster["props"]
     job = {
         "JOB_NAME": name[:64], "TIME": wall, "RUN": run, "PARTITION": pp["partition"],
         "QOS": qos or cluster.get("qos", "regular"), "GRES": pp["gres"],
@@ -67,5 +85,4 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
         "CONDA_INIT": pp.get("conda_init", ""), "CONDA_ENV": pp["conda_env"], "MODEL": pp["model"],
         "GXTB": pp["gxtb"], "CIF_DIRS": os.pathsep.join(pp.get("cif_dirs", [])), "REFS": pp["refs"],
     }
-    (out / "job.sh").write_text(render((TEMPLATES / "slurm" / "props_gpu.sh").read_text(), job))
-    return {"records": recs, "config": str(out / "config.yaml"), "job": str(out / "job.sh")}
+    return render((TEMPLATES / "slurm" / "props_gpu.sh").read_text(), job)
