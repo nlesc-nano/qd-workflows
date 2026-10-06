@@ -71,7 +71,7 @@ def _props(args) -> int:
                                qos=args.qos, extra=args.extra), indent=1))
         return 0
     info = prepare(args.records, args.out, load_cluster(args.cluster), steps=args.steps.split(",") if args.steps else None,
-                   time=args.time, qos=args.qos, max_atoms=args.max_atoms, name=args.name, pieces=args.pieces)
+                   time=args.time, qos=args.qos, max_atoms=args.max_atoms, name=args.name, pieces=args.pieces, md=args.md)
     print(json.dumps(info, indent=1))
     return 0
 
@@ -168,6 +168,7 @@ def main(argv=None) -> int:
     p.add_argument("--qos")
     p.add_argument("--name", default="props")
     p.add_argument("--pieces", action="store_true", help="resubmit the job until the run finishes (short QoS)")
+    p.add_argument("--md", action="store_true", help="also run MD (constant-T and ramp replicas): the MD subset")
 
     p = pp.add_parser("bench", help="GPU job timing force calls and Hessians against the atom count")
     p.add_argument("--out", required=True)

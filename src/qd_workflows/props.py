@@ -9,7 +9,7 @@ import yaml
 from . import TEMPLATES, render
 
 ALL_STEPS = ["relax", "structure", "hessian", "vibspec", "electronic", "stability", "detachment",
-             "solvation", "sites", "report"]
+             "solvation", "sites", "report", "wigner", "md"]
 
 
 RUN = "python -m orchestr_ai.postprocessing config.yaml"
@@ -44,7 +44,7 @@ def _seconds(t: str) -> int:
 
 def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | None = None,
             qos: str | None = None, max_atoms: int | None = None, name: str = "props",
-            pieces: bool = False) -> dict:
+            pieces: bool = False, md: bool = False) -> dict:
     """
     Write `<out_dir>/{config.yaml, job.sh}`: one GPU job running `run_type: PROPS`
     over `records` (directories with record.json and start.xyz). Paths to the
@@ -65,7 +65,8 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
         "model_path": pp["model"],
         "mace_head": pp.get("head", "omat_pbe"),
         "props": {"records": recs, "steps": list(steps or ALL_STEPS), "force": False,
-                  "settings": {"device": "auto", "dtype": "float64"}},
+                  # md runs only for the MD subset (wigner always)
+                  "settings": {"device": "auto", "dtype": "float64", "md_enabled": bool(md)}},
     }
     if max_atoms:
         config["props"]["max_atoms"] = int(max_atoms)
