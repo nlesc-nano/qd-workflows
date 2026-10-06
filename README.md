@@ -40,8 +40,11 @@ qdw cp2k chain props/relaxed.xyz --project <id> --record record.json --out cp2k
 (cd cp2k && sbatch chain.sh)
 ```
 
-`qdex/summary.json` holds what the webapp shows: DFT and QP HOMO, LUMO and gap,
-lowest and first bright exciton (f >= 0.05), spin-free and with SOC. QDEX runs
+QDEX writes `qdex_electronic.h5` (orbitals, projections, PDOS, COOP, fuzzy-band
+weights), `qdex_excitations.h5` (every exciton up to 4.5 eV with its descriptors)
+and the HOMO-1..LUMO+1 cubes on a 0.8 Å grid; no dashboards. `qdex/summary.json`
+holds what the webapp lists: DFT and QP HOMO, LUMO and gap, lowest and first
+bright exciton (f >= 0.05), spin-free and with SOC. QDEX runs
 in its own environment (`envs/qdex.yml`, then `pip install --no-build-isolation -e QDEX`)
 on the cores of the chain job's first node.
 
