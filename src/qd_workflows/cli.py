@@ -59,7 +59,11 @@ def _qdex(args) -> int:
 
 
 def _props(args) -> int:
-    from .props import prepare
+    from .props import bench, prepare
+    if args.action == "bench":
+        print(json.dumps(bench(args.out, load_cluster(args.cluster), sizes=args.sizes, time=args.time,
+                               qos=args.qos, extra=args.extra), indent=1))
+        return 0
     info = prepare(args.records, args.out, load_cluster(args.cluster), steps=args.steps.split(",") if args.steps else None,
                    time=args.time, qos=args.qos, max_atoms=args.max_atoms, name=args.name, pieces=args.pieces)
     print(json.dumps(info, indent=1))
@@ -155,6 +159,14 @@ def main(argv=None) -> int:
     p.add_argument("--qos")
     p.add_argument("--name", default="props")
     p.add_argument("--pieces", action="store_true", help="resubmit the job until the run finishes (short QoS)")
+
+    p = pp.add_parser("bench", help="GPU job timing force calls and Hessians against the atom count")
+    p.add_argument("--out", required=True)
+    p.add_argument("--cluster", default="default")
+    p.add_argument("--sizes", default="100,300,1000,2000,5000")
+    p.add_argument("--time", default="01:00:00")
+    p.add_argument("--qos")
+    p.add_argument("--extra", default="", help="more orchestr_ai.qd.bench options, e.g. '--analytic-max 1000'")
 
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref")
