@@ -29,12 +29,27 @@ geo_opt (from the MACE-relaxed structure)
   -> window    MOs from 5 eV below the valence band edge to 5 eV above the conduction band edge
   -> trexio    one diagonalisation cycle, ADDED_MOS = virtual MOs in the window, TREXIO print
   -> trim      drop the occupied MOs below the window from the .h5
-  -> QDEX
+  -> QDEX      QP gap (bulk, scaled vertex), diagonal sBSE (Resta) balanced to the window,
+               SOC, fuzzy bands, PDOS, COOP (with the cation-ligand pair); summary.json
 ```
+
+One job runs it all and skips finished steps when resubmitted:
+
+```bash
+qdw cp2k chain props/relaxed.xyz --project <id> --record record.json --out cp2k
+(cd cp2k && sbatch chain.sh)
+```
+
+`qdex/summary.json` holds what the webapp shows: DFT and QP HOMO, LUMO and gap,
+lowest and first bright exciton (f >= 0.05), spin-free and with SOC. QDEX runs
+in its own environment (`envs/qdex.yml`, then `pip install --no-build-isolation -e QDEX`)
+on the cores of the chain job's first node.
 
 Every step after geo_opt restarts from the geo_opt `.wfn`. Wigner samples use
 the `sample` input (energy and forces, forces written to `forces.xyz`, no
 restart file written).
+
+Single steps:
 
 ```bash
 qdw cp2k prepare relaxed.xyz --step geo_opt --project CdSe-Se-Cd68Se55Cl26-clean --out run/geo_opt
@@ -60,3 +75,16 @@ qdw compare <webapp>/.../CdSe-Se-Cd16Se13Cl6-clean/props/properties.json <cluste
 The Mac ran on the Apple GPU in float32 and the cluster runs CUDA in float64,
 so values are compared with tolerances (2 cm-1, 2 meV, 0.5 meV/atom, 2e-3 Å,
 relative 1e-3).
+
+Where only short jobs start soon, `qdw props prepare --pieces` makes the job stop
+a minute before its limit and submit itself again until the run is done.
+
+## Size benchmark (Phase 1)
+
+```bash
+qdw props bench --out jobs/bench --sizes 100,300,1000,2000,5000
+```
+
+times one force call, batched force calls, the analytic Hessian and the batched
+finite-difference Hessian on CdSe spheres of each size on one GPU, and fits
+t = a N^b to each (`bench.json`).
