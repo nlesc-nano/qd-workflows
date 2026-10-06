@@ -6,7 +6,8 @@
 #SBATCH --mem-per-cpu={{MEM_PER_CPU}}
 #SBATCH --qos={{QOS}}
 {{SETUP}}
-# CP2K track of one structure in one job: geo_opt -> PDOS -> MO window -> TREXIO -> trim.
+# CP2K track of one structure in one job: geo_opt -> PDOS -> MO window -> TREXIO -> trim
+# -> QDEX (when record.json is here).
 # Every step is skipped when its output is already there, so a job stopped by the
 # time limit continues where it stopped when resubmitted.
 module purge
@@ -19,6 +20,9 @@ QDW_PY={{QDW_PYTHON}}
 # qdw runs in its own environment: the CP2K module's PYTHONPATH (its own numpy) and
 # libraries must not leak into it, nor its libraries into CP2K.
 qdw() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDW_PY")")/lib "$QDW_PY" -m qd_workflows.cli "$@"; }
+# QDEX: its own environment too, on the cores of the first node.
+QDEX={{QDEX}}
+qdex_run() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDEX")")/lib OMP_NUM_THREADS=$1 "$QDEX" --config config.yaml; }
 cp2k() { mpirun -np ${SLURM_NTASKS} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
 
@@ -54,4 +58,12 @@ if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/o
 
 # 5. Keep only the window's MOs
 [ -s orbitals.h5 ] || qdw cp2k trim "$T" orbitals.h5 --window window.json
-echo "[chain] done: $(pwd)/orbitals.h5"
+
+# 6. QDEX: QP gap, diagonal sBSE (Resta), SOC, fuzzy bands, PDOS and COOP; summary.json for the webapp
+if [ -s record.json ]; then
+    NT=${SLURM_CPUS_ON_NODE:-8}
+    [ -s qdex/config.yaml ] || qdw qdex prepare record.json --window window.json --out qdex --threads "$NT" --cluster {{CLUSTER}}
+    if [ ! -s qdex/exciton_results_soc.csv ]; then echo "[chain] qdex"; (cd qdex && qdex_run "$NT" > qdex.out 2>&1); fi
+    qdw qdex summary qdex --window window.json -o qdex/summary.json > /dev/null
+fi
+echo "[chain] done: $(pwd)"

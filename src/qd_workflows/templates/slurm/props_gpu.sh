@@ -20,4 +20,4 @@ export QDPROPS_CIF_DIRS={{CIF_DIRS}}
 export QDPROPS_REFS={{REFS}}
 
 nvidia-smi -L
-python -m orchestr_ai.postprocessing config.yaml
+{{RUN}}

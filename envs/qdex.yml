@@ -1,0 +1,25 @@
+# QDEX (post-DFT excitations, fuzzy bands, PDOS/COOP) for the last step of the
+# CP2K chain, on CPU nodes. QDEX builds a C++ extension against Libint2 and
+# Eigen, so the compilers come from conda-forge; torch is optional (GPU solver)
+# and left out. After creating it:  pip install --no-build-isolation -e <QDEX checkout>
+name: qdex
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - cxx-compiler
+  - cmake>=3.16
+  - make
+  - pybind11>=2.10
+  - eigen>=3.4
+  - libint>=2.6
+  - libboost-devel
+  - numpy
+  - scipy
+  - pandas
+  - pyyaml
+  - h5py
+  - pymatgen
+  - matplotlib
+  - plotly
+  - pip
