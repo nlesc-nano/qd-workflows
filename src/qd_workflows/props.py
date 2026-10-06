@@ -19,11 +19,18 @@ RUN = "python -m orchestr_ai.postprocessing config.yaml"
 # per-user submit limit cannot break the chain at the handover. Finished steps,
 # desorption relaxations and Raman modes are checkpointed, so every piece continues
 # where the last one stopped.
-RUN_PIECES = """next=$(cd "$SLURM_SUBMIT_DIR" && sbatch --parsable --dependency=afterany:$SLURM_JOB_ID job.sh)
-echo "[props] next piece queued: $next"
+RUN_PIECES = """queue_next() {{ (cd "$SLURM_SUBMIT_DIR" && sbatch --parsable --dependency=afterany:$SLURM_JOB_ID job.sh 2>/dev/null) > .next_piece.$SLURM_JOB_ID; [ -s .next_piece.$SLURM_JOB_ID ]; }}
+# the submit limit may be reached now (another job queued): keep trying in the background
+(for i in $(seq 1 18); do queue_next && break; sleep 30; done) &
+retry=$!
 timeout {seconds} {run}; rc=$?
-if [ $rc -eq 124 ]; then echo "[props] time limit: next piece $next"; exit 0; fi
-scancel "$next"; echo "[props] run ended (exit $rc): cancelled $next"
+kill $retry 2>/dev/null; wait $retry 2>/dev/null
+next=$(cat .next_piece.$SLURM_JOB_ID 2>/dev/null); rm -f .next_piece.$SLURM_JOB_ID
+if [ $rc -eq 124 ]; then
+    [ -n "$next" ] || {{ queue_next && next=$(cat .next_piece.$SLURM_JOB_ID); rm -f .next_piece.$SLURM_JOB_ID; }}
+    echo "[props] time limit: next piece ${{next:-NOT QUEUED (submit limit)}}"; exit 0
+fi
+[ -n "$next" ] && scancel "$next" && echo "[props] run ended (exit $rc): cancelled $next"
 exit $rc"""
 
 
