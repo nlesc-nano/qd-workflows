@@ -64,7 +64,10 @@ def prepare(record_path: str, window_path: str, out_dir: str, cluster: dict, *, 
         "excitations": {"mode": "diagonal_sbse", "kernel": "resta", "nhomos": n, "nlumos": n},
         "fuzzy": {"run_fuzzy": True, "cif": find_cif(cif_name, cif_dirs) if cif_name else None, "soc_window": 10.0,
                   "pdos_atoms": elements, "coop_pairs": coop_pairs(record), "fuzzy_sigma": 0.01,
-                  "pdos_sigma": 0.08, "ewin": [-5.0, 5.0]},
+                  "pdos_sigma": 0.08, "ewin": [-5.0, 5.0],
+                  # fold the plane-wave weights into the first Brillouin zone: without it the
+                  # p-like VBM has no weight at Gamma; g_shell 2 (125 G) is converged to 1 %
+                  "fold_to_bz": True, "g_shell": int(q.get("g_shell", 2))},
         "soc": {"soc_flag": True, "gth_file": q["gth_soc_file"]},
         # database output: two HDF5 files and four coarse MO cubes, no dashboards / CSV / plots
         "output": {"sigma": 0.03, "h5": True, "html": False, "plot": False, "write_csv": False,

@@ -8,7 +8,7 @@ components:
   Orchestr.AI:
     repo: https://github.com/nlesc-nano/Orchestr.AI.git
     branch: feature/qd-properties   # from camilo (dba7514)
-    commit: c16dc5e
+    commit: 4404f90
   QDSpaceWebApp:
     repo: git@github.com:nlesc-nano/QDSpaceWebApp.git
     branch: library-builder-series
@@ -16,7 +16,7 @@ components:
   QDEX:                     # local checkout: miniBSE
     repo: git@github.com:nlesc-nano/QDEX.git
     branch: main
-    commit: d4f6f8c
+    commit: 7e76d79
 external:
   CP2K: "2026.2"            # GAPW_ACCURATE_XCINT needs 2026.2 or newer
   g-xTB: https://github.com/grimme-lab/g-xtb   # static Linux binary, GPL-3.0
