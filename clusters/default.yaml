@@ -42,7 +42,7 @@ cp2k:
 # QDEX, the last step of the CP2K chain (CPU, first node of the chain job).
 qdex:
   command: /dipc/iinfante/.conda/envs/qdex/bin/qdex      # envs/qdex.yml + pip install -e QDEX
-  gth_soc_file: /scratch/iinfante/cp2k_basis/GTH_SOC_POTENTIALS
+  gth_soc_file: /scratch/iinfante/cp2k_basis/GTH_SOC_POTENTIALS_2024   # copy of QDEX tests/ (update of 02.04.2024)
   max_states: 1000          # occupied and virtual MOs in the diagonal sBSE (balanced, capped by the window)
   eps_out: 2.24             # toluene
   # CIFs (fuzzy bands) come from props.cif_dirs unless qdex.cif_dirs is set.
