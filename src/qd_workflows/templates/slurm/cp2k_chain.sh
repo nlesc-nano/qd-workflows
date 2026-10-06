@@ -60,11 +60,11 @@ if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/o
 [ -s orbitals.h5 ] || qdw cp2k trim "$T" orbitals.h5 --window window.json
 
 # 6. QDEX: QP gap, diagonal sBSE (Resta), SOC, fuzzy bands, PDOS and COOP -> qdex_electronic.h5,
-#    qdex_excitations.h5, HOMO-1..LUMO+1 cubes; summary.json for the webapp
+#    qdex_excitations.h5, HOMO-1..LUMO+1 cubes; webapp.json (summary, band-edge excitons, spectra)
 if [ -s record.json ]; then
     NT=${SLURM_CPUS_ON_NODE:-8}
     [ -s qdex/config.yaml ] || qdw qdex prepare record.json --window window.json --out qdex --threads "$NT" --cluster {{CLUSTER}}
     if [ ! -s qdex/qdex_excitations.h5 ]; then echo "[chain] qdex"; (cd qdex && qdex_run "$NT" > qdex.out 2>&1); fi
-    qdw qdex summary qdex -o qdex/summary.json > /dev/null
+    qdw qdex webapp qdex -o qdex/webapp.json > /dev/null
 fi
 echo "[chain] done: $(pwd)"

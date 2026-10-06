@@ -122,3 +122,60 @@ def summary(qdex_dir: str, bright_f: float = BRIGHT_F) -> dict:
     rnd = lambda x: {k: (round(v, 6) if k.endswith("_ev") and isinstance(v, float) else v) for k, v in x.items()}
     return {"qdex_commit": commit, "bright_f": bright_f, "spin_free": rnd(sf), "soc": rnd(soc),
             "files": sorted(p.name for p in d.iterdir() if p.suffix in (".h5", ".cube") and p.name.startswith(("qdex_", "spatial_")))}
+
+
+EDGE_WINDOW = 0.5       # eV above the lowest exciton: the band-edge states shown in the webapp
+EDGE_MIN, EDGE_MAX = 20, 300
+
+
+def _orbital_label(i: int, homo: int, prefix: str) -> str:
+    if i <= homo:
+        return f"{prefix}H" if i == homo else f"{prefix}H-{homo - i}"
+    return f"{prefix}L" if i == homo + 1 else f"{prefix}L+{i - homo - 1}"
+
+
+def _sig(x, digits=5):
+    return float(f"{float(x):.{digits}g}")
+
+
+def webapp(qdex_dir: str, window: float = EDGE_WINDOW, n_min: int = EDGE_MIN, n_max: int = EDGE_MAX,
+           bright_f: float = BRIGHT_F) -> dict:
+    """
+    One small JSON per dot for the webapp: the summary, the band-edge excitons (up to
+    `window` eV above the lowest, at least n_min, at most n_max) with their descriptors,
+    and the absorption spectra (every computed state, fixed grid, two broadenings).
+    The full set up to excitations_emax stays in qdex_excitations.h5.
+    """
+    import h5py
+    d = Path(qdex_dir)
+    out = {"summary": summary(qdex_dir, bright_f), "edge_window_ev": window, "excitons": {}, "spectrum": {}}
+    with h5py.File(d / "qdex_electronic.h5", "r") as el, h5py.File(d / "qdex_excitations.h5", "r") as ex:
+        homo = {"sf": int(el["sf/mo"].attrs["homo_index"])}
+        if "soc/bse_spinor" in el:
+            homo["soc"] = int(el["soc/bse_spinor"].attrs["homo_index"])
+        for g in ("sf", "soc"):
+            if g not in ex:
+                continue
+            E = ex[f"{g}/energy_ev"][:]
+            n = int(np.clip(np.sum(E <= E[0] + window), min(n_min, len(E)), n_max)) if len(E) else 0
+            hole_key, elec_key, pre = (("hole_mo", "electron_mo", "") if g == "sf" else
+                                       ("hole_spinor", "electron_spinor", "sp"))
+            cols = {k: ex[f"{g}/{k}"][:n] for k in ("energy_ev", "f_osc", "d_qp_ev", "kx_ev", "minus_kd_ev",
+                                                    "d_eh_ang", "d_ct_ang", "sigma_h_ang", "sigma_e_ang",
+                                                    "ct_character", "singlet_fraction") if f"{g}/{k}" in ex}
+            types = [t.decode() if isinstance(t, bytes) else str(t) for t in ex[f"{g}/type"][:n]] if f"{g}/type" in ex else []
+            hole, elec = ex[f"{g}/{hole_key}"][:n], ex[f"{g}/{elec_key}"][:n]
+            states = []
+            for k in range(n):
+                row = {"state": k + 1, "transition": f"{_orbital_label(int(hole[k]), homo[g], pre)}->"
+                                                     f"{_orbital_label(int(elec[k]), homo[g], pre)}"}
+                row.update({c: _sig(v[k]) for c, v in cols.items()})
+                if types:
+                    row["type"] = types[k]
+                states.append(row)
+            out["excitons"][g] = states
+            sp = ex[f"{g}/spectrum"]
+            grid = sp["energy_ev"][:]
+            out["spectrum"][g] = {"energy_ev": [float(grid[0]), float(grid[-1]), round(float(grid[1] - grid[0]), 6)],
+                                  **{k: [_sig(v, 4) for v in sp[k][:]] for k in sp if k.startswith("sigma_")}}
+    return out
