@@ -16,7 +16,7 @@ components:
   QDEX:                     # local checkout: miniBSE
     repo: git@github.com:nlesc-nano/QDEX.git
     branch: main
-    commit: f91e9f7
+    commit: 6dcdf75
 external:
   CP2K: "2026.2"            # GAPW_ACCURATE_XCINT needs 2026.2 or newer
   g-xTB: https://github.com/grimme-lab/g-xtb   # static Linux binary, GPL-3.0
