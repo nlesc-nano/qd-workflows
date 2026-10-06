@@ -17,7 +17,7 @@ RUN = "python -m orchestr_ai.postprocessing config.yaml"
 # next piece. Finished steps, desorption relaxations and Raman modes are checkpointed,
 # so every piece continues where the last one stopped.
 RUN_PIECES = """timeout {seconds} {run}; rc=$?
-if [ $rc -eq 124 ]; then echo "[props] time limit: next piece"; cd "$SLURM_SUBMIT_DIR" && sbatch job.sh; fi
+if [ $rc -eq 124 ]; then echo "[props] time limit: next piece"; cd "$SLURM_SUBMIT_DIR" && sbatch job.sh && exit 0; fi
 exit $rc"""
 
 
