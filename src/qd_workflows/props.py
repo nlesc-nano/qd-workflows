@@ -13,11 +13,17 @@ ALL_STEPS = ["relax", "structure", "hessian", "vibspec", "electronic", "stabilit
 
 
 RUN = "python -m orchestr_ai.postprocessing config.yaml"
-# Short QoS (e.g. 10-min test jobs): stop a minute before the limit and submit the
-# next piece. Finished steps, desorption relaxations and Raman modes are checkpointed,
-# so every piece continues where the last one stopped.
-RUN_PIECES = """timeout {seconds} {run}; rc=$?
-if [ $rc -eq 124 ]; then echo "[props] time limit: next piece"; cd "$SLURM_SUBMIT_DIR" && sbatch job.sh && exit 0; fi
+# Short QoS (e.g. 10-min test jobs): every piece first queues its successor (it starts
+# when this one ends, however it ends), stops a minute before the limit, and cancels
+# the successor once the run is done. Queuing at the start keeps the job slot: a
+# per-user submit limit cannot break the chain at the handover. Finished steps,
+# desorption relaxations and Raman modes are checkpointed, so every piece continues
+# where the last one stopped.
+RUN_PIECES = """next=$(cd "$SLURM_SUBMIT_DIR" && sbatch --parsable --dependency=afterany:$SLURM_JOB_ID job.sh)
+echo "[props] next piece queued: $next"
+timeout {seconds} {run}; rc=$?
+if [ $rc -eq 124 ]; then echo "[props] time limit: next piece $next"; exit 0; fi
+scancel "$next"; echo "[props] run ended (exit $rc): cancelled $next"
 exit $rc"""
 
 
