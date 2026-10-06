@@ -155,15 +155,19 @@ def prepare(
 
 
 def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: str = "default",
-          charge: int = 0, optimizer: str = "auto", data_dir: str | None = None,
+          record: str | None = None, charge: int = 0, optimizer: str = "auto", data_dir: str | None = None,
           time: str | None = None, qos: str | None = None) -> dict:
     """
     One job for the whole CP2K track of a structure: `<out_dir>/geo_opt/` is
     prepared now; `<out_dir>/chain.sh` runs geo_opt, then prepares and runs the
     PDOS and TREXIO steps and trims the TREXIO file, skipping finished steps.
+    With a `record` (record.json), QDEX runs last on the trimmed orbitals.
     Cores and memory are sized for the structure, the same for every step.
     """
     out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    if record:
+        (out / "record.json").write_text(Path(record).read_text())
     info = prepare(xyz, "geo_opt", project, str(out / "geo_opt"), cluster, charge=charge,
                    optimizer=optimizer, data_dir=data_dir, time=time, qos=qos)
     cp = cluster["cp2k"]
@@ -178,6 +182,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "QOS": qos or cluster.get("qos", "regular"), "SETUP": "\n".join(cluster.get("setup", [])),
         "MODULE": cp["module"], "OMP_NUM_THREADS": cp.get("omp_num_threads", 1), "EXECUTABLE": cp["executable"],
         "PROJECT": project, "QDW_PYTHON": py, "CLUSTER": cluster_ref,
+        "QDEX": cluster.get("qdex", {}).get("command", "qdex"),
     }
     (out / "chain.sh").write_text(render((TEMPLATES / "slurm" / "cp2k_chain.sh").read_text(), job))
     return {**info, "chain": str(out / "chain.sh")}

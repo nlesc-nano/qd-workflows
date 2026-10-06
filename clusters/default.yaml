@@ -39,6 +39,14 @@ cp2k:
     cores: 240
     memory_gb: 340
 
+# QDEX, the last step of the CP2K chain (CPU, first node of the chain job).
+qdex:
+  command: /dipc/iinfante/.conda/envs/qdex/bin/qdex      # envs/qdex.yml + pip install -e QDEX
+  gth_soc_file: /scratch/iinfante/cp2k_basis/GTH_SOC_POTENTIALS
+  max_states: 1000          # occupied and virtual MOs in the diagonal sBSE (balanced, capped by the window)
+  eps_out: 2.24             # toluene
+  # CIFs (fuzzy bands) come from props.cif_dirs unless qdex.cif_dirs is set.
+
 # GPU jobs (Orchestr.AI run_type PROPS). Paths are the Phase 0 test layout.
 props:
   partition: general

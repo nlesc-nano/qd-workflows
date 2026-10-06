@@ -12,13 +12,32 @@ ALL_STEPS = ["relax", "structure", "hessian", "vibspec", "electronic", "stabilit
              "solvation", "sites", "report"]
 
 
+RUN = "python -m orchestr_ai.postprocessing config.yaml"
+# Short QoS (e.g. 10-min test jobs): stop a minute before the limit and submit the
+# next piece. Finished steps, desorption relaxations and Raman modes are checkpointed,
+# so every piece continues where the last one stopped.
+RUN_PIECES = """timeout {seconds} {run}; rc=$?
+if [ $rc -eq 124 ]; then echo "[props] time limit: next piece"; cd "$SLURM_SUBMIT_DIR" && sbatch job.sh; fi
+exit $rc"""
+
+
+def _seconds(t: str) -> int:
+    days, _, hms = t.rpartition("-")
+    parts = [int(x) for x in hms.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    return int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+
 def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | None = None,
-            qos: str | None = None, max_atoms: int | None = None, name: str = "props") -> dict:
+            qos: str | None = None, max_atoms: int | None = None, name: str = "props",
+            pieces: bool = False) -> dict:
     """
     Write `<out_dir>/{config.yaml, job.sh}`: one GPU job running `run_type: PROPS`
     over `records` (directories with record.json and start.xyz). Paths to the
     MACE model, g-xTB, the bulk CIFs and the shared references come from the
-    cluster profile's `props` section.
+    cluster profile's `props` section. With `pieces`, the job resubmits itself
+    until the run finishes (for queues where only short jobs start soon).
     """
     pp = cluster["props"]
     out = Path(out_dir)
@@ -38,8 +57,10 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
     if max_atoms:
         config["props"]["max_atoms"] = int(max_atoms)
     (out / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    wall = time or pp.get("time", "01:00:00")
+    run = RUN_PIECES.format(seconds=max(_seconds(wall) - 60, 60), run=RUN) if pieces else RUN
     job = {
-        "JOB_NAME": name[:64], "TIME": time or pp.get("time", "01:00:00"), "PARTITION": pp["partition"],
+        "JOB_NAME": name[:64], "TIME": wall, "RUN": run, "PARTITION": pp["partition"],
         "QOS": qos or cluster.get("qos", "regular"), "GRES": pp["gres"],
         "CONSTRAINT": f"#SBATCH --constraint={pp['constraint']}\n" if pp.get("constraint") else "", "CPUS": pp.get("cpus", 8),
         "MEM": pp.get("mem", "32G"), "SETUP": "\n".join(cluster.get("setup", [])),

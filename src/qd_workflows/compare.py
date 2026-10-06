@@ -23,7 +23,10 @@ TOLERANCES = (
 )
 DEFAULT_RTOL = 1e-3
 # Bookkeeping, not results: timings, cache reuse counters, versions and paths.
-SKIP = ("from_checkpoint", "relaxations_new", "lazy_checks", "time", "seconds", "wall", "steps", "timestamp", "date", "sha256", "commit", "dirty", "device", "dtype",
+# Bookkeeping, not results. n_configurations counts the distinct relaxed products of
+# the desorption search after fingerprint deduplication (0.05 Å bins): two products
+# 0.01 Å apart can fall in one bin or two, while every energy agrees.
+SKIP = ("from_checkpoint", "relaxations_new", "lazy_checks", "n_configurations", "time", "seconds", "wall", "steps", "timestamp", "date", "sha256", "commit", "dirty", "device", "dtype",
         "torch", "mace", "xtb", "binary", "path", "file")
 
 
