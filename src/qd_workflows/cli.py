@@ -50,6 +50,12 @@ def _qdex(args) -> int:
     if args.action == "prepare":
         info = qdex.prepare(args.record, args.window, args.out, load_cluster(args.cluster), orbitals=args.orbitals,
                             geom=args.geom, threads=args.threads, max_states=args.max_states)
+    elif args.action == "webapp":
+        info = qdex.webapp(args.dir, args.window)
+        if args.output:
+            open(args.output, "w").write(json.dumps(info, separators=(",", ":")) + "\n")
+        print(json.dumps(info["summary"], indent=1))
+        return 0
     else:
         info = qdex.summary(args.dir, args.bright_f)
         if args.output:
@@ -146,6 +152,10 @@ def main(argv=None) -> int:
     p.add_argument("dir", help="QDEX run directory (qdex_electronic.h5, qdex_excitations.h5)")
     p.add_argument("-o", "--output")
     p.add_argument("--bright-f", type=float, default=0.05)
+    p = qp.add_parser("webapp", help="webapp.json: summary, band-edge excitons and absorption spectra")
+    p.add_argument("dir", help="QDEX run directory")
+    p.add_argument("-o", "--output")
+    p.add_argument("--window", type=float, default=0.5, help="band-edge states up to this far above the lowest (eV)")
 
     pp = sub.add_parser("props", help="Orchestr.AI PROPS runs on a GPU cluster").add_subparsers(dest="action", required=True)
     p = pp.add_parser("prepare", help="config.yaml and GPU job script for a set of records")
