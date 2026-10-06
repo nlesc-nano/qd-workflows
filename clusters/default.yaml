@@ -45,6 +45,7 @@ qdex:
   gth_soc_file: /scratch/iinfante/cp2k_basis/GTH_SOC_POTENTIALS_2024   # copy of QDEX tests/ (update of 02.04.2024)
   max_states: 1000          # occupied and virtual MOs in the diagonal sBSE (balanced, capped by the window)
   eps_out: 2.24             # toluene
+  g_shell: 2                # fuzzy bands: G shells folded into the first BZ (125 replicas; 1 % from converged)
   # CIFs (fuzzy bands) come from props.cif_dirs unless qdex.cif_dirs is set.
 
 # GPU jobs (Orchestr.AI run_type PROPS). Paths are the Phase 0 test layout.
