@@ -80,6 +80,11 @@ def _compare(args) -> int:
     from .compare import compare
     res = compare(args.ref, args.new, args.rtol)
     print(f"{res['compared']} values compared, {res['failed']} outside tolerance")
+    if res["path"]:
+        worst = max(res["path"], key=lambda p: p["diff"])
+        better = sum(p["diff"] < -0.05 for p in res["path"])
+        print(f"  desorption path: cumulative dE vs reference at {len(res['path'])} levels, worst {worst['diff']:+.3f} eV "
+              f"({worst['key']}), {better} levels better by > 0.05 eV")
     for f in res["failures"][: args.show]:
         print(f"  {f['key']}: ref {f['ref']:.6g}  new {f['new']:.6g}  diff {f['diff']:+.3g}")
     if res["only_in_ref"] or res["only_in_new"]:

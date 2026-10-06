@@ -48,14 +48,32 @@ def _atol(path: str) -> float | None:
     return None
 
 
+# The desorption path is a search: per-level dE / dG depend on which branch it takes,
+# and a run may find a better branch. It passes when its cumulative energy at every
+# level is no higher than the reference's by more than PATH_TOL (eV); the per-level
+# values are then reported, not failed. n_relaxations varies with the branch too.
+PATH_KEYS = ("detachment.dE_eV", "detachment.dG_", "detachment.dF_vib", "detachment.cumulative_d",
+             "detachment.n_relaxations", "detachment.n_lazy", "detachment.n_polished")
+PATH_CUMULATIVE = "detachment.cumulative_dE_eV"
+PATH_TOL = 0.05
+
+
 def compare(ref, new, rtol: float = DEFAULT_RTOL) -> dict:
     """Numeric leaves of the two `summary` blocks; each outside its tolerance is listed."""
     a = json.loads(Path(ref).read_text())["summary"]
     b = json.loads(Path(new).read_text())["summary"]
     va, vb = dict(_leaves(a)), dict(_leaves(b))
-    failures, compared = [], 0
-    for key in sorted(set(va) & set(vb)):
+    failures, compared, path = [], 0, []
+    for key in sorted(set(va) & set(vb), key=lambda k: (k.split("[")[0], int(k.split("[")[1][:-1]) if "[" in k else -1)):
         if any(s in key.lower() for s in SKIP):
+            continue
+        if key.startswith(PATH_KEYS):
+            if key.startswith(PATH_CUMULATIVE):
+                x, y = float(va[key]), float(vb[key])
+                compared += 1
+                path.append({"key": key, "ref": x, "new": y, "diff": y - x, "atol": PATH_TOL})
+                if y - x > PATH_TOL:      # higher than the reference: a worse branch
+                    failures.append(path[-1])
             continue
         x, y = float(va[key]), float(vb[key])
         if math.isnan(x) and math.isnan(y):
@@ -65,6 +83,7 @@ def compare(ref, new, rtol: float = DEFAULT_RTOL) -> dict:
         ok = abs(x - y) <= (atol if atol is not None else 0.0) + rtol * max(abs(x), abs(y))
         if not ok:
             failures.append({"key": key, "ref": x, "new": y, "diff": y - x, "atol": atol})
-    return {"compared": compared, "failed": len(failures), "only_in_ref": sorted(set(va) - set(vb))[:20],
+    return {"compared": compared, "failed": len(failures), "path": path,
+            "only_in_ref": sorted(set(va) - set(vb))[:20],
             "only_in_new": sorted(set(vb) - set(va))[:20],
             "failures": sorted(failures, key=lambda f: -abs(f["diff"]))}
