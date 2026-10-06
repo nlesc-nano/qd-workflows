@@ -51,7 +51,7 @@ def _qdex(args) -> int:
         info = qdex.prepare(args.record, args.window, args.out, load_cluster(args.cluster), orbitals=args.orbitals,
                             geom=args.geom, threads=args.threads, max_states=args.max_states)
     else:
-        info = qdex.summary(args.dir, args.window, args.bright_f)
+        info = qdex.summary(args.dir, args.bright_f)
         if args.output:
             open(args.output, "w").write(json.dumps(info, indent=1) + "\n")
     print(json.dumps(info, indent=1))
@@ -143,8 +143,7 @@ def main(argv=None) -> int:
     p.add_argument("--threads", type=int, default=8)
     p.add_argument("--max-states", type=int, help="occupied and virtual MOs in the sBSE, at most (default 1000)")
     p = qp.add_parser("summary", help="frontier levels, gaps and excitons (spin-free and SOC) as JSON")
-    p.add_argument("dir")
-    p.add_argument("--window", required=True)
+    p.add_argument("dir", help="QDEX run directory (qdex_electronic.h5, qdex_excitations.h5)")
     p.add_argument("-o", "--output")
     p.add_argument("--bright-f", type=float, default=0.05)
 
