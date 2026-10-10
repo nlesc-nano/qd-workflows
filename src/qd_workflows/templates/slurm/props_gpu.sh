@@ -19,6 +19,7 @@ export QDPROPS_XTB=$CONDA_PREFIX/bin/xtb
 export QDPROPS_GXTB={{GXTB}}
 export QDPROPS_CIF_DIRS={{CIF_DIRS}}
 export QDPROPS_REFS={{REFS}}
+{{EXTRA_ENV}}
 
 nvidia-smi -L
 {{RUN}}

@@ -98,5 +98,6 @@ def _job(cluster: dict, name: str, wall: str, qos: str | None, run: str) -> str:
         "MEM": pp.get("mem", "32G"), "SETUP": "\n".join(cluster.get("setup", [])),
         "CONDA_INIT": pp.get("conda_init", ""), "CONDA_ENV": pp["conda_env"], "MODEL": pp["model"],
         "GXTB": pp["gxtb"], "CIF_DIRS": os.pathsep.join(pp.get("cif_dirs", [])), "REFS": pp["refs"],
+        "EXTRA_ENV": "\n".join(f"export {k}={v}" for k, v in (pp.get("env") or {}).items()),
     }
     return render((TEMPLATES / "slurm" / "props_gpu.sh").read_text(), job)

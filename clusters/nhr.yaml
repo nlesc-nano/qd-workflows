@@ -1,0 +1,62 @@
+# NHR@ZIB (Lise / Emmy, login blogin.nhr.zib.de, user becivinf). $WORK = /scratch/usr/becivinf.
+# Test partitions (cpu-genoa:test, gpu-a100:test, gpu-h200:test) share one running job per user
+# (testpartqos); the regular partitions take short jobs too and often have idle nodes.
+name: nhr
+scheduler: slurm
+cores_per_node: 192          # cpu-genoa
+request: cores
+min_cores: 48
+mem_per_cpu: 7g              # ~1.5 TB per 192-core node
+qos: normal
+setup: []
+qdw_python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
+
+cp2k:
+  # Ivan's own CP2K 2026.2 build: TREXIO, GauXC + Skala, ELPA, libint (the cp2k/2026.1 module has no TREXIO)
+  module: null
+  env_script: /scratch/usr/becivinf/sw/cp2k-2026.2/install/cp2k_env
+  executable: cp2k.psmp
+  omp_num_threads: 1
+  data_dir: /scratch/usr/becivinf/cp2k_basis
+  basis_file: BASIS_MOLOPT_UZH
+  potential_file: POTENTIAL_UZH
+  basis: DZVP-MOLOPT-GGA-GTH
+  potential: GTH-GGA
+  time:
+    geo_opt: "12:00:00"
+    pdos: "06:00:00"
+    trexio: "06:00:00"
+    sample: "02:00:00"
+    chain: "12:00:00"
+  calibration:
+    basis_functions: 24000
+    cores: 240
+    memory_gb: 340
+
+qdex:
+  command: /home/becivinf/miniforge3/envs/qdex/bin/qdex
+  pythonpath: /scratch/usr/becivinf/QDEX
+  gth_soc_file: /scratch/usr/becivinf/QDEX/tests/CdSe/1.2nm/GTH_SOC_POTENTIALS.txt
+  max_states: 1000
+  eps_out: 2.24
+  g_shell: 2
+
+# GPU jobs (Orchestr.AI run_type PROPS): one A100 80 GB of a 4-GPU, 144-core node (gpu-a100),
+# or one H200 of a 4-GPU, 256-core node (gpu-h200).
+props:
+  partition: gpu-a100
+  gres: gpu:A100:1
+  cpus: 36
+  mem: 200G
+  time: "00:30:00"
+  conda_init: source /home/becivinf/miniforge3/etc/profile.d/conda.sh
+  conda_env: qdw-compute
+  env:
+    PYTHONPATH: /scratch/usr/becivinf/qdw_tests/B/Orchestr.AI/src
+  model: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/models/macemh1model
+  head: omat_pbe
+  gxtb: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/xtb/xtb-6.7.1/bin/gxtb
+  cif_dirs:
+    - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/cifs
+    - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/library/cifs
+  refs: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/references
