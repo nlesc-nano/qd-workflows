@@ -60,3 +60,12 @@ props:
     - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/cifs
     - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/library/cifs
   refs: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/references
+  # xTB steps (electronic, vibspec, solvation, sites) and the report run in a CPU job that the GPU
+  # job submits when it ends: g-xTB / GFN2-xTB are CPU programs and left the A100 idle. Half a
+  # Genoa node: many 4-8 thread single points side by side (g-xTB, 316 atoms: 48 s on 4 threads,
+  # 31 s on 8, 21 s on 32), all cores for one run of a large dot.
+  cpu:
+    partition: cpu-genoa
+    cpus: 96
+    mem: 180G
+    time: "01:00:00"
