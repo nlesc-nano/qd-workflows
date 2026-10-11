@@ -5,12 +5,11 @@
 #SBATCH -N {{NODES}}
 #SBATCH --mem-per-cpu={{MEM_PER_CPU}}
 #SBATCH --qos={{QOS}}
-{{SETUP}}
-module purge
-module load {{MODULE}}
+{{PARTITION}}{{SETUP}}
+{{CP2K_SETUP}}
 
 echo "${SLURM_NTASKS} processes"
 
 export OMP_NUM_THREADS={{OMP_NUM_THREADS}}
 
-mpirun -np ${SLURM_NTASKS} {{EXECUTABLE}} -i {{INPUT}} -o {{OUTPUT}}
+{{LAUNCH}} {{EXECUTABLE}} -i {{INPUT}} -o {{OUTPUT}}

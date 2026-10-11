@@ -10,12 +10,18 @@ mem_per_cpu: 7g              # ~1.5 TB per 192-core node
 qos: normal
 setup: []
 qdw_python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
+# qd_workflows and Orchestr.AI are not installed in that environment: the chain and the GPU job's
+# hand-off reach them through this PYTHONPATH.
+qdw_pythonpath: /scratch/usr/becivinf/qdw_tests/B/qd-workflows/src:/scratch/usr/becivinf/qdw_tests/B/Orchestr.AI/src
 
 cp2k:
   # Ivan's own CP2K 2026.2 build: TREXIO, GauXC + Skala, ELPA, libint (the cp2k/2026.1 module has no TREXIO)
   module: null
   env_script: /scratch/usr/becivinf/sw/cp2k-2026.2/install/cp2k_env
   executable: cp2k.psmp
+  partition: cpu-genoa      # the build targets Genoa (the default cpu-clx is Cascade Lake)
+  launcher: srun            # SLURM-built OpenMPI: srun (no mpirun on the path)
+  field_parallel: 13        # finite-field single points run side by side in the chain
   omp_num_threads: 1
   data_dir: /scratch/usr/becivinf/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH
@@ -44,6 +50,7 @@ qdex:
 # GPU jobs (Orchestr.AI run_type PROPS): one A100 80 GB of a 4-GPU, 144-core node (gpu-a100),
 # or one H200 of a 4-GPU, 256-core node (gpu-h200).
 props:
+  dft_chain: true           # the GPU job submits a CP2K chain per record; the CPU job waits for them
   partition: gpu-a100
   gres: gpu:A100:1
   cpus: 36

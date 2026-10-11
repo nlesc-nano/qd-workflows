@@ -47,6 +47,25 @@ def cell_abc(coords: np.ndarray, vacuum: float = VACUUM_A) -> str:
     return " ".join(f"{x:.3f}" for x in extent)
 
 
+def cp2k_setup(cp: dict) -> str:
+    """Shell lines that make CP2K available: an environment script (own builds) or a module."""
+    if cp.get("env_script"):
+        return f"unset I_MPI_ROOT\nsource {cp['env_script']}"
+    return f"module purge\nmodule load {cp['module']}"
+
+
+def cp2k_launch(cp: dict, ranks: str = "${SLURM_NTASKS}") -> str:
+    """MPI launch prefix: srun (SLURM-native builds) or mpirun (default)."""
+    if cp.get("launcher") == "srun":
+        return f"srun --exact -n {ranks} --cpu-bind=cores"
+    return f"mpirun -np {ranks}"
+
+
+def cp2k_partition(cp: dict) -> str:
+    """An #SBATCH -p line when the profile names the CPU partition CP2K was built for."""
+    return f"#SBATCH -p {cp['partition']}\n" if cp.get("partition") else ""
+
+
 def local_data_dir(cluster: dict, override: str | None = None) -> Path:
     """Where the basis and potential files are read from on this machine (inputs keep the cluster path)."""
     for cand in (override, os.environ.get("QDW_CP2K_DATA"), cluster["cp2k"]["data_dir"]):
@@ -133,7 +152,7 @@ def prepare(
         "QOS": qos or cluster.get("qos", "regular"),
         # Shell setup the job needs whatever shell submitted it (e.g. Lmod for `module`).
         "SETUP": "\n".join(cluster.get("setup", [])),
-        "MODULE": cp["module"],
+        "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "PARTITION": cp2k_partition(cp),
         "OMP_NUM_THREADS": cp.get("omp_num_threads", 1),
         "EXECUTABLE": cp["executable"],
         "INPUT": "cp2k.inp",
@@ -156,12 +175,14 @@ def prepare(
 
 def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: str = "default",
           record: str | None = None, charge: int = 0, optimizer: str = "auto", data_dir: str | None = None,
-          time: str | None = None, qos: str | None = None) -> dict:
+          time: str | None = None, qos: str | None = None, field: bool = True) -> dict:
     """
     One job for the whole CP2K track of a structure: `<out_dir>/geo_opt/` is
-    prepared now; `<out_dir>/chain.sh` runs geo_opt, then prepares and runs the
-    PDOS and TREXIO steps and trims the TREXIO file, skipping finished steps.
-    With a `record` (record.json), QDEX runs last on the trimmed orbitals.
+    prepared now; `<out_dir>/chain.sh` runs geo_opt, the finite-field single points
+    (`field`: Born charges, Raman tensors, Hirshfeld charges, Orchestr.AI qd.field),
+    then prepares and runs the PDOS and TREXIO steps and trims the TREXIO file,
+    skipping finished steps. With a `record` (record.json), QDEX runs last on the
+    trimmed orbitals, and the field step adds the record's monomers (props/monomers.xyz).
     Cores and memory are sized for the structure, the same for every step.
     """
     out = Path(out_dir)
@@ -180,9 +201,13 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "JOB_NAME": f"cp2k-{project}"[:64], "TIME": total_time, "NTASKS": res["cores"],
         "NODES": -(-res["cores"] // int(cluster["cores_per_node"])), "MEM_PER_CPU": res["mem_per_cpu"],
         "QOS": qos or cluster.get("qos", "regular"), "SETUP": "\n".join(cluster.get("setup", [])),
-        "MODULE": cp["module"], "OMP_NUM_THREADS": cp.get("omp_num_threads", 1), "EXECUTABLE": cp["executable"],
-        "PROJECT": project, "QDW_PYTHON": py, "CLUSTER": cluster_ref,
-        "QDEX": cluster.get("qdex", {}).get("command", "qdex"),
+        "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "LAUNCH_N": cp2k_launch(cp, "$1"),
+        "PARTITION": cp2k_partition(cp),
+        "OMP_NUM_THREADS": cp.get("omp_num_threads", 1), "EXECUTABLE": cp["executable"],
+        "PROJECT": project, "QDW_PYTHON": py, "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
+        "CLUSTER": cluster_ref, "QDEX": cluster.get("qdex", {}).get("command", "qdex"),
+        "FIELD": "1" if field else "0", "FIELD_PARALLEL": int(cp.get("field_parallel", 13)),
+        "RECORD_DIR": str(Path(record).resolve().parent) if record else "",
     }
     (out / "chain.sh").write_text(render((TEMPLATES / "slurm" / "cp2k_chain.sh").read_text(), job))
     return {**info, "chain": str(out / "chain.sh")}

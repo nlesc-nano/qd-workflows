@@ -65,7 +65,16 @@ def _qdex(args) -> int:
 
 
 def _props(args) -> int:
-    from .props import bench, prepare
+    from .props import bench, chains, prepare
+    if args.action == "chains":
+        import yaml
+        recs = list(args.records or [])
+        if args.config:
+            recs += yaml.safe_load(open(args.config))["props"]["records"]
+        ids = chains(recs, load_cluster(args.cluster), args.cluster, max_atoms=args.max_atoms, submit=args.submit,
+                     time=args.time, qos=args.qos)
+        print(" ".join(ids))                   # last line: the job ids (the GPU job's hand-off reads it)
+        return 0
     if args.action == "bench":
         print(json.dumps(bench(args.out, load_cluster(args.cluster), sizes=args.sizes, time=args.time,
                                qos=args.qos, extra=args.extra), indent=1))
@@ -177,6 +186,14 @@ def main(argv=None) -> int:
     p.add_argument("--md", action="store_true", help="also run MD (constant-T and ramp replicas): the MD subset")
     p.add_argument("--cpu-time", default=None, help="wall time of the CPU (xTB) stage, if the profile splits the run")
 
+    p = pp.add_parser("chains", help="one CP2K chain (geo_opt, field, PDOS, TREXIO, QDEX) per record at <record>/cp2k")
+    p.add_argument("records", nargs="*", help="record directories")
+    p.add_argument("--config", help="a PROPS config.yaml whose props.records are used")
+    p.add_argument("--cluster", default="default")
+    p.add_argument("--max-atoms", type=int, default=2000)
+    p.add_argument("--submit", action="store_true", help="sbatch each chain; prints the job ids")
+    p.add_argument("--time")
+    p.add_argument("--qos")
     p = pp.add_parser("bench", help="GPU job timing force calls and Hessians against the atom count")
     p.add_argument("--out", required=True)
     p.add_argument("--cluster", default="default")
