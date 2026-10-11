@@ -173,6 +173,22 @@ def prepare(
     return info
 
 
+def chain_time(n_bf: int, cores: int, cap: str = "12:00:00") -> str:
+    """
+    Wall time of a whole chain from the cost of a PBE geometry step on CdSe dots (NHR and
+    hyperion runs: 1.3 core-h at 5.9k basis functions, 3.6-4.8 at 20k, 9-11 at 31k, 22-38 at
+    34-43k, i.e. ~4.1e-7 n_bf^1.72, conservative in the middle): ~160 step-equivalents
+    (60 geo_opt steps, the field runs at ~5 steps each sharing the cores, PDOS, TREXIO),
+    1.5 x for safety, at least one hour, at most `cap`. A flat 12 h kept a 35-atom chain
+    waiting for hours for a backfill slot.
+    """
+    hours = 1.5 * 160 * 4.1e-7 * max(n_bf, 1) ** 1.72 / max(cores, 1)
+    h, m, s = (int(x) for x in cap.split(":"))
+    hours = min(max(hours, 1.0), h + m / 60 + s / 3600)
+    total = int(round(hours * 60))
+    return f"{total // 60:02d}:{total % 60:02d}:00"
+
+
 def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: str = "default",
           record: str | None = None, charge: int = 0, optimizer: str = "auto", data_dir: str | None = None,
           time: str | None = None, qos: str | None = None, field: bool = True) -> dict:
@@ -196,7 +212,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
     py = cluster.get("qdw_python")
     if not py:
         raise KeyError("cluster profile needs qdw_python (the python with qd_workflows installed)")
-    total_time = time or cp["time"].get("chain", cp["time"]["geo_opt"])
+    total_time = time or chain_time(info["basis_functions"], res["cores"], cp["time"].get("chain", cp["time"]["geo_opt"]))
     job = {
         "JOB_NAME": f"cp2k-{project}"[:64], "TIME": total_time, "NTASKS": res["cores"],
         "NODES": -(-res["cores"] // int(cluster["cores_per_node"])), "MEM_PER_CPU": res["mem_per_cpu"],
