@@ -36,6 +36,16 @@ def _cp2k(args) -> int:
         symbols, coords = outputs.last_frame(args.pos)
         write_xyz(args.output, symbols, coords, "CP2K geo_opt, last frame")
         print(f"{len(symbols)} atoms -> {args.output}")
+    elif args.action == "esp":
+        from .cp2k import esp
+        if args.esp_action == "prepare":
+            print(" ".join(esp.prepare(args.base, args.out, stripped=args.stripped, monomers=args.monomers)))
+        elif args.esp_action == "status":
+            print(esp.status(args.dir))
+        else:
+            data = esp.write(args.dir, args.output)
+            print(json.dumps({n: {k: round(v, 4) if isinstance(v, float) else v for k, v in s.items()}
+                              for n, s in data["species"].items()}, indent=1))
     elif args.action == "label":
         from .xyz import read_xyz
         symbols, _ = read_xyz(args.xyz)
@@ -177,6 +187,19 @@ def main(argv=None) -> int:
 
     p = cp.add_parser("relaxed", help="last geo_opt frame as an XYZ file")
     p.add_argument("pos")
+    p.add_argument("-o", "--output", required=True)
+
+    ep = cp.add_parser("esp", help="solvation cubes: intact and fully stripped dot, monomers -> COSMO (solvation.json)"
+                       ).add_subparsers(dest="esp_action", required=True)
+    p = ep.add_parser("prepare", help="the runs, from the chain's single-point input (field/base/cp2k.inp)")
+    p.add_argument("base")
+    p.add_argument("out")
+    p.add_argument("--stripped", help="fully stripped dot: props/detach_<K>.xyz")
+    p.add_argument("--monomers", help="props/monomers.xyz (frames MA, MX)")
+    p = ep.add_parser("status", help='"all done" or the runs still to do')
+    p.add_argument("dir")
+    p = ep.add_parser("collect", help="COSMO energy and isosurface area of every run")
+    p.add_argument("dir")
     p.add_argument("-o", "--output", required=True)
 
     p = cp.add_parser("label", help="energy and forces of a sample single point")

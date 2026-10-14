@@ -68,6 +68,38 @@ if [ "{{FIELD}}" = "1" ]; then
     [ "$(orch_field status field)" = "all done" ] || { echo "[chain] field runs incomplete"; exit 1; }
 fi
 
+# 2b. Solvation: potential and density cubes of the intact dot (restart of the geo_opt .wfn), the
+#     fully stripped dot (last state of the MACE desorption ladder) and the MA and MX_q monomers ->
+#     COSMO on the DFT potential at the density isosurface + its area (solvation.json, read by
+#     Orchestr.AI's solvation step). Needs the field step's base input. Finished runs are skipped.
+if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here must not stop the chain
+    PROPS="{{RECORD_DIR}}/props"
+    STRIP=""; kmax=-1
+    for f in "$PROPS"/detach_*.xyz; do
+        [ -s "$f" ] || continue; k=${f##*detach_}; k=${k%.xyz}
+        if [ "$k" -gt "$kmax" ]; then kmax=$k; STRIP=$f; fi
+    done
+    [ -s esp/runs.txt ] || qdw cp2k esp prepare field/base/cp2k.inp esp $( [ -n "$STRIP" ] && echo --stripped "$STRIP" ) \
+        $( [ -s "$PROPS/monomers.xyz" ] && echo --monomers "$PROPS/monomers.xyz" ) > /dev/null
+    todo=$(qdw cp2k esp status esp)
+    if [ "$todo" != "all done" ]; then
+        echo "[chain] esp: $todo"
+        for r in $todo; do
+            case $r in
+                dot_0) (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS / 2 > 0 ? SLURM_NTASKS / 2 : 1 ))) & ;;
+                dot_*) (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS / 2 > 0 ? SLURM_NTASKS / 2 : 1 ))) & ;;
+                *)     (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS < 8 ? SLURM_NTASKS : 8 ))) ;;
+            esac
+        done
+        wait
+    fi
+    if [ "$(qdw cp2k esp status esp)" = "all done" ]; then
+        qdw cp2k esp collect esp -o solvation.json > /dev/null && echo "[chain] solvation.json"
+    else
+        echo "[chain] esp runs incomplete: solvation from the field step's charges"
+    fi
+) || echo "[chain] solvation step failed: solvation from the field step's charges"; fi
+
 # 3. PDOS single point (all MO energies)
 [ -d pdos ] || qdw cp2k prepare relaxed.xyz --step pdos --project "$P-pdos" --wfn "../geo_opt/$P-RESTART.wfn" --out pdos $EXTRA
 if ! ls pdos/*.pdos >/dev/null 2>&1; then echo "[chain] pdos"; (cd pdos && cp2k); fi
