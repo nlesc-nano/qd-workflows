@@ -241,6 +241,9 @@ def isosurface(density: dict, rho0: float = RHO_ISO, spacing: float = ISO_SPACIN
     stride = max(1, int(round(spacing / min(h))))
     verts, faces, _, _ = marching_cubes(density["data"], level=rho0, spacing=tuple(h), step_size=stride)
     verts = verts + np.array([ax[0] for ax in density["axes"]])
+    # marching cubes can return coincident vertices (a zero distance in the COSMO matrix): merge them
+    verts, inv = np.unique(np.round(verts, 6), axis=0, return_inverse=True)
+    faces = inv.reshape(-1)[faces]
     tri = verts[faces]
     tri_area = 0.5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
     # surface elements on the mesh vertices, each with a third of its triangles' area: more uniform
