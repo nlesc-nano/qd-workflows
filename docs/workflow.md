@@ -1,5 +1,7 @@
 # The qd-workflows pipeline
 
+Formulas of every step: [formulas.md](formulas.md).
+
 One batch of library records goes through three Slurm stages: MACE-MH-1 on a GPU, one CP2K
 chain per dot on CPU nodes, then the CPU stage that assembles the properties and the report.
 Every step is cached: a job that stops continues where it stopped when resubmitted.
@@ -10,9 +12,9 @@ flowchart TB
 
     subgraph GPU["1 · GPU stage: MACE-MH-1"]
         direction LR
-        RELAX["relax"] --> STRUCT["structure<br/>core / surface / ligand"] --> HESS["hessian<br/>analytic ≤ 2,000 atoms"]
-        HESS --> STAB["stability<br/>monomers.xyz"]
-        HESS --> DET["detachment ≤ 600 atoms<br/>detach_k.xyz"]
+        RELAX["relax"] --> STRUCT["structure<br/>core / surface / ligand"] --> HESS["hessian<br/>frequencies → G°(T), 1 M, qRRHO"]
+        HESS --> STAB["stability<br/>bulk + monomer references<br/>ΔG_dec, ΔG_bind, T_diss (gas)"]
+        HESS --> DET["detachment ≤ 600 atoms<br/>ladder ΔG_k, ⟨k⟩(T, μ)"]
         HESS --> WIG["wigner (+ md)"]
     end
 
@@ -29,9 +31,11 @@ flowchart TB
     subgraph CPU["3 · CPU stage: assembly"]
         direction LR
         F2["field<br/>Born charges, Raman tensors"] --> VIB["vibspec<br/>IR / Raman"]
-        F2 --> SOLV["solvation<br/>COSMO + cavity"] --> SITES["sites<br/>binding map"]
+        F2 --> SOLV["solvation<br/>ΔG_solv(ε) per species"] --> SITES["sites<br/>ΔG_site per unit"]
+        SOLV --> EQ["solution thermochemistry<br/>μ_i(T, ε, c), ΔG_k, ΔG_dec, ΔG_bind,<br/>coupled equilibria"]
         VIB --> REP["report<br/>properties.json + dashboards"]
         SITES --> REP
+        EQ --> REP
     end
 
     CPU --> WEB["QDSpace webapp"]
@@ -44,6 +48,36 @@ flowchart TB
     classDef side fill:#f4f4f1,stroke:#8a8984,stroke-dasharray: 4 3
 ```
 
+## Thermochemistry and equilibria
+
+What happens to the energies after the Hessian. Every box is a formula in
+[formulas.md](formulas.md); the dashboards evaluate the last two rows live (sliders for T, ε,
+concentrations and the precursor shift).
+
+```mermaid
+flowchart TB
+    E["E_i: MACE-MH-1 energy at the minimum"] --> G0
+    NU["ν_j: MACE-MH-1 Hessian"] --> G0
+    G0["G°_i(T): ideal solute at 1 M<br/>translation + rotation (σ) + vibrations (quasi-RRHO)"]
+    BULK["bulk MA: phonons → G_bulk(T)"]
+    G0 --> GS["G_sol,i(T, ε) = G°_i + ΔG_solv,i(ε)<br/>COSMO on the DFT potential + cavity"]
+    GS --> MU["μ_i = G_sol,i + kT ln c_i<br/>(+ Δμ_prec for the MA monomer)"]
+
+    MU --> R1["decomposition<br/>dot → n MA(bulk) + m MX_q<br/>ΔG_dec per MA"]
+    BULK --> R1
+    MU --> R2["binding<br/>dot → n MA + m MX_q<br/>ΔG_bind per unit, T_diss"]
+    MU --> R3["desorption ladder<br/>dot_k−1 → dot_k + MX_q<br/>ΔG_k(T, ε, c)"]
+    MU --> R4["sites<br/>dot → dot − u_i + MX_q<br/>ΔG_site,i"]
+
+    R3 --> K["⟨k⟩(T, μ_MX): Boltzmann over every<br/>configuration the search relaxed"]
+    R3 --> CEQ["coupled equilibria<br/>c_i = e^(−ΔG°_i/kT) c_MA^n_i c_MX^m_i<br/>+ mass balance for C_MA, C_MX<br/>(+ bulk precipitation above c_sat)"]
+    R2 --> CEQ
+    K --> DASH["report and dashboards"]
+    CEQ --> DASH
+    R1 --> DASH
+    R4 --> DASH
+```
+
 ## What each engine provides
 
 | Quantity | Source (dots ≤ 2,000 atoms) |
@@ -53,8 +87,8 @@ flowchart TB
 | IR / Raman intensities | DFT Born charges and Raman tensors (finite field) on the MACE modes |
 | Solvation | COSMO on the DFT potential + cavity/dispersion |
 
-xTB is not used in the batch. Orchestr.AI keeps its xTB steps (electronic levels, g-xTB IR/Raman,
-GB on xTB charges) for runs without a DFT chain (`vibspec_source gxtb`, `solvation_charges xtb`).
+No xTB: `qdw props prepare` sets `vibspec_source: dft` and `solvation_charges: dft`, so IR/Raman and
+solvation come only from the DFT chain, and the xTB electronic step is not part of the batch.
 
 ## Size routing
 
@@ -62,7 +96,7 @@ GB on xTB charges) for runs without a DFT chain (`vibspec_source gxtb`, `solvati
 |---|---|
 | ≤ 600 | everything, including the desorption ladder and its thermochemistry |
 | ≤ 2,000 | analytic Hessian, the CP2K chain and QDEX; no desorption ladder above 600 |
-| > 2,000 | MACE relaxation and structure analysis only: every step that needs the Hessian (and the report) is skipped |
+| > 2,000 | not in the batch: `qdw props prepare` leaves these records out (to be decided) |
 
 ## Commands
 
