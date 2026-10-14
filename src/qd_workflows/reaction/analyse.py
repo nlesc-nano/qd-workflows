@@ -154,8 +154,10 @@ def species_result(rx: dict, name: str, run: Path) -> dict:
 def collect(run_dir: str) -> dict:
     run = Path(run_dir)
     rx = json.loads((run / "reaction.json").read_text())
-    res = {k: rx.get(k) for k in ("name", "equation", "nu", "T", "conditions", "scan", "per", "settings", "energy_method", "ligand")}
-    res["species"] = {n: species_result(rx, n, run) for n in rx["nu"]}
+    res = {k: rx.get(k) for k in ("name", "equation", "nu", "T", "conditions", "scan", "per", "settings", "energy_method",
+                                  "ligand", "equilibria", "recipe")}
+    res["equilibria"] = res["equilibria"] or []
+    res["species"] = {n: species_result(rx, n, run) for n in rx["species"]}
     # the electronic reaction energy from the other sources at hand, to show how much rides on it
     st = rx["settings"]
     alt = {f"given ({rx.get('energy_method', 'PBE')})": "energy_eV", "MACE-MH-1 at the MACE minima": "energy_mace_min_eV",
@@ -167,7 +169,7 @@ def collect(run_dir: str) -> dict:
               "pbe0d3_mace": "PBE0-D3(BJ)@MACE-MH1 geometries"}
     res["energy_sets"] = {"given": method}
     for k, lab in labels.items():
-        if all(k in res["species"][n].get("energies", {}) for n in rx["nu"]):
+        if all(k in res["species"][n].get("energies", {}) for n in res["species"]):
             res["energy_sets"][k] = lab
     res["dE_alternatives_eV"] = {
         label: (sum(v * res["species"][n][key] for n, v in rx["nu"].items())

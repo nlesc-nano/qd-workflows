@@ -87,6 +87,25 @@ settings:
 * **GB**: Generalized Born on RESP charges. CP2K's default Hirshfeld charges (Gaussian shape
   functions) overestimate dipoles 2-30x (AsH3 5.3 D vs 0.19 D) and must not be used for this.
 
+## Recipe: what is put in the flask
+
+`examples/reaction_InAs_toluene/`: washed dots in toluene treated with HCl, oleylamine (CH3NH2 as
+stand-in) added or not. The reaction and the side equilibria (`equilibria:`) are solved together
+from the amounts put in (`recipe:`): dot concentration, reagent equivalents per dot, additive
+concentration (0 allowed; the etched dots release their own amines).
+
+    c_i      = c_i0 + sum_r nu_ri xi_r                (dissolved: mass balance)
+    a_i      fixed                                    (gas at its p: open flask; pure liquid)
+    0        = dG_r^0 / kT + sum_i nu_ri ln a_i       (every reaction r)
+    c_dot0   = c_dot, c_reagent0 = n_eq c_dot, c_additive0 = c_add, all else 0
+    theta    = xi_0 / c_dot                           (fraction of the dots converted)
+
+G is convex in the extents, so each residual rises with its extent: bisection on the main extent,
+and for each trial the side extent (closed form for one A + B -> C: (c + y) = K (a - y)(b - y)).
+The page has sliders for c_dot, log10 equivalents, the additive and a dG correction of the side
+equilibrium (ion pairing beyond the computed H-bonded complex). All 12 HCl per dot are one step:
+theta is the fraction of fully converted dots.
+
 ## On NHR
 
 * Jobs are charged to `bep00157` (cluster profile `account:`; `SBATCH_ACCOUNT` in `~/.bashrc`).

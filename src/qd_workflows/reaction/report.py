@@ -162,6 +162,27 @@ def plots(res: dict, out: Path) -> None:
     fig.savefig(out / "conversion.png", dpi=160)
     plt.close(fig)
 
+    if res.get("recipe"):
+        rc = res["recipe"]
+        eqs = np.geomspace(1, 1e4, 41)
+        sets = [k for k in ("given", "pbe0_mace", "pbe0d3_mace") if k in (res.get("energy_sets") or {"given": "given"})]
+        fig, axes = plt.subplots(1, len(sets), figsize=(4.6 * len(sets), 3.8), squeeze=False, sharey=True)
+        adds = [0.0, 1e-3, 1e-1, 1.0] if rc.get("additive") else [0.0]
+        for ax, es in zip(axes.flat, sets):
+            for k, ca in enumerate(adds):
+                th = [model.speciate(res, {**ms[main], "energy": es}, equivalents=e, c_additive=ca, ti=i)["theta"][i] for e in eqs]
+                ax.plot(eqs, 100 * np.array(th), color=SERIES[k], lw=2,
+                        label=f"{rc['additive']} {ca:g} M" if ca else f"no {rc.get('additive') or 'additive'} added")
+            ax.set_xscale("log")
+            ax.set_ylim(-2, 102)
+            _style(ax, f"{rc['reagent']} equivalents per dot", "dots converted (%)",
+                   (res.get("energy_sets") or {}).get(es, es))
+        axes.flat[0].legend(frameon=False, fontsize=8)
+        fig.suptitle(f"Recipe at {res['T'][i]:g} K, dots {rc['c_dot']:g} M, {main}", fontsize=10, x=0.01, ha="left")
+        fig.tight_layout()
+        fig.savefig(out / "recipe.png", dpi=160)
+        plt.close(fig)
+
     eps = np.geomspace(solvation.NONEL_MIN_EPS, 80, 120)
     names = list(res["species"])
     ncol = min(3, len(names))
@@ -270,6 +291,55 @@ function reaction(c) {            // species as set on the page: SP(n)
   });
   return out;
 }
+// Recipe: the reaction and its side equilibria (e.g. amine + HCl -> adduct) from the amounts put in.
+//   c_i = c_i0 + sum_r nu_ri xi_r (dissolved), a_i fixed (gas, pure liquid); g_r = dG_r0/kT + sum_i nu_ri ln a_i = 0.
+// Main extent by bisection; for each trial the side extents: closed form for one A + B -> C, else bisection sweeps.
+function recipeSetup(c) {
+  const rx = [R.nu].concat((R.equilibria || []).map(e => e.nu));
+  const names = [...new Set(rx.flatMap(nu => Object.keys(nu)))];
+  const sp = Object.fromEntries(names.map(n => [n, SP(n)]));
+  const bal = names.filter(n => sp[n].phase === "solute");
+  const G = Object.fromEntries(names.map(n => [n, dgSolv(sp[n], c)]));
+  const lig = R.ligand ? R.nu[R.ligand.species] * st.dglig : 0;
+  const dg0 = rx.map((nu, r) => R.T.map((t, i) => { let g = r === 0 ? lig : st.dgbind;
+    for (const n in nu) g += nu[n] * (E(sp[n]) + sp[n].thermo.G_corr[i] + G[n]); return g; }));
+  const fixed = rx.map(nu => R.T.map(t => { let f = 0; for (const n in nu) if (!bal.includes(n)) f += nu[n] * lnA(sp[n], t); return f; }));
+  const s1 = rx[1] || {}, k1 = Object.keys(s1);
+  const quad = rx.length === 2 && k1.length === 3 && k1.every(n => bal.includes(n) && Math.abs(s1[n]) === 1) && k1.filter(n => s1[n] < 0).length === 2;
+  return {rx, bal, dg0, fixed, quad};
+}
+function speciate(S, i, cdot, eqv, cadd) {
+  const kT = KB * R.T[i], rx = S.rx, rc = R.recipe;
+  const n0 = Object.fromEntries(S.bal.map(n => [n, 0]));
+  n0[rc.dot] = cdot; n0[rc.reagent] += eqv * cdot; if (rc.additive in n0) n0[rc.additive] += cadd;
+  const shift = (a0, nu, x) => { const a = {...a0}; for (const n in nu) if (n in a) a[n] += nu[n] * x; return a; };
+  const amounts = xi => rx.reduce((a, nu, r) => xi[r] ? shift(a, nu, xi[r]) : a, n0);
+  const g = (r, a) => { let f = S.dg0[r][i] / kT + S.fixed[r][i]; for (const n in rx[r]) if (n in a) f += rx[r][n] * Math.log(Math.max(a[n], 1e-300)); return f; };
+  const bounds = (nu, a) => { let lo = -Infinity, hi = Infinity;
+    for (const n in nu) { if (!(n in a)) continue; const v = nu[n]; if (v > 0) lo = Math.max(lo, -a[n] / v); else hi = Math.min(hi, a[n] / -v); } return [lo, hi]; };
+  const bis = (f, lo, hi) => { for (let q = 0; q < 64; q++) { const m = 0.5 * (lo + hi); if (f(m) < 0) lo = m; else hi = m; } return 0.5 * (lo + hi); };
+  const sides = x0 => {
+    const xi = [x0].concat(rx.slice(1).map(() => 0));
+    if (rx.length === 1) return xi;
+    if (S.quad) {             // (c + y) = K (a - y)(b - y): the root in [-c, min(a, b)]
+      const nu = rx[1], base = amounts([x0]), K = Math.exp(-(S.dg0[1][i] / kT + S.fixed[1][i]));
+      const [A, B] = Object.keys(nu).filter(n => nu[n] < 0), P = Object.keys(nu).find(n => nu[n] > 0);
+      const a = Math.max(base[A], 0), b = Math.max(base[B], 0), cc = Math.max(base[P], 0);
+      xi[1] = 2 * (K * a * b - cc) / (K * (a + b) + 1 + Math.sqrt(K * K * (a - b) ** 2 + 2 * K * (a + b) + 1 + 4 * K * cc));
+      return xi;
+    }
+    for (let sweep = 0; sweep < (rx.length > 2 ? 30 : 1); sweep++)
+      for (let r = 1; r < rx.length; r++) {
+        const rest = xi.slice(); rest[r] = 0; const a0 = amounts(rest), [lo, hi] = bounds(rx[r], a0);
+        if (isFinite(lo) && isFinite(hi) && hi > lo) xi[r] = bis(x => g(r, shift(a0, rx[r], x)), lo, hi);
+      }
+    return xi;
+  };
+  const [lo, hi] = bounds(rx[0], n0);
+  if (!isFinite(lo) || !isFinite(hi) || hi <= lo || !isFinite(S.dg0[0][i])) return {theta: NaN, a: {}};
+  const x0 = bis(x => g(0, amounts(sides(x))), lo, hi);
+  return {theta: x0 / cdot, a: amounts(sides(x0))};
+}
 function equilibrium(c) {         // mass balance over the dissolved species; gas and pure liquid at fixed activity
   const r = reaction(c), names = Object.keys(R.nu), sp = Object.fromEntries(names.map(n => [n, SP(n)]));
   const sol = names.filter(n => sp[n].phase === "solute"), oth = names.filter(n => !sol.includes(n));
@@ -300,7 +370,7 @@ PAGE = r"""<!doctype html>
 :root { --bg: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --ink3: #8a8984; --rule: #e6e5e0; --panel: #f4f4f1; --flag: #8a5a00; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; }
-h1 { font-size: 1.35rem; margin: 0 0 .2rem; } .eq { color: var(--ink2); font-family: ui-monospace, Menlo, monospace; font-size: .9rem; overflow-wrap: anywhere; }
+h1 { font-size: 1.35rem; margin: 0 0 .2rem; } h2 { font-size: 1.1rem; margin: 28px 0 .2rem; } .eq { color: var(--ink2); font-family: ui-monospace, Menlo, monospace; font-size: .9rem; overflow-wrap: anywhere; }
 .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 22px; background: var(--panel); padding: 12px 14px; border-radius: 8px; margin: 14px 0; }
 .controls label { display: grid; gap: 2px; font-size: .82rem; color: var(--ink2); }
 .controls .v { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -326,6 +396,18 @@ input[type=range] { width: 100%; }
  <div class="card"><div class="plot" id="pConv"></div></div>
  <div class="card"><div class="tbl" id="tab"></div></div>
 </div>
+<div id="recipe" hidden>
+<h2>Recipe: what is put in the flask</h2>
+<div class="note" id="rcNote"></div>
+<div class="controls" id="rctl"></div>
+<div class="kpi" id="rkpi"></div>
+<div class="grid">
+ <div class="card"><div class="plot" id="pRecEq"></div></div>
+ <div class="card"><div class="plot" id="pRecMap"></div></div>
+ <div class="card"><div class="plot" id="pRecSpec"></div></div>
+ <div class="card"><div class="plot" id="pRecT"></div></div>
+</div>
+</div>
 <div class="flags" id="flags"></div>
 <p class="note">ΔG = Σ ν<sub>i</sub> μ<sub>i</sub> + ν<sub>L</sub> ΔG<sub>lig</sub>. Dissolved: μ = E<sup>DFT</sup> + G<sup>corr</sup>(T) + ΔG<sub>solv</sub>(ε) + kT ln(c/1 M);
 gas in equilibrium with the headspace: μ = E<sup>DFT</sup> + G<sup>corr</sup>(T) + kT ln(p/c°RT), no solvation term; pure liquid: as dissolved, at c = c<sub>liquid</sub>.
@@ -345,7 +427,9 @@ const PHASES = {solute: ["dissolved", "c", "M", -12, 1.5], gas: ["gas (headspace
 const st = {eps: R.conditions.eps, gas: false, el: R.conditions.electrostatics || "cosmo",
             cav: R.conditions.cavity || "beta0", eset: "given",
             ti: R.T.reduce((b, t, i) => Math.abs(t - 298.15) < Math.abs(R.T[b] - 298.15) ? i : b, 0),
-            x: R.scan.species, dglig: R.ligand ? (R.ligand.dG_eV || 0) : 0,
+            x: R.scan.species, dglig: R.ligand ? (R.ligand.dG_eV || 0) : 0, dgbind: 0,
+            rc: R.recipe ? {lgdot: Math.log10(R.recipe.c_dot), lgeq: Math.log10(R.recipe.equivalents),
+                            add: R.recipe.c_additive > 0, lgadd: R.recipe.c_additive > 0 ? Math.log10(R.recipe.c_additive) : -2} : null,
             phase: Object.fromEntries(Object.entries(R.species).map(([n, s]) => [n, s.phase])),
             // each phase keeps its own value (log10 of c in M, p in bar, or c of the pure liquid in M)
             lg: Object.fromEntries(Object.entries(R.species).map(([n, s]) => [n, {solute: Math.log10(s.c), gas: Math.log10(s.p_bar || 1),
@@ -435,18 +519,82 @@ function draw() {
   Plotly.react("pConv", [{x: R.T, y: equilibrium(c), name: "conversion", line: {color: C[2], width: 2}, hovertemplate: "%{y:.1f} %"}],
     LAY("T (K)", "conversion (%)", {title: {text: "Equilibrium conversion (dissolved reactants at their c)", x: 0, font: {size: 13}}, yaxis: {range: [-2, 102], title: {text: "conversion (%)"}, gridcolor: "#e6e5e0"}, showlegend: false}), {displaylogo: false, responsive: true});
   let tb = `<table><tr><th>species</th><th>ν</th><th>atoms</th><th>E (${st.eset}) eV</th><th>G corr ${t} K</th><th>ΔG solv</th><th>COSMO el.</th><th>SCCS el.</th><th>GB el.</th><th>cav+disp</th><th>dipole DFT / RESP / Hirshfeld (D)</th><th>RMSD Å</th></tr>`;
-  for (const n in R.nu) { const s = SP(n), m = s.mace || {}, d = s.dipole_D || {};
+  for (const n in R.species) { const s = SP(n), m = s.mace || {}, d = s.dipole_D || {};
     const co = elec(s, c.eps, "cosmo"), sc = elec(s, c.eps, "sccs"), gb = elec(s, c.eps, "gb"), all = dgSolv(s, c);
     const cv = s.cavity ? cavTerm(c.gas ? 1 : c.eps, s.cavity.S_A2, s.cavity.V_A3, st.cav) : NaN;
     const dd = [d.dft, d.resp, d.hirshfeld].map(v => v === null || v === undefined ? "–" : v.toFixed(2)).join(" / ");
-    tb += `<tr><td>${n}</td><td>${R.nu[n]}</td><td>${s.n_atoms}</td><td>${E(s).toFixed(4)}</td><td>${fmt(s.thermo.G_corr[i])}</td><td>${fmt(all)}</td><td>${fmt(co)}</td><td>${fmt(sc)}</td><td>${fmt(gb)}</td><td>${fmt(cv)}</td><td>${dd}</td><td>${m.rmsd_heavy_A !== undefined ? m.rmsd_heavy_A.toFixed(3) : "n/a"}</td></tr>`; }
+    tb += `<tr><td>${n}</td><td>${R.nu[n] ?? "equil."}</td><td>${s.n_atoms}</td><td>${E(s).toFixed(4)}</td><td>${fmt(s.thermo.G_corr[i])}</td><td>${fmt(all)}</td><td>${fmt(co)}</td><td>${fmt(sc)}</td><td>${fmt(gb)}</td><td>${fmt(cv)}</td><td>${dd}</td><td>${m.rmsd_heavy_A !== undefined ? m.rmsd_heavy_A.toFixed(3) : "n/a"}</td></tr>`; }
   document.getElementById("tab").innerHTML = tb + "</table>";
+  if (R.recipe) drawRecipe(c);
   const fl = Object.entries(R.species).flatMap(([n, s]) => s.flags.map(f => `${n}: ${f}`));
   document.getElementById("flags").innerHTML = fl.length ? "<b>Flags</b><br>" + fl.map(f => f.replace(/</g, "&lt;")).join("<br>") : "";
 }
+function rctl() {                 // the recipe controls (dots, reagent equivalents, additive, side-equilibrium correction)
+  const rc = R.recipe, side = (R.equilibria || []).map(e => e.equation).join("; ");
+  document.getElementById("recipe").hidden = false;
+  let h = `<label><span>Dots (${rc.dot}): log<sub>10</sub> c / M <span class="v" id="vDot"></span></span><input id="r_lgdot" type="range" min="-8" max="-3" step="0.05" value="${st.rc.lgdot}"></label>`;
+  h += `<label><span>${rc.reagent} per dot: log<sub>10</sub> equivalents <span class="v" id="vEq"></span></span><input id="r_lgeq" type="range" min="0" max="4" step="0.02" value="${st.rc.lgeq}"></label>`;
+  if (rc.additive) {
+    h += `<label><span>${rc.additive} added</span><select id="r_add"><option value="0">none</option><option value="1">added</option></select></label>`;
+    h += `<label><span>${rc.additive} added: log<sub>10</sub> c / M <span class="v" id="vAdd"></span></span><input id="r_lgadd" type="range" min="-6" max="0.5" step="0.05" value="${st.rc.lgadd}"></label>`;
+  }
+  if (side) h += `<label title="Added to ΔG° of ${side}: e.g. ion pairing (ammonium chloride) beyond the H-bonded complex computed here"><span>ΔG° correction of ${side} (eV) <span class="v" id="vBind"></span></span><input id="r_dgbind" type="range" min="-1" max="0.5" step="0.01" value="${st.dgbind}"></label>`;
+  const c = document.getElementById("rctl"); c.innerHTML = h;
+  if (rc.additive) document.getElementById("r_add").value = st.rc.add ? "1" : "0";
+  c.addEventListener("input", e => {
+    const id = e.target.id, v = e.target.value;
+    if (id === "r_lgdot") st.rc.lgdot = +v; else if (id === "r_lgeq") st.rc.lgeq = +v; else if (id === "r_add") st.rc.add = v === "1";
+    else if (id === "r_lgadd") st.rc.lgadd = +v; else if (id === "r_dgbind") st.dgbind = +v;
+    draw();
+  });
+  document.getElementById("rcNote").innerHTML = `Equilibrium in solution of ${R.equation}` + (side ? ` together with ${side}` : "") +
+    `, from c(${rc.dot}), ${rc.reagent} = equivalents × c(${rc.dot})` + (rc.additive ? ` and the ${rc.additive} added (0 allowed: the dots release their own)` : "") +
+    `. Species set to <i>gas</i> above stay at their partial pressure (open flask), <i>pure liquid</i> at fixed activity; every dissolved species follows the mass balance (the concentration sliders above do not apply here). ` +
+    `θ: fraction of the dots converted (all ${-R.nu[rc.reagent]} ${rc.reagent} per dot in one step). Temperature: the decomposition slider; energy set, ε and solvation as chosen above.`;
+}
+const sci = v => isFinite(v) ? v.toExponential(2) : "n/a";
+function drawRecipe(c) {
+  const rc = R.recipe, S = recipeSetup(c), i = st.ti, t = R.T[i];
+  const cdot = Math.pow(10, st.rc.lgdot), eqv = Math.pow(10, st.rc.lgeq), cadd = rc.additive && st.rc.add ? Math.pow(10, st.rc.lgadd) : 0;
+  document.getElementById("vDot").textContent = sci(cdot) + " M";
+  document.getElementById("vEq").textContent = eqv.toFixed(eqv < 10 ? 1 : 0) + ` (${sci(eqv * cdot)} M)`;
+  if (rc.additive) { document.getElementById("vAdd").textContent = st.rc.add ? sci(cadd) + " M" : "(none)"; document.getElementById("r_lgadd").disabled = !st.rc.add; }
+  if (document.getElementById("vBind")) document.getElementById("vBind").textContent = (st.dgbind >= 0 ? "+" : "") + st.dgbind.toFixed(2);
+  const now = speciate(S, i, cdot, eqv, cadd), a = now.a;
+  const sideP = [...new Set((R.equilibria || []).flatMap(e => Object.keys(e.nu).filter(n => e.nu[n] > 0)))];
+  const shown = [rc.reagent, ...sideP, ...(rc.additive ? [rc.additive] : [])].filter(n => n in a);
+  document.getElementById("rkpi").innerHTML = `<div><span>dots converted at ${t} K</span><b>${isFinite(now.theta) ? (100 * now.theta).toFixed(1) + " %" : "n/a"}</b></div>` +
+    shown.map(n => `<div><span>${n === rc.reagent ? "free " : ""}${n}</span><b>${sci(a[n])} M</b></div>`).join("");
+  const cfg = {displaylogo: false, responsive: true};
+  const lgE = Array.from({length: 81}, (_, k) => 4 * k / 80);
+  const curves = [[0, `no ${rc.additive || "additive"} added`, "dash"]].concat(cadd > 0 ? [[cadd, `${rc.additive} ${sci(cadd)} M`, "solid"]] : []);
+  Plotly.react("pRecEq", curves.map(([ca, nm, ds], k) => ({x: lgE.map(l => Math.pow(10, l)), y: lgE.map(l => 100 * speciate(S, i, cdot, Math.pow(10, l), ca).theta),
+      name: nm, line: {color: C[k], width: 2, dash: ds}, hovertemplate: "%{y:.1f} %"}))
+    .concat([{x: [eqv], y: [100 * now.theta], mode: "markers", marker: {size: 10, color: "#0b0b0b"}, name: "recipe", hoverinfo: "skip"}]),
+    LAY(`${rc.reagent} equivalents per dot`, "dots converted (%)", {title: {text: `Conversion against ${rc.reagent} at ${t} K, dots ${sci(cdot)} M`, x: 0, font: {size: 13}},
+      xaxis: {type: "log", title: {text: `${rc.reagent} equivalents per dot`}, gridcolor: "#e6e5e0"}, yaxis: {range: [-2, 102], title: {text: "dots converted (%)"}, gridcolor: "#e6e5e0"}}), cfg);
+  if (rc.additive) {
+    const mx = Array.from({length: 41}, (_, k) => 4 * k / 40), my = Array.from({length: 27}, (_, k) => -6 + 6.5 * k / 26);
+    const z = my.map(ly => mx.map(lx => 100 * speciate(S, i, cdot, Math.pow(10, lx), Math.pow(10, ly)).theta));
+    Plotly.react("pRecMap", [{type: "heatmap", x: mx, y: my, z: z, zmin: 0, zmax: 100, colorscale: [[0, "#f1efe8"], [1, C[0]]],
+        colorbar: {title: {text: "%", side: "right"}}, hovertemplate: `log10 eq %{x:.2f}<br>log10 ${rc.additive} %{y:.2f}<br>%{z:.1f} %<extra></extra>`},
+      {type: "contour", x: mx, y: my, z: z, contours: {start: 50, end: 50, size: 1, coloring: "none"}, line: {color: "#0b0b0b", width: 2}, showscale: false, hoverinfo: "skip"}]
+      .concat(cadd > 0 ? [{x: [st.rc.lgeq], y: [st.rc.lgadd], mode: "markers", marker: {size: 10, color: "#0b0b0b", line: {color: "#fff", width: 2}}, hoverinfo: "skip", showlegend: false}] : []),
+      LAY(`log10 ${rc.reagent} equivalents per dot`, `log10 ${rc.additive} added (M)`, {title: {text: `Dots converted at ${t} K (line: 50 %); no ${rc.additive}: left plot`, x: 0, font: {size: 13}}, hovermode: "closest"}), cfg);
+  }
+  const sp = lgE.map(l => speciate(S, i, cdot, Math.pow(10, l), cadd).a);
+  Plotly.react("pRecSpec", shown.map((n, k) => ({x: lgE.map(l => Math.pow(10, l)), y: sp.map(q => q[n]), name: n === rc.reagent ? `free ${n}` : n,
+      line: {color: C[k + 2], width: 2}, hovertemplate: "%{y:.2e} M"})),
+    LAY(`${rc.reagent} equivalents per dot`, "c (M)", {title: {text: `In solution at equilibrium, ${t} K` + (cadd > 0 ? `, ${rc.additive} ${sci(cadd)} M added` : `, no ${rc.additive || "additive"} added`), x: 0, font: {size: 13}},
+      xaxis: {type: "log", title: {text: `${rc.reagent} equivalents per dot`}, gridcolor: "#e6e5e0"}, yaxis: {type: "log", exponentformat: "power", title: {text: "c (M)"}, gridcolor: "#e6e5e0"}}), cfg);
+  Plotly.react("pRecT", curves.map(([ca, nm, ds], k) => ({x: R.T, y: R.T.map((_, j) => 100 * speciate(S, j, cdot, eqv, ca).theta), name: nm,
+      line: {color: C[k], width: 2, dash: ds}, hovertemplate: "%{y:.1f} %"})),
+    LAY("T (K)", "dots converted (%)", {title: {text: `Conversion against T at ${eqv.toFixed(eqv < 10 ? 1 : 0)} ${rc.reagent} per dot`, x: 0, font: {size: 13}},
+      yaxis: {range: [-2, 102], title: {text: "dots converted (%)"}, gridcolor: "#e6e5e0"}}), cfg);
+}
 // no solvation data yet (CP2K still running): open on the gas phase
 if (!reaction({eps: st.eps, gas: false, el: st.el, cav: st.cav}).dG.some(isFinite)) st.gas = true;
-ctl(); document.getElementById("gas").value = st.gas ? "1" : "0"; draw();
+ctl(); if (R.recipe) rctl(); document.getElementById("gas").value = st.gas ? "1" : "0"; draw();
 </script></body></html>
 """
 
