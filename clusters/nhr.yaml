@@ -25,6 +25,7 @@ cp2k:
   partition: cpu-genoa      # the build targets Genoa (the default cpu-clx is Cascade Lake)
   test_partition: cpu-genoa:test   # 1 h, one running job per user (qdw reaction --test-queue)
   t_c_g: /scratch/usr/becivinf/sw/cp2k-2026.2/data/t_c_g.dat   # truncated Coulomb (PBE0 in periodic cells)
+  dftd3: /scratch/usr/becivinf/sw/cp2k-2026.2/data/dftd3.dat  # Grimme D3 parameters
   launcher: srun            # SLURM-built OpenMPI: srun (no mpirun on the path)
   field_parallel: 13        # finite-field single points run side by side in the chain
   omp_num_threads: 1
