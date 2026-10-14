@@ -341,7 +341,7 @@ const PER = __PER__;
 __JS__
 const C = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 const UNIT = "eV" + (R.per ? " per " + R.per : "");
-const PHASES = {solute: ["dissolved", "c", "M", -12, 1.5], gas: ["gas (headspace)", "p", "bar", -10, 1.5], solvent: ["pure liquid", "c", "M", -1, 2]};
+const PHASES = {solute: ["dissolved", "c", "M", -12, 1.5], gas: ["gas (headspace)", "p", "bar", -10, 1.5], solvent: ["liquid (neat or diluted)", "c", "M", -3, 1.5]};
 const st = {eps: R.conditions.eps, gas: false, el: R.conditions.electrostatics || "cosmo",
             cav: R.conditions.cavity || "beta0", eset: "given",
             ti: R.T.reduce((b, t, i) => Math.abs(t - 298.15) < Math.abs(R.T[b] - 298.15) ? i : b, 0),
@@ -390,8 +390,8 @@ function slider(n) {              // the slider of species n for its current pha
   el.min = d[3]; el.max = d[4]; el.value = st.lg[n][st.phase[n]];
   document.getElementById("q_" + n).textContent = `${d[1]} / ${d[2]}`;
 }
-function axisOptions() {          // dissolved and gas species can be the map's axis (a pure liquid has a fixed activity)
-  const ok = Object.keys(R.nu).filter(n => st.phase[n] !== "solvent");
+function axisOptions() {          // every species can be the map's axis (a liquid such as the amine: diluted in the solvent)
+  const ok = Object.keys(R.nu);
   if (!ok.includes(st.x)) st.x = ok[0];
   document.getElementById("x").innerHTML = ok.map(n => `<option ${n === st.x ? "selected" : ""}>${n}</option>`).join("");
 }
@@ -420,7 +420,7 @@ function draw() {
   const dx = PHASES[st.phase[st.x]], nx = R.nu[st.x], sx = SP(st.x);
   const lc = Array.from({length: 121}, (_, k) => dx[3] + (dx[4] - dx[3]) * k / 120);
   const z = R.T.map((tt, k) => { const base = r.dG[k] - nx * KB * tt * lnA(sx, tt) / PER;
-    return lc.map(l => base + nx * KB * tt * lnA({...sx, c: Math.pow(10, l), p_bar: Math.pow(10, l)}, tt) / PER); });
+    return lc.map(l => base + nx * KB * tt * lnA({...sx, c: Math.pow(10, l), p_bar: Math.pow(10, l), c_liquid: Math.pow(10, l)}, tt) / PER); });
   const zmax = Math.max(...z.flat().filter(isFinite).map(Math.abs), 1e-6);
   const qx = `log10 ${dx[1]}(${st.x} / ${dx[2]})`;
   Plotly.react("pMap", [{type: "heatmap", x: lc, y: R.T, z: z, zmin: -zmax, zmax: zmax, colorscale: [[0, C[0]], [0.5, "#e8e7e3"], [1, C[1]]],
