@@ -3,7 +3,7 @@
 #SBATCH -t {{TIME}}
 #SBATCH -p {{PARTITION}}
 #SBATCH --qos={{QOS}}
-{{CONSTRAINT}}#SBATCH -c {{CPUS}}
+{{CONSTRAINT}}{{ACCOUNT}}#SBATCH -c {{CPUS}}
 #SBATCH --mem={{MEM}}
 {{SETUP}}
 {{CONDA_INIT}}

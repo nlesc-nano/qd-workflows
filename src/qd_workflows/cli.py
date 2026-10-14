@@ -86,6 +86,37 @@ def _props(args) -> int:
     return 0
 
 
+def _reaction(args) -> int:
+    from .reaction import spec
+    if args.action == "check":
+        rx = spec.load(args.reaction)
+        print(f"{rx['name']}: balanced, {rx['equation']}")
+        for n, s in rx["species"].items():
+            print(f"  {n:<14s} nu {rx['nu'][n]:>4}  {s['n_atoms']:>5d} atoms  charge {s['charge']:+d}  mult {s['mult']}  "
+                  f"E {s['energy_eV']:.6f} eV  {s['phase']}  c {s['c']:g} M")
+        de = sum(v * rx["species"][n]["energy_eV"] for n, v in rx["nu"].items())
+        print(f"  dE_DFT = {de:+.4f} eV ({de * 23.060548:+.2f} kcal/mol) per reaction as written")
+        return 0
+    if args.action == "prepare":
+        from .reaction.jobs import prepare
+        print(json.dumps(prepare(args.reaction, args.out, load_cluster(args.cluster), gpu_time=args.gpu_time,
+                                 cpu_time=args.cpu_time, qos=args.qos, data_dir=args.data_dir,
+                                 test_queue=args.test_queue), indent=1))
+        return 0
+    from .reaction.analyse import analyse
+    s = analyse(args.run)
+    for name, m in s["models"].items():
+        print(f"{name:>16s}: dG {m['dG_eV']:+.3f} eV  dG0 {m['dG0_eV']:+.3f}  dH0 {m['dH0_eV']:+.3f}  "
+              f"TdS0 {m['TdS0_eV']:+.3f}  (T = {s['T_K']} K)  dG = 0 at {m['T_dG_zero_K'] or '-'} K")
+    for lab, v in s.get("dE_alternatives_eV_per", {}).items():
+        print(f"  dE {lab}: {'n/a' if v is None else f'{v:+.3f} eV'}")
+    for n, f in s["flags"].items():
+        for x in f:
+            print(f"  ! {n}: {x}")
+    print(f"-> {args.run}/results/")
+    return 0
+
+
 def _compare(args) -> int:
     from .compare import compare
     res = compare(args.ref, args.new, args.rtol)
@@ -109,7 +140,7 @@ def main(argv=None) -> int:
 
     p = cp.add_parser("prepare", help="input, geometry and job script for one step")
     p.add_argument("xyz")
-    p.add_argument("--step", required=True, choices=("geo_opt", "pdos", "trexio", "sample"))
+    p.add_argument("--step", required=True, choices=("geo_opt", "pdos", "trexio", "sample", "charges"))
     p.add_argument("--project", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--cluster", default="default")
@@ -202,6 +233,23 @@ def main(argv=None) -> int:
     p.add_argument("--qos")
     p.add_argument("--extra", default="", help="more orchestr_ai.qd.bench options, e.g. '--analytic-max 1000'")
 
+    rp = sub.add_parser("reaction", help="reaction free energies vs T, eps and concentrations").add_subparsers(
+        dest="action", required=True)
+    p = rp.add_parser("check", help="read the reaction file: balance, units, dE_DFT")
+    p.add_argument("reaction", help="reaction.yaml")
+    p = rp.add_parser("prepare", help="run directory: MACE (GPU), CP2K (CPU) and analysis jobs, submit.sh")
+    p.add_argument("reaction", help="reaction.yaml")
+    p.add_argument("--out", required=True)
+    p.add_argument("--cluster", default="default")
+    p.add_argument("--gpu-time", default="01:00:00")
+    p.add_argument("--cpu-time", help="wall time of the CP2K job (default: estimated from the largest species)")
+    p.add_argument("--qos")
+    p.add_argument("--data-dir", help="local copy of the CP2K data files (default: $QDW_CP2K_DATA, then the cluster path)")
+    p.add_argument("--test-queue", action="store_true",
+                   help="all jobs in the test partitions (1 h); CP2K in pieces that resubmit themselves")
+    p = rp.add_parser("analyse", help="results/: results.json, summary.json, plots, reaction.html")
+    p.add_argument("run", help="run directory")
+
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref")
     p.add_argument("new")
@@ -209,7 +257,8 @@ def main(argv=None) -> int:
     p.add_argument("--show", type=int, default=30)
 
     args = ap.parse_args(argv)
-    return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "compare": _compare}[args.group](args)
+    return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "reaction": _reaction,
+            "compare": _compare}[args.group](args)
 
 
 if __name__ == "__main__":

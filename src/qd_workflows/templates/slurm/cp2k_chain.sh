@@ -5,7 +5,7 @@
 #SBATCH -N {{NODES}}
 #SBATCH --mem-per-cpu={{MEM_PER_CPU}}
 #SBATCH --qos={{QOS}}
-{{PARTITION}}{{SETUP}}
+{{PARTITION}}{{ACCOUNT}}{{SETUP}}
 # CP2K track of one structure in one job: geo_opt -> field single points -> PDOS -> MO window
 # -> TREXIO -> trim -> QDEX (when record.json is here).
 # Every step is skipped when its output is already there, so a job stopped by the

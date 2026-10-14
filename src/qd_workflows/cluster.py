@@ -26,6 +26,11 @@ def load_cluster(name_or_path: str = "default") -> dict:
     return yaml.safe_load(path.read_text())
 
 
+def sbatch_account(cluster: dict) -> str:
+    """An #SBATCH --account line when the profile names the account to charge (else the user's default)."""
+    return f"#SBATCH --account={cluster['account']}\n" if cluster.get("account") else ""
+
+
 @dataclass
 class Resources:
     cores: int
