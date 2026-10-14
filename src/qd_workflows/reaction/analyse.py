@@ -37,6 +37,13 @@ def _dipole(out: Path):
     return float(m[-1]) if m else None
 
 
+def _dispersion(out: Path):
+    """D3 dispersion energy (eV) printed in the energy summary of a CP2K run."""
+    import re
+    m = re.findall(r"Dispersion energy:\s+(-?\d+\.\d+)", out.read_text(errors="ignore"))
+    return float(m[-1]) * HARTREE_EV if m else None
+
+
 def _point_dipole(pos, q) -> float:
     x = np.asarray(pos, float)
     return float(np.linalg.norm((np.asarray(q)[:, None] * (x - x.mean(0))).sum(0)) * 4.80320)
@@ -98,10 +105,15 @@ def species_result(rx: dict, name: str, run: Path) -> dict:
     if sp["cosmo_inf_eV"] is None:
         flags.append("no RESP charges or cubes (cp2k/esp): COSMO electrostatics unavailable")
     energies = {}
-    for key, d in (("pbe0_given", "energy_pbe0"), ("pbe0_mace", "energy_pbe0_mace")):
+    sp["dispersion_eV"] = {}
+    for key, d in (("pbe0_given", "energy_pbe0"), ("pbe0_mace", "energy_pbe0_mace"),
+                   ("pbe0d3_given", "energy_pbe0_d3"), ("pbe0d3_mace", "energy_pbe0_mace_d3")):
         r = solvation.read_sccs(sdir / "cp2k" / d / "cp2k.out")
         if r:
             energies[key] = r["E_eV"]
+            e_d = _dispersion(sdir / "cp2k" / d / "cp2k.out")
+            if e_d is not None:
+                sp["dispersion_eV"][key] = e_d
     if mace is not None:
         energies["mace"] = mace["energy_mace_min_eV"]
     sp["energies"] = energies
@@ -151,7 +163,8 @@ def collect(run_dir: str) -> dict:
     # the electronic-energy sets the page can switch between: complete ones only
     method = rx.get("energy_method", "PBE")
     labels = {"pbe0_given": f"PBE0@{method} geometries", "mace": "MACE-MH1",
-              "pbe0_mace": "PBE0@MACE-MH1 geometries"}
+              "pbe0_mace": "PBE0@MACE-MH1 geometries", "pbe0d3_given": f"PBE0-D3(BJ)@{method} geometries",
+              "pbe0d3_mace": "PBE0-D3(BJ)@MACE-MH1 geometries"}
     res["energy_sets"] = {"given": method}
     for k, lab in labels.items():
         if all(k in res["species"][n].get("energies", {}) for n in rx["nu"]):

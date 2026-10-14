@@ -12,6 +12,7 @@ the .wfn it wrote (job_cp2k.sh, up to 4 times). Species run side by side on the 
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -168,6 +169,38 @@ def esp_from_single_point(sp_dir: Path, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "cp2k.inp").write_text(t)
     (out / "geom.xyz").write_text((sp_dir / "geom.xyz").read_text())
+
+
+D3BJ = """      &VDW_POTENTIAL
+        DISPERSION_FUNCTIONAL PAIR_POTENTIAL
+        &PAIR_POTENTIAL
+          TYPE DFTD3(BJ)
+          PARAMETER_FILE_NAME {param}
+          REFERENCE_FUNCTIONAL {functional}
+          R_CUTOFF [angstrom] 40.0        # beyond a whole dot (the default is 10.6 A)
+        &END PAIR_POTENTIAL
+      &END VDW_POTENTIAL
+"""
+
+
+def with_d3(src: Path, out: Path, param_file: str, functional: str = "PBE0") -> None:
+    """
+    <out>/{cp2k.inp, geom.xyz, .wfn}: the single point in <src> with Grimme's D3(BJ) for
+    `functional` added, restarted from its converged .wfn. D3 is a pairwise energy that does not
+    change the density: the SCF converges in its first cycles, and CP2K prints the dispersion
+    energy separately (energy_<f>_d3 next to energy_<f>).
+    """
+    t = (src / "cp2k.inp").read_text()
+    # into &XC, before its own &END (not into &XC_FUNCTIONAL, whose &END starts with the same text)
+    t, n = re.subn(r"^(    &END XC\s*)$", D3BJ.format(param=param_file, functional=functional).rstrip("\n") + r"\n\1",
+                   t, count=1, flags=re.M)
+    if n != 1:
+        raise ValueError(f"{src}/cp2k.inp: no '    &END XC' line to add D3 before")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "cp2k.inp").write_text(t)
+    (out / "geom.xyz").write_text((src / "geom.xyz").read_text())
+    for w in src.glob("*-RESTART.wfn"):
+        (out / w.name).write_bytes(w.read_bytes())
 
 
 def eps_dir(eps: float) -> str:
