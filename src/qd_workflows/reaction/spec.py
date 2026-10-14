@@ -126,7 +126,18 @@ def load(path: str) -> dict:
     missing = [n for n in nu if n not in species]
     if missing:
         raise ValueError(f"species in the equation without an entry: {', '.join(missing)}")
-    unused = [n for n in species if n not in nu]
+    sides = []
+    for text in raw.get("equilibria") or []:
+        snu = parse_equation(text)
+        miss = [n for n in snu if n not in species]
+        if miss:
+            raise ValueError(f"species in the equilibrium {text!r} without an entry: {', '.join(miss)}")
+        if balance(species, snu):
+            raise ValueError(f"equilibrium {text!r} not balanced: residual {balance(species, snu)}")
+        sides.append({"equation": text, "nu": snu})
+    used = list(nu) + [n for s in sides for n in s["nu"] if n not in nu]
+    used = list(dict.fromkeys(used))
+    unused = [n for n in species if n not in used]
     res = balance(species, nu)
     if res:
         reac = [n for n, v in nu.items() if v < 0]
@@ -154,15 +165,33 @@ def load(path: str) -> dict:
         if lig["species"] not in nu:
             raise ValueError(f"ligand {lig['species']!r} is not in the equation")
         lig = {"species": lig["species"], "dG_eV": float(lig.get("dG_eV", 0.0))}
+    recipe = _recipe(raw.get("recipe"), nu, used)
     return {
         "name": raw.get("name") or src.stem, "equation": raw["equation"], "nu": nu, "ligand": lig,
-        "energy_method": str(raw.get("energy_method", "PBE")),
-        "species": {n: species[n] for n in nu}, "unused_species": unused, "T": temps,
+        "energy_method": str(raw.get("energy_method", "PBE")), "equilibria": sides, "recipe": recipe,
+        "species": {n: species[n] for n in used}, "unused_species": unused, "T": temps,
         "conditions": {"eps": cond.get("eps", 2.38), "cavity": cond.get("cavity", "beta0"),
                        "electrostatics": cond.get("electrostatics", "cosmo")},
         "scan": {"species": scan_sp, "log10_c": list(scan.get("log10_c", [-8.0, 1.0]))},
         "per": raw.get("per"), "settings": settings, "source": str(src),
     }
+
+
+def _recipe(rc: dict | None, nu: dict, used: list) -> dict | None:
+    """The experiment as prepared: dots at c_dot, the reagent in equivalents per dot, an optional additive."""
+    if not rc:
+        return None
+    out = {"dot": rc.get("dot") or next(n for n, v in nu.items() if v < 0),
+           "reagent": rc.get("reagent"), "additive": rc.get("additive"),
+           "c_dot": float(rc.get("c_dot", 1.0e-5)), "equivalents": float(rc.get("equivalents", 100.0)),
+           "c_additive": float(rc.get("c_additive", 0.0))}
+    if nu.get(out["dot"], 0) >= 0:
+        raise ValueError(f"recipe: the dot {out['dot']!r} must be a reactant of the equation")
+    if out["reagent"] is None or nu.get(out["reagent"], 0) >= 0:
+        raise ValueError(f"recipe: the reagent {out['reagent']!r} must be a reactant of the equation")
+    if out["additive"] is not None and out["additive"] not in used:
+        raise ValueError(f"recipe: the additive {out['additive']!r} is in neither the equation nor an equilibrium")
+    return out
 
 
 def _term(c, name):

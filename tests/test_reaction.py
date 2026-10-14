@@ -76,3 +76,24 @@ def test_ligand_term_and_gas_phase():
     lna_l = np.log(1e-3 * 1e5 / (model.C0 * model.R_GAS * T))
     assert np.allclose(r["dG"], -0.5 + 0.2 + kT * (math.log(1e-3 / 1e-2) + 2 * lna_l))
     assert np.allclose(model.reaction(res, {"eps": 1.0, "gas": True, "dG_lig": 0.0})["parts"]["ligand"], 0.0)
+
+
+def test_speciate_mass_balance_and_both_equilibria():
+    # D + 2 H -> P + L, with L + H -> A on the side; no L added (the reaction makes it)
+    T = [300.0, 400.0]
+    sp = {n: _species(e, 1e-3) for n, e in (("D", 0.0), ("H", 0.0), ("P", -0.30), ("L", 0.0), ("A", -0.10))}
+    res = {"T": T, "nu": {"D": -1, "H": -2, "P": 1, "L": 1}, "per": None, "species": sp,
+           "equilibria": [{"equation": "L + H -> A", "nu": {"L": -1, "H": -1, "A": 1}}],
+           "recipe": {"dot": "D", "reagent": "H", "additive": "L", "c_dot": 1e-4, "equivalents": 10.0, "c_additive": 0.0}}
+    cond = {"eps": 1.0, "gas": True}
+    for add in (0.0, 1e-2):
+        out = model.speciate(res, cond, c_additive=add)
+        for j, t in enumerate(T):
+            kT = model.KB_EV * t
+            c = {n: out["c"][n][j] for n in sp}
+            assert c["D"] + c["P"] == pytest.approx(1e-4, rel=1e-9)
+            assert c["H"] + 2 * c["P"] + c["A"] == pytest.approx(1e-3, rel=1e-9)
+            assert c["L"] + c["A"] == pytest.approx(c["P"] + add, rel=1e-9)
+            assert c["A"] / (c["L"] * c["H"]) == pytest.approx(math.exp(0.10 / kT), rel=1e-6)
+            assert c["P"] * c["L"] / (c["D"] * c["H"] ** 2) == pytest.approx(math.exp(0.30 / kT), rel=1e-6)
+            assert out["theta"][j] == pytest.approx(c["P"] / 1e-4)

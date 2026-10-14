@@ -8,6 +8,8 @@ Reaction formulas on results.json (mirrored in JS by report.JS_MODEL for the liv
     dG_lig    per released ligand L (res["ligand"]): what the model leaves out (chain packing, conformations)
     dG(T, dmu_X) = dG_r^0 + nu_X dmu_X + sum_{i != X} nu_i kT ln a_i,   dmu_X = kT ln a_X
     equilibrium:  sum_solutes nu_i ln((c_i0 + nu_i xi) / 1 M) = -(dG_r^0 + sum_others nu_i kT ln a_i) / kT
+    recipe (res["recipe"], res["equilibria"]): the reaction and the side equilibria (e.g. amine + HCl
+        -> adduct) at equilibrium together, from what was put in the flask; see speciate()
 """
 from __future__ import annotations
 
@@ -140,3 +142,114 @@ def equilibrium(res: dict, cond: dict, c0: dict | None = None) -> dict:
                 b = m
         xi[j] = 0.5 * (a + b)
     return {"T": T, "xi": xi, "conversion": (xi - lo) / (hi - lo), "xi_max": hi, "init": init}
+
+
+# --------------------------------------------------------------------------
+# Recipe: the reaction and its side equilibria from the amounts put in the flask
+# --------------------------------------------------------------------------
+#
+#   c_i = c_i0 + sum_r nu_ri xi_r                  (dissolved species: mass balance)
+#   a_i fixed                                      (gas at its partial pressure, pure liquid)
+#   g_r(xi) = dG_r^0 / kT + sum_i nu_ri ln a_i = 0 for every reaction r
+# G is convex in the extents, so g_r rises with xi_r: the main extent by bisection, each side
+# extent (for a given main extent) by bisection, swept until they settle. Fraction of dots
+# converted: theta = xi_0 / c_dot.
+
+def dg0_on_T(res: dict, cond: dict, nu: dict) -> np.ndarray:
+    """sum_i nu_i (E + G^corr + dG_solv) on the T grid (eV, per reaction as written)."""
+    return sum(v * g_std(res["species"][n], cond) for n, v in nu.items()) + 0 * np.asarray(res["T"], float)
+
+
+def _bounds(nu, amounts, balanced):
+    lo, hi = -math.inf, math.inf
+    for n, v in nu.items():
+        if n not in balanced:
+            continue
+        if v > 0:
+            lo = max(lo, -amounts[n] / v)
+        else:
+            hi = min(hi, amounts[n] / -v)
+    return lo, hi
+
+
+def _bisect(f, lo, hi, n=80):
+    for _ in range(n):
+        m = 0.5 * (lo + hi)
+        if f(m) < 0:
+            lo = m
+        else:
+            hi = m
+    return 0.5 * (lo + hi)
+
+
+def speciate(res: dict, cond: dict, c_dot: float | None = None, equivalents: float | None = None,
+             c_additive: float | None = None, dg_side: list | None = None, ti: int | None = None) -> dict:
+    """Equilibrium of the recipe on the T grid: theta (fraction of dots converted) and every concentration (M)."""
+    rc = res["recipe"]
+    c_dot = rc["c_dot"] if c_dot is None else c_dot
+    eqv = rc["equivalents"] if equivalents is None else equivalents
+    c_add = rc["c_additive"] if c_additive is None else c_additive
+    T = np.asarray(res["T"], float)
+    sps = res["species"]
+    reactions = [res["nu"]] + [e["nu"] for e in res.get("equilibria") or []]
+    lig = res.get("ligand")
+    lig_term = res["nu"][lig["species"]] * cond.get("dG_lig", lig["dG_eV"]) if lig else 0.0
+    dg0 = [dg0_on_T(res, cond, reactions[0]) + lig_term]
+    dg0 += [dg0_on_T(res, cond, nu) + ((dg_side or [])[k] if k < len(dg_side or []) else 0.0)
+            for k, nu in enumerate(reactions[1:])]
+    names = list(dict.fromkeys(n for nu in reactions for n in nu))
+    balanced = [n for n in names if sps[n]["phase"] == "solute"]
+    n0 = {n: 0.0 for n in balanced}
+    n0[rc["dot"]] = c_dot
+    n0[rc["reagent"]] = n0.get(rc["reagent"], 0.0) + eqv * c_dot
+    if rc.get("additive") in n0:
+        n0[rc["additive"]] += c_add
+    out = {"T": T, "theta": np.empty_like(T), "c": {n: np.empty_like(T) for n in balanced}}
+    for j, t in enumerate(T):
+        if ti is not None and j != ti:
+            out["theta"][j] = np.nan
+            for n in balanced:
+                out["c"][n][j] = np.nan
+            continue
+        kT = KB_EV * t
+        fixed = [sum(v * ln_activity(sps[n], [t])[0] for n, v in nu.items() if n not in balanced) for nu in reactions]
+
+        def amounts(xi):
+            a = dict(n0)
+            for nu, x in zip(reactions, xi):
+                for n, v in nu.items():
+                    if n in a:
+                        a[n] += v * x
+            return a
+
+        def g(r, xi):
+            a = amounts(xi)
+            return dg0[r][j] / kT + fixed[r] + sum(v * math.log(max(a[n], 1e-300)) for n, v in reactions[r].items() if n in a)
+
+        def sides(x0):
+            xi = [x0] + [0.0] * (len(reactions) - 1)
+            for _ in range(30 if len(reactions) > 2 else 1):
+                old = list(xi)
+                for r in range(1, len(reactions)):
+                    rest = list(xi)
+                    rest[r] = 0.0
+                    lo, hi = _bounds(reactions[r], amounts(rest), balanced)
+                    if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
+                        continue
+                    xi[r] = _bisect(lambda x: g(r, xi[:r] + [x] + xi[r + 1:]), lo, hi)
+                if max(abs(p - q) for p, q in zip(xi, old)) <= 1e-12 * max(c_dot, 1e-30):
+                    break
+            return xi
+
+        lo, hi = _bounds(reactions[0], n0, balanced)
+        if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo or not np.isfinite(dg0[0][j]):
+            out["theta"][j] = np.nan
+            for n in balanced:
+                out["c"][n][j] = np.nan
+            continue
+        x0 = _bisect(lambda x: g(0, sides(x)), lo, hi)
+        a = amounts(sides(x0))
+        out["theta"][j] = x0 / c_dot
+        for n in balanced:
+            out["c"][n][j] = max(a[n], 0.0)
+    return out
