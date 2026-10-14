@@ -1,0 +1,352 @@
+{
+ "reference": "C. Hille, S. Ringe, M. Deimel, C. Kunkel, W. E. Acree, K. Reuter, H. Oberhofer, J. Chem. Phys. 150, 041710 (2019), doi:10.1063/1.5050938, supplementary Table S2",
+ "model": "SCCS, delta_n = 2.0, n_c = 7.6, beta = 0 GPa; alpha+gamma in dyn/cm fitted per solvent",
+ "fit_nonaqueous": {
+  "slope": 2.16,
+  "intercept": -14.79,
+  "r2": 0.71,
+  "note": "least squares of alpha+gamma on ln(eps) over the 67 non-aqueous solvents (this work)"
+ },
+ "solvents": {
+  "1,4-dioxane": {
+   "eps": 2.21,
+   "alpha_gamma": -15.0,
+   "rmsd_test_meV": 67.6
+  },
+  "1-chlorobutane": {
+   "eps": 7.24,
+   "alpha_gamma": -12.5,
+   "rmsd_test_meV": 32.5
+  },
+  "1-hexadecene": {
+   "eps": 2.09,
+   "alpha_gamma": -12.6,
+   "rmsd_test_meV": 40.8
+  },
+  "1-methyl-2-piperidinone": {
+   "eps": 32.17,
+   "alpha_gamma": -7.1,
+   "rmsd_test_meV": 43.4
+  },
+  "1-octanol": {
+   "eps": 9.86,
+   "alpha_gamma": -8.0,
+   "rmsd_test_meV": 65.0
+  },
+  "1-propanol": {
+   "eps": 20.52,
+   "alpha_gamma": -8.1,
+   "rmsd_test_meV": 48.6
+  },
+  "2,2,4-trimethylpentane": {
+   "eps": 1.93,
+   "alpha_gamma": -13.7,
+   "rmsd_test_meV": 41.2
+  },
+  "2-ethoxyethanol": {
+   "eps": 13.94,
+   "alpha_gamma": -10.9,
+   "rmsd_test_meV": 55.5
+  },
+  "4-formylmorpholine": {
+   "eps": 14.95,
+   "alpha_gamma": -7.2,
+   "rmsd_test_meV": 44.7
+  },
+  "acetic acid": {
+   "eps": 6.25,
+   "alpha_gamma": -6.9,
+   "rmsd_test_meV": 52.9
+  },
+  "acetone": {
+   "eps": 20.7,
+   "alpha_gamma": -9.5,
+   "rmsd_test_meV": 55.9
+  },
+  "acetophenone": {
+   "eps": 17.44,
+   "alpha_gamma": -8.9,
+   "rmsd_test_meV": 27.3
+  },
+  "benzonitrile": {
+   "eps": 25.59,
+   "alpha_gamma": -9.9,
+   "rmsd_test_meV": 75.0
+  },
+  "bromobenzene": {
+   "eps": 5.4,
+   "alpha_gamma": -9.6,
+   "rmsd_test_meV": 67.6
+  },
+  "butanone": {
+   "eps": 18.25,
+   "alpha_gamma": -9.6,
+   "rmsd_test_meV": 48.6
+  },
+  "butyl acetate": {
+   "eps": 5.0,
+   "alpha_gamma": -13.8,
+   "rmsd_test_meV": 53.3
+  },
+  "carbon tetrachloride": {
+   "eps": 2.23,
+   "alpha_gamma": -16.0,
+   "rmsd_test_meV": 49.9
+  },
+  "chlorobenzene": {
+   "eps": 5.7,
+   "alpha_gamma": -10.0,
+   "rmsd_test_meV": 71.6
+  },
+  "chloroform": {
+   "eps": 4.71,
+   "alpha_gamma": -16.0,
+   "rmsd_test_meV": 55.9
+  },
+  "cyclohexanone": {
+   "eps": 15.62,
+   "alpha_gamma": -8.8,
+   "rmsd_test_meV": 60.7
+  },
+  "decan-1-ol": {
+   "eps": 7.6,
+   "alpha_gamma": -11.1,
+   "rmsd_test_meV": 89.8
+  },
+  "decane": {
+   "eps": 1.98,
+   "alpha_gamma": -13.1,
+   "rmsd_test_meV": 50.3
+  },
+  "dibutyl ether": {
+   "eps": 3.04,
+   "alpha_gamma": -12.5,
+   "rmsd_test_meV": 55.9
+  },
+  "dichloroethane": {
+   "eps": 10.12,
+   "alpha_gamma": -10.0,
+   "rmsd_test_meV": 57.2
+  },
+  "dichloromethane": {
+   "eps": 8.93,
+   "alpha_gamma": -11.5,
+   "rmsd_test_meV": 55.5
+  },
+  "diethyl ether": {
+   "eps": 4.24,
+   "alpha_gamma": -11.5,
+   "rmsd_test_meV": 54.6
+  },
+  "diiodomethane": {
+   "eps": 5.32,
+   "alpha_gamma": -8.6,
+   "rmsd_test_meV": 69.4
+  },
+  "dimethylformamide": {
+   "eps": 37.22,
+   "alpha_gamma": -7.1,
+   "rmsd_test_meV": 50.3
+  },
+  "dodecane": {
+   "eps": 2.01,
+   "alpha_gamma": -12.2,
+   "rmsd_test_meV": 60.7
+  },
+  "ethanol": {
+   "eps": 24.85,
+   "alpha_gamma": -8.2,
+   "rmsd_test_meV": 65.9
+  },
+  "ethyl acetate": {
+   "eps": 6.06,
+   "alpha_gamma": -11.2,
+   "rmsd_test_meV": 34.7
+  },
+  "ethylbenzene": {
+   "eps": 2.43,
+   "alpha_gamma": -14.2,
+   "rmsd_test_meV": 58.5
+  },
+  "ethylene glycol": {
+   "eps": 40.25,
+   "alpha_gamma": -2.5,
+   "rmsd_test_meV": 66.8
+  },
+  "formamide": {
+   "eps": 111.0,
+   "alpha_gamma": -2.1,
+   "rmsd_test_meV": 40.3
+  },
+  "heptane": {
+   "eps": 1.91,
+   "alpha_gamma": -14.6,
+   "rmsd_test_meV": 47.7
+  },
+  "hexadecane": {
+   "eps": 2.04,
+   "alpha_gamma": -13.3,
+   "rmsd_test_meV": 43.4
+  },
+  "hexane": {
+   "eps": 1.88,
+   "alpha_gamma": -13.6,
+   "rmsd_test_meV": 45.1
+  },
+  "iodobenzene": {
+   "eps": 4.55,
+   "alpha_gamma": -10.4,
+   "rmsd_test_meV": 70.7
+  },
+  "isobutanol": {
+   "eps": 16.78,
+   "alpha_gamma": -6.8,
+   "rmsd_test_meV": 74.6
+  },
+  "isopropanol": {
+   "eps": 19.26,
+   "alpha_gamma": -8.5,
+   "rmsd_test_meV": 60.3
+  },
+  "m-xylene": {
+   "eps": 2.35,
+   "alpha_gamma": -10.9,
+   "rmsd_test_meV": 46.4
+  },
+  "methanol": {
+   "eps": 32.61,
+   "alpha_gamma": -7.3,
+   "rmsd_test_meV": 49.9
+  },
+  "methoxyethanol": {
+   "eps": 17.2,
+   "alpha_gamma": -10.0,
+   "rmsd_test_meV": 55.1
+  },
+  "methyl acetate": {
+   "eps": 6.74,
+   "alpha_gamma": -9.6,
+   "rmsd_test_meV": 41.6
+  },
+  "methylcyclohexane": {
+   "eps": 2.24,
+   "alpha_gamma": -11.5,
+   "rmsd_test_meV": 66.8
+  },
+  "n,n-dibutylformamid": {
+   "eps": 18.4,
+   "alpha_gamma": -7.1,
+   "rmsd_test_meV": 44.7
+  },
+  "n,n-dimethylacetamide": {
+   "eps": 40.7,
+   "alpha_gamma": -7.4,
+   "rmsd_test_meV": 47.7
+  },
+  "n-butanol": {
+   "eps": 17.54,
+   "alpha_gamma": -7.1,
+   "rmsd_test_meV": 59.8
+  },
+  "n-ethylacetamide": {
+   "eps": 129.0,
+   "alpha_gamma": -6.4,
+   "rmsd_test_meV": 33.4
+  },
+  "n-methylacetamide": {
+   "eps": 177.0,
+   "alpha_gamma": -5.4,
+   "rmsd_test_meV": 39.9
+  },
+  "n-methylformamide": {
+   "eps": 181.56,
+   "alpha_gamma": -5.9,
+   "rmsd_test_meV": 46.4
+  },
+  "n-methylpyrrolidone": {
+   "eps": 32.16,
+   "alpha_gamma": -6.6,
+   "rmsd_test_meV": 55.9
+  },
+  "o-xylene": {
+   "eps": 2.56,
+   "alpha_gamma": -11.9,
+   "rmsd_test_meV": 72.0
+  },
+  "octane": {
+   "eps": 1.94,
+   "alpha_gamma": -12.5,
+   "rmsd_test_meV": 42.1
+  },
+  "p-xylene": {
+   "eps": 2.35,
+   "alpha_gamma": -13.1,
+   "rmsd_test_meV": 59.8
+  },
+  "pentane": {
+   "eps": 1.84,
+   "alpha_gamma": -13.8,
+   "rmsd_test_meV": 59.4
+  },
+  "pentanol": {
+   "eps": 15.13,
+   "alpha_gamma": -7.3,
+   "rmsd_test_meV": 55.1
+  },
+  "phenylamine": {
+   "eps": 6.89,
+   "alpha_gamma": -8.4,
+   "rmsd_test_meV": 48.6
+  },
+  "propylene carbonate": {
+   "eps": 65.5,
+   "alpha_gamma": -5.5,
+   "rmsd_test_meV": 49.0
+  },
+  "pyridine": {
+   "eps": 12.98,
+   "alpha_gamma": -11.5,
+   "rmsd_test_meV": 63.3
+  },
+  "sulfolane": {
+   "eps": 42.0,
+   "alpha_gamma": -5.1,
+   "rmsd_test_meV": 45.1
+  },
+  "tert-butanol": {
+   "eps": 11.5,
+   "alpha_gamma": -9.2,
+   "rmsd_test_meV": 46.0
+  },
+  "tetraethylene glycol dimethyl ether": {
+   "eps": 7.79,
+   "alpha_gamma": -7.4,
+   "rmsd_test_meV": 56.8
+  },
+  "tetrahydrofuran": {
+   "eps": 7.43,
+   "alpha_gamma": -13.0,
+   "rmsd_test_meV": 51.2
+  },
+  "toluene": {
+   "eps": 2.37,
+   "alpha_gamma": -13.4,
+   "rmsd_test_meV": 46.4
+  },
+  "tributyl phosphate": {
+   "eps": 8.05,
+   "alpha_gamma": -11.1,
+   "rmsd_test_meV": 61.6
+  },
+  "undecane": {
+   "eps": 1.99,
+   "alpha_gamma": -14.9,
+   "rmsd_test_meV": 74.6
+  },
+  "water": {
+   "eps": 78.36,
+   "alpha_gamma": 3.1,
+   "rmsd_test_meV": 76.8
+  }
+ }
+}

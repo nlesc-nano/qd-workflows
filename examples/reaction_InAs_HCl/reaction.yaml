@@ -1,0 +1,27 @@
+# InAs dot with methylamine ligands etched by HCl: 4 As leave as AsH3, 12 Cl bind, 8 amines leave.
+# Structures and energies: CP2K HLE17 relaxations (energies in the XYZ comment lines, Hartree);
+# HLE17 keeps the gap of the InAs dots open. Thermal terms: MACE-MH-1. CP2K: an HLE17 single point
+# (Hirshfeld charges, .wfn), then PBE0 (ADMM) vacuum and SCCS runs restarted from it.
+name: InAs285_HCl
+energy_method: HLE17           # the given energies; CP2K PBE single points are compared only for PBE
+equation: "origin + 12 HCl -> QD_Cl + 4 AsH3 + 8 CH3NH2"
+energy_unit: hartree
+T: [250, 800, 10]
+per: HCl                       # also reported per HCl consumed
+conditions: {eps: 2.38, electrostatics: cosmo, cavity: beta0}   # toluene; the page switches all of these
+scan: {species: HCl, log10_c: [-8, 1]}
+ligand: CH3NH2                 # stands in for oleylamine: dG_lig slider per released amine (chain effects)
+# phase: solute (c, mol/L) | gas (p_bar: dissolved gas at equilibrium with its partial pressure)
+# | solvent (c_liquid: the pure liquid). The page switches between them; c, p_bar and c_liquid
+# given here are the starting values of each (placeholders).
+species:
+  origin:  {xyz: origin_285.xyz, energy: xyz, charge: 0, mult: 1, c: 1.0e-6}
+  HCl:     {xyz: HCl.xyz,        energy: xyz, charge: 0, mult: 1, c: 1.0e-2, p_bar: 1.0e-2}
+  QD_Cl:   {xyz: QD_Cl_285.xyz,  energy: xyz, charge: 0, mult: 1, c: 1.0e-9}
+  AsH3:    {xyz: AsH3.xyz,       energy: xyz, charge: 0, mult: 1, c: 1.0e-6, p_bar: 1.0e-4}
+  # oleylamine is the solvent: neat, 0.813 g/mL / 267.5 g/mol = 3.04 M
+  CH3NH2:  {xyz: CH3NH2.xyz,     energy: xyz, charge: 0, mult: 1, phase: solvent, c_liquid: 3.04, c: 1.0e-5}
+settings:
+  sp_functional: HLE17            # GAPW single point: Hirshfeld charges, .wfn for the GPW runs
+  sccs_functional: PBE0           # SCCS runs (ADMM2, truncated Coulomb in the periodic cell)
+  energy_check_functional: PBE0   # isolated PBE0 single points (ADMM2, MULTIPOLE): dE check

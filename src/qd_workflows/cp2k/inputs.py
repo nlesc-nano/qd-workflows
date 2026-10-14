@@ -9,11 +9,11 @@ from pathlib import Path
 import numpy as np
 
 from .. import TEMPLATES, render
-from ..cluster import cp2k_resources
+from ..cluster import cp2k_resources, sbatch_account
 from ..xyz import read_xyz, write_xyz
 from .basis import kind_blocks, kinds_for
 
-STEPS = ("geo_opt", "pdos", "trexio", "sample")
+STEPS = ("geo_opt", "pdos", "trexio", "sample", "charges")
 VACUUM_A = 12.0          # added to the extent along each axis (6 Å on each side)
 LBFGS_ABOVE_ATOMS = 1000
 
@@ -34,6 +34,43 @@ FORCES_PRINT = """  &PRINT
       NDIGITS 8
     &END
   &END"""
+# charges: Hirshfeld charges (and the dipole) of a structure at its own geometry, from scratch
+# (atomic guess unless its own .wfn exists). An SCF that has not converged in MAX_SCF cycles
+# still writes its .wfn; the job then restarts from it (qdw reaction).
+CHARGES_PRINT = """    &PRINT
+      &MOMENTS
+        PERIODIC F
+      &END MOMENTS
+      &HIRSHFELD
+        FILENAME =hirshfeld.dat
+      &END HIRSHFELD
+    &END PRINT"""
+IGNORE_SCF_FAILURE = """      IGNORE_CONVERGENCE_FAILURE
+      &PRINT
+        &RESTART              # every 10 cycles: a run cut off by the time limit continues from here
+          BACKUP_COPIES 0
+          &EACH
+            QS_SCF 10
+          &END
+        &END
+      &END"""
+XC = {
+    "PBE": """    &XC
+      &XC_FUNCTIONAL PBE
+      &END
+    &END""",
+    # Verma and Truhlar's meta-GGA (keeps the gap of narrow-gap dots open); grid as in Ivan's hle_sp.in
+    "HLE17": """    &XC
+      &XC_FUNCTIONAL
+        &MGGA_XC_HLE17
+        &END MGGA_XC_HLE17
+      &END XC_FUNCTIONAL
+      &XC_GRID
+        XC_DERIV  spline3
+        XC_SMOOTH_RHO  none
+      &END
+    &END""",
+}
 LBFGS_MOTION = """&MOTION
   &GEO_OPT
     OPTIMIZER LBFGS
@@ -88,6 +125,7 @@ def prepare(
     data_dir: str | None = None,
     time: str | None = None,
     qos: str | None = None,
+    xc: str = "PBE",
 ) -> dict:
     """
     Write `<out_dir>/{cp2k.inp, geom.xyz, job.sh, job.json}` for one step.
@@ -116,13 +154,18 @@ def prepare(
         "KINDS": kind_blocks(kinds),
         "PROJECT": project,
         "WFN_FILE": wfn or f"{project}-RESTART.wfn",
+        "XC": XC[xc],
     }
-    if step != "geo_opt" and not wfn:
+    if step not in ("geo_opt", "charges") and not wfn:
         raise ValueError(f"step {step} restarts from the geo_opt .wfn: pass wfn")
     if step == "geo_opt":
         template = "geo_opt.inp"
         use_lbfgs = optimizer.upper() == "LBFGS" or (optimizer == "auto" and len(symbols) > LBFGS_ABOVE_ATOMS)
         values["MOTION"] = LBFGS_MOTION if use_lbfgs else ""
+    elif step == "charges":
+        template = "single_point_ot.inp"
+        values.update({"DFT_PRINT": CHARGES_PRINT, "SCF_PRINT": IGNORE_SCF_FAILURE, "FORCE_EVAL_PRINT": "",
+                       "RUN_TYPE": "ENERGY"})
     elif step in ("pdos", "sample"):
         template = "single_point_ot.inp"
         values.update({
@@ -145,14 +188,14 @@ def prepare(
     res = cp2k_resources(cluster, n_bf)
     job = {
         "JOB_NAME": f"{step}-{project}"[:64],
-        "TIME": time or cp["time"][step],
+        "TIME": time or cp["time"].get(step, cp["time"]["sample"]),
         "NTASKS": res.cores,
         "NODES": -(-res.cores // int(cluster["cores_per_node"])),   # as few nodes as the cores need
         "MEM_PER_CPU": res.mem_per_cpu,
         "QOS": qos or cluster.get("qos", "regular"),
         # Shell setup the job needs whatever shell submitted it (e.g. Lmod for `module`).
         "SETUP": "\n".join(cluster.get("setup", [])),
-        "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "PARTITION": cp2k_partition(cp),
+        "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "PARTITION": cp2k_partition(cp), "ACCOUNT": sbatch_account(cluster),
         "OMP_NUM_THREADS": cp.get("omp_num_threads", 1),
         "EXECUTABLE": cp["executable"],
         "INPUT": "cp2k.inp",
@@ -218,7 +261,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "NODES": -(-res["cores"] // int(cluster["cores_per_node"])), "MEM_PER_CPU": res["mem_per_cpu"],
         "QOS": qos or cluster.get("qos", "regular"), "SETUP": "\n".join(cluster.get("setup", [])),
         "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "LAUNCH_N": cp2k_launch(cp, "$1"),
-        "PARTITION": cp2k_partition(cp),
+        "PARTITION": cp2k_partition(cp), "ACCOUNT": sbatch_account(cluster),
         "OMP_NUM_THREADS": cp.get("omp_num_threads", 1), "EXECUTABLE": cp["executable"],
         "PROJECT": project, "QDW_PYTHON": py, "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
         "CLUSTER": cluster_ref, "QDEX": cluster.get("qdex", {}).get("command", "qdex"),

@@ -1,0 +1,87 @@
+# GPW single point of one species (qdw reaction), {{XC_NAME}}: SCCS (periodic cell) or an isolated vacuum run.
+# GPW: CP2K has no SCCS with GAPW ("SCCS is not yet implemented with GAPW"). The same input
+# with SCCS OFF is the vacuum reference: dG_el(eps) = E(eps) - E(vacuum), both GPW, same grid.
+# Periodic Poisson solver, neutral solute, ~16 A of vacuum: in CP2K 2026.2 the non-periodic
+# solvers (MT, ANALYTIC, MULTIPOLE) give a wrong SCCS energy (HCl, PBE0, eps 10: +1.85 eV with
+# MT and ANALYTIC, +5.9 eV with MULTIPOLE; periodic: -0.094 eV, the same vacuum energy at 18 and
+# 24 A). Cavity terms (ALPHA, BETA, GAMMA) are left at 0: the Hille et al. (2019)
+# cavity/dispersion term is added afterwards from the printed quantum surface and volume
+# (Andreussi switching, their rho_min and rho_max).
+&FORCE_EVAL
+  &DFT
+    CHARGE {{CHARGE}}
+    BASIS_SET_FILE_NAME {{BASIS_FILE}}
+{{EXTRA_BASIS}}    POTENTIAL_FILE_NAME {{POTENTIAL_FILE}}
+    &MGRID
+      CUTOFF  400
+      REL_CUTOFF  60
+      NGRIDS  4
+    &END
+    &POISSON
+       POISSON_SOLVER {{POISSON}}
+       PERIODIC {{PERIODIC}}
+    &END
+    &QS
+      METHOD  GPW
+      EPS_DEFAULT 1.0E-12
+    &END
+{{ADMM}}    &SCCS {{SCCS}}
+      RELATIVE_PERMITTIVITY {{EPS}}
+      METHOD ANDREUSSI
+      DERIVATIVE_METHOD CD5
+      EPS_SCCS 1.0E-6
+      EPS_SCF 0.03            # the SCCS cycle starts once the OT error is below this
+      MAX_ITER 300            # AsH3 at eps 80 still converging after 100 (residual 0.79 -> 0.03)
+      MIXING 0.6              # CP2K's default; 0.4 made the polarisation loop diverge at eps 80
+      &ANDREUSSI
+        RHO_MAX {{RHO_MAX}}
+        RHO_MIN {{RHO_MIN}}
+      &END
+    &END SCCS
+    &PRINT
+      &SCCS {{SCCS}}           # cavity volume and surface, printed each SCF cycle (the last one is read)
+        &EACH
+          QS_SCF 1
+        &END
+      &END
+    &END
+    &SCF
+      &OT
+{{OT_MINIMIZER}}        PRECONDITIONER {{PRECONDITIONER}}
+      &END
+      EPS_SCF  1e-6
+      MAX_SCF 200             # not converged: the job restarts from the .wfn written here
+      IGNORE_CONVERGENCE_FAILURE
+      SCF_GUESS  restart
+      &PRINT
+        &RESTART              # every 10 cycles: a run cut off by the time limit continues from here
+          BACKUP_COPIES 0
+          &EACH
+            QS_SCF 10
+          &END
+        &END
+      &END
+    &END
+    WFN_RESTART_FILE_NAME {{WFN_FILE}}
+{{XC}}
+  &END
+  &SUBSYS
+    &TOPOLOGY
+      COORDINATE XYZ
+      COORD_FILE_NAME {{COORD_FILE}}
+      &CENTER_COORDINATES
+      &END
+    &END
+    &CELL
+      ABC {{CELL}}
+      PERIODIC {{PERIODIC}}
+    &END
+{{KINDS}}
+  &END
+&END
+
+&GLOBAL
+  PRINT_LEVEL medium          # the cavity surface and volume are printed from medium up
+  PROJECT  {{PROJECT}}
+  RUN_TYPE ENERGY
+&END

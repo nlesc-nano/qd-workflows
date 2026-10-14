@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from . import TEMPLATES, render
+from .cluster import sbatch_account
 
 ALL_STEPS = ["relax", "structure", "hessian", "field", "vibspec", "stability", "detachment",
              "solvation", "sites", "report", "wigner", "md"]
@@ -175,6 +176,7 @@ def _job(cluster: dict, name: str, wall: str, qos: str | None, run: str, cpu: bo
     part = pp["cpu"] if cpu else pp
     job = {
         "JOB_NAME": name[:64], "TIME": wall, "RUN": run, "PARTITION": part["partition"],
+        "ACCOUNT": sbatch_account(cluster),
         "QOS": qos or cluster.get("qos", "regular"), "GRES": pp.get("gres", ""),
         "CONSTRAINT": f"#SBATCH --constraint={part['constraint']}\n" if part.get("constraint") else "",
         "CPUS": part.get("cpus", 8), "MEM": part.get("mem", "32G"), "SETUP": "\n".join(cluster.get("setup", [])),
