@@ -8,6 +8,8 @@ The packages keep their own repositories; this one pins them
 (`components.yaml`), describes each HPC cluster (`clusters/`), and holds the job
 templates and glue code (`src/qd_workflows`).
 
+The whole pipeline, stage by stage: [docs/workflow.md](docs/workflow.md).
+
 ## Layout
 
 | Path | Holds |
