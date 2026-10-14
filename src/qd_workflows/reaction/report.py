@@ -19,6 +19,66 @@ PARTS = [("dE_DFT", "ΔE DFT"), ("dZPE", "ΔZPE"), ("dH_thermal", "ΔH thermal")
          ("ligand", "ΔG lig (chain)")]
 
 
+# --------------------------------------------------------------------------
+# Species labels: dots by their stoichiometry, [InAs]x(InCl3)y(CH3NH2)z
+# --------------------------------------------------------------------------
+
+CATION_VALENCE = {"Al": 3, "Ga": 3, "In": 3, "Cd": 2, "Zn": 2, "Hg": 2, "Pb": 2, "Sn": 2, "Cu": 1, "Ag": 1, "Cs": 1}
+ANION_VALENCE = {"N": 3, "P": 3, "As": 3, "Sb": 3, "O": 2, "S": 2, "Se": 2, "Te": 2}
+HALIDES = ("F", "Cl", "Br", "I")
+SUBSCRIPT = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+
+
+def _n(k: int) -> str:
+    return "" if k == 1 else str(k)
+
+
+def species_label(name: str, comp: dict, ligand: tuple | None = None) -> str:
+    """[MA]x(MXk)y(L)z for a dot (one cation, core anion, halide, ligand L = (name, composition));
+    otherwise the name with subscripts ("CH3NH2_HCl" -> CH₃NH₂·HCl)."""
+    plain = name.replace("_", "·").translate(SUBSCRIPT)
+    metals = [e for e in comp if e in CATION_VALENCE]
+    if len(metals) != 1:
+        return plain
+    m, left, parts = metals[0], dict(comp), []
+    z = 0
+    if ligand and all(e in left for e in ligand[1]):
+        z = min(left[e] // k for e, k in ligand[1].items())
+        for e, k in ligand[1].items():
+            left[e] -= z * k
+    anions = [e for e in left if e in ANION_VALENCE and left[e] > 0]
+    halides = [e for e in left if e in HALIDES and left[e] > 0]
+    if len(anions) > 1 or len(halides) > 1:
+        return plain
+    if anions:
+        a_el = anions[0]
+        vm, va = CATION_VALENCE[m], ANION_VALENCE[a_el]
+        g = math.gcd(vm, va)
+        a, b = va // g, vm // g                      # M_a A_b is neutral
+        x = left[a_el] // b
+        if left[a_el] % b or left[m] < a * x:
+            return plain
+        left[m] -= a * x
+        left[a_el] -= b * x
+        parts.append(f"[{m}{_n(a)}{a_el}{_n(b)}]{x}")
+    if halides and left[m] > 0:
+        x_el, k = halides[0], CATION_VALENCE[m]
+        if left[x_el] != k * left[m]:
+            return plain
+        parts.append(f"({m}{x_el}{_n(k)}){left[m]}")
+        left[m] = left[x_el] = 0
+    if z:
+        parts.append(f"({ligand[0]}){z}")
+    rest = "".join(f"{e}{_n(k)}" for e, k in left.items() if k)
+    return ("".join(parts) + rest).translate(SUBSCRIPT)
+
+
+def species_labels(res: dict) -> dict:
+    lig = res.get("ligand")
+    lig = (lig["species"], res["species"][lig["species"]]["composition"]) if lig else None
+    return {n: s.get("label") or species_label(n, s.get("composition") or {}, lig) for n, s in res["species"].items()}
+
+
 def _ti(res, t=298.15):
     return int(np.argmin(np.abs(np.asarray(res["T"]) - t)))
 
@@ -172,10 +232,10 @@ def plots(res: dict, out: Path) -> None:
             for k, ca in enumerate(adds):
                 th = [model.speciate(res, {**ms[main], "energy": es}, equivalents=e, c_additive=ca, ti=i)["theta"][i] for e in eqs]
                 ax.plot(eqs, 100 * np.array(th), color=SERIES[k], lw=2,
-                        label=f"{rc['additive']} {ca:g} M" if ca else f"no {rc.get('additive') or 'additive'} added")
+                        label=f"{species_labels(res)[rc['additive']]} {ca:g} M" if ca else f"no {species_labels(res).get(rc.get('additive'), 'additive')} added")
             ax.set_xscale("log")
             ax.set_ylim(-2, 102)
-            _style(ax, f"{rc['reagent']} equivalents per dot", "dots converted (%)",
+            _style(ax, f"{species_labels(res)[rc['reagent']]} equivalents per dot", "dots converted (%)",
                    (res.get("energy_sets") or {}).get(es, es))
         axes.flat[0].legend(frameon=False, fontsize=8)
         fig.suptitle(f"Recipe at {res['T'][i]:g} K, dots {rc['c_dot']:g} M, {main}", fontsize=10, x=0.01, ha="left")
@@ -203,7 +263,7 @@ def plots(res: dict, out: Path) -> None:
             ax.plot(xs, ys, "s", ms=5, color=SERIES[3], label="ALPB (GFN2)")
         ax.set_xscale("log")
         ax.set_xlim(1.7, 85)             # also when a species has no data (all NaN)
-        _style(ax, "ε", "ΔG solv (eV)", n)
+        _style(ax, "ε", "ΔG solv (eV)", species_labels(res)[n])
     for ax in axes.flat[len(names):]:
         ax.axis("off")
     axes.flat[0].legend(frameon=False, fontsize=7)
@@ -370,7 +430,7 @@ PAGE = r"""<!doctype html>
 :root { --bg: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --ink3: #8a8984; --rule: #e6e5e0; --panel: #f4f4f1; --flag: #8a5a00; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; }
-h1 { font-size: 1.35rem; margin: 0 0 .2rem; } h2 { font-size: 1.1rem; margin: 28px 0 .2rem; } .eq { color: var(--ink2); font-family: ui-monospace, Menlo, monospace; font-size: .9rem; overflow-wrap: anywhere; }
+h1 { font-size: 1.35rem; margin: 0 0 .2rem; } h2 { font-size: 1.1rem; margin: 28px 0 .2rem; } .eq { color: var(--ink2); font-size: 1rem; line-height: 1.6; overflow-wrap: anywhere; }
 .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 22px; background: var(--panel); padding: 12px 14px; border-radius: 8px; margin: 14px 0; }
 .controls label { display: grid; gap: 2px; font-size: .82rem; color: var(--ink2); }
 .controls .v { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -422,10 +482,15 @@ const NONEL = R.nonel_model;
 const PER = __PER__;
 __JS__
 const C = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-const UNIT = "eV" + (R.per ? " per " + R.per : "");
+const L = n => (R.labels || {})[n] || n;           // species label: [InAs]x(InCl3)y(CH3NH2)z, CH3NH2·HCl
+const UNITS = {eV: [1, "eV", 3], kcal: [23.060548, "kcal/mol", 2], kJ: [96.4853321, "kJ/mol", 1]};
+const UF = () => UNITS[st.unit][0], UL = () => UNITS[st.unit][1] + (R.per ? " per " + L(R.per) : "");
+const fe = v => isFinite(v) ? (v >= 0 ? "+" : "") + (v * UF()).toFixed(UNITS[st.unit][2]) : "n/a";   // eV -> chosen unit
+const cv = a => a.map(v => v * UF());
+const ev2 = v => (v >= 0 ? "+" : "") + v.toFixed(2) + " eV" + (st.unit === "eV" ? "" : " = " + fe(v) + " " + UNITS[st.unit][1]);
 const PHASES = {solute: ["dissolved", "c", "M", -12, 1.5], gas: ["gas (headspace)", "p", "bar", -10, 1.5], solvent: ["liquid (neat or diluted)", "c", "M", -3, 1.5]};
 const st = {eps: R.conditions.eps, gas: false, el: R.conditions.electrostatics || "cosmo",
-            cav: R.conditions.cavity || "beta0", eset: "given",
+            cav: R.conditions.cavity || "beta0", eset: "given", unit: "eV",
             ti: R.T.reduce((b, t, i) => Math.abs(t - 298.15) < Math.abs(R.T[b] - 298.15) ? i : b, 0),
             x: R.scan.species, dglig: R.ligand ? (R.ligand.dG_eV || 0) : 0, dgbind: 0,
             rc: R.recipe ? {lgdot: Math.log10(R.recipe.c_dot), lgeq: Math.log10(R.recipe.equivalents),
@@ -446,22 +511,23 @@ const fmt = v => isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(3) : "n/a";
 function ctl() {
   const c = document.getElementById("ctl");
   let h = `<label><span>Dielectric constant ε <span class="v" id="vEps"></span></span><input id="eps" type="range" min="${Math.log10(1.8)}" max="${Math.log10(80)}" step="0.005" value="${Math.log10(st.eps)}"></label>`;
+  h += `<label><span>Energy unit</span><select id="unit">${Object.entries(UNITS).map(([k, u]) => `<option value="${k}">${u[1]}</option>`).join("")}</select></label>`;
   h += `<label><span>Medium</span><select id="gas"><option value="0">solution</option><option value="1">gas phase</option></select></label>`;
   h += `<label><span>Electronic energy</span><select id="eset">${Object.entries(R.energy_sets || {given: "given"}).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></label>`;
   h += `<label><span>Electrostatics</span><select id="el"><option value="cosmo">COSMO on the DFT potential, density isosurface (any size)</option><option value="sccs">CP2K SCCS (electronic polarisation; molecules)</option><option value="gb">Generalized Born on RESP charges</option></select></label>`;
   h += `<label><span>Cavity + dispersion (Hille 2019)</span><select id="cav"><option value="beta0">β = 0 fit: (α+γ)(ε) S</option><option value="hille">β = −0.5 GPa fit (molecules only)</option><option value="none">left out</option></select></label>`;
   h += `<label><span>Temperature for the decomposition <span class="v" id="vT"></span></span><input id="ti" type="range" min="0" max="${R.T.length - 1}" step="1" value="${st.ti}"></label>`;
   h += `<label><span>Chemical-potential axis</span><select id="x"></select></label>`;
-  if (R.ligand) h += `<label title="Free energy per released ${R.ligand.species} beyond the model: chain packing in the ligand shell, conformational entropy (positive: binding stronger than the model)"><span>ΔG<sub>lig</sub> per released ${R.ligand.species} (eV) <span class="v" id="vLig"></span></span><input id="dglig" type="range" min="-0.5" max="0.5" step="0.01" value="${st.dglig}"></label>`;
+  if (R.ligand) h += `<label title="Free energy per released ${L(R.ligand.species)} beyond the model: chain packing in the ligand shell, conformational entropy (positive: binding stronger than the model)"><span>ΔG<sub>lig</sub> per released ${L(R.ligand.species)} <span class="v" id="vLig"></span></span><input id="dglig" type="range" min="-0.5" max="0.5" step="0.01" value="${st.dglig}"></label>`;
   for (const n in R.nu)
-    h += `<label><span>${n} <select id="ph_${n}">${Object.entries(PHASES).map(([k, d]) => `<option value="${k}">${d[0]}</option>`).join("")}</select> log<sub>10</sub> <span id="q_${n}"></span> <span class="v" id="v_${n}"></span></span><input id="lg_${n}" type="range" step="0.05"></label>`;
+    h += `<label><span>${L(n)} <select id="ph_${n}">${Object.entries(PHASES).map(([k, d]) => `<option value="${k}">${d[0]}</option>`).join("")}</select> log<sub>10</sub> <span id="q_${n}"></span> <span class="v" id="v_${n}"></span></span><input id="lg_${n}" type="range" step="0.05"></label>`;
   c.innerHTML = h;
   document.getElementById("el").value = st.el; document.getElementById("cav").value = st.cav; document.getElementById("eset").value = st.eset;
   for (const n in R.nu) { document.getElementById("ph_" + n).value = st.phase[n]; slider(n); }
   axisOptions();
   c.addEventListener("input", e => {
     const id = e.target.id, v = e.target.value;
-    if (id === "eps") st.eps = Math.pow(10, +v); else if (id === "gas") st.gas = v === "1"; else if (id === "el") st.el = v;
+    if (id === "eps") st.eps = Math.pow(10, +v); else if (id === "unit") st.unit = v; else if (id === "gas") st.gas = v === "1"; else if (id === "el") st.el = v;
     else if (id === "cav") st.cav = v; else if (id === "eset") st.eset = v; else if (id === "ti") st.ti = +v; else if (id === "x") st.x = v;
     else if (id === "dglig") st.dglig = +v;
     else if (id.startsWith("ph_")) { const n = id.slice(3); st.phase[n] = v; slider(n); axisOptions(); }
@@ -477,68 +543,74 @@ function slider(n) {              // the slider of species n for its current pha
 function axisOptions() {          // every species can be the map's axis (a liquid such as the amine: diluted in the solvent)
   const ok = Object.keys(R.nu);
   if (!ok.includes(st.x)) st.x = ok[0];
-  document.getElementById("x").innerHTML = ok.map(n => `<option ${n === st.x ? "selected" : ""}>${n}</option>`).join("");
+  document.getElementById("x").innerHTML = ok.map(n => `<option value="${n}" ${n === st.x ? "selected" : ""}>${L(n)}</option>`).join("");
 }
 function cond() { return {eps: st.gas ? 1 : st.eps, gas: st.gas, el: st.el, cav: st.cav}; }
 function draw() {
   document.getElementById("vEps").textContent = st.gas ? "(gas)" : st.eps.toFixed(2);
   document.getElementById("vT").textContent = R.T[st.ti] + " K";
   for (const n in R.nu) document.getElementById("v_" + n).textContent = st.lg[n][st.phase[n]].toFixed(2);
-  if (R.ligand) document.getElementById("vLig").textContent = (st.dglig >= 0 ? "+" : "") + st.dglig.toFixed(2);
+  if (R.ligand) document.getElementById("vLig").textContent = ev2(st.dglig);
   const c = cond(), r = reaction(c), i = st.ti, t = R.T[i];
   let cross = null; for (let k = 0; k < R.T.length - 1; k++) if (Math.sign(r.dG[k]) !== Math.sign(r.dG[k + 1])) { cross = R.T[k] + (0 - r.dG[k]) * (R.T[k + 1] - R.T[k]) / (r.dG[k + 1] - r.dG[k]); break; }
-  const alt = Object.entries(R.dE_alternatives_eV || {}).map(([l, v]) => `${l}: ${v === null ? "n/a" : fmt(v / PER)}`).join(" · ");
-  document.getElementById("alt").textContent = alt ? "ΔE (" + UNIT + ") " + alt + "  (the reaction uses the given energies)" : "";
-  document.getElementById("kpi").innerHTML = `<div><span>ΔG at ${t} K</span><b>${fmt(r.dG[i])} ${UNIT}</b></div><div><span>ΔG° (1 M)</span><b>${fmt(r.dG0[i])}</b></div>` +
-    `<div><span>kcal/mol</span><b>${fmt(r.dG[i] * 23.060548)}</b></div><div><span>ΔG = 0 at</span><b>${cross ? cross.toFixed(0) + " K" : "none in range"}</b></div>`;
+  const alt = Object.entries(R.dE_alternatives_eV || {}).map(([l, v]) => `${l}: ${v === null ? "n/a" : fe(v / PER)}`).join(" · ");
+  document.getElementById("alt").textContent = alt ? "ΔE (" + UL() + ") " + alt + "  (the reaction uses the given energies)" : "";
+  document.getElementById("kpi").innerHTML = `<div><span>ΔG at ${t} K</span><b>${fe(r.dG[i])} ${UL()}</b></div><div><span>ΔG° (1 M)</span><b>${fe(r.dG0[i])}</b></div>` +
+    `<div><span>ΔG = 0 at</span><b>${cross ? cross.toFixed(0) + " K" : "none in range"}</b></div>`;
   Plotly.react("pT", [
-    {x: R.T, y: r.dG, name: "ΔG at the chosen c", line: {color: C[0], width: 2}, hovertemplate: "%{y:.3f} " + UNIT},
-    {x: R.T, y: r.dG0, name: "ΔG° (1 M)", line: {color: C[0], width: 1.4, dash: "dash"}, hovertemplate: "%{y:.3f}"},
-    {x: R.T, y: reaction({eps: 1, gas: true}).dG, name: "gas phase", line: {color: "#8a8984", width: 1.4, dash: "dot"}, hovertemplate: "%{y:.3f}"}],
-    LAY("T (K)", "ΔG (" + UNIT + ")", {title: {text: "Reaction free energy", x: 0, font: {size: 13}}, shapes: [{type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0, line: {color: "#8a8984", width: 1}}]}), {displaylogo: false, responsive: true});
+    {x: R.T, y: cv(r.dG), name: "ΔG at the chosen c", line: {color: C[0], width: 2}, hovertemplate: "%{y:.3f} " + UL()},
+    {x: R.T, y: cv(r.dG0), name: "ΔG° (1 M)", line: {color: C[0], width: 1.4, dash: "dash"}, hovertemplate: "%{y:.3f}"},
+    {x: R.T, y: cv(reaction({eps: 1, gas: true}).dG), name: "gas phase", line: {color: "#8a8984", width: 1.4, dash: "dot"}, hovertemplate: "%{y:.3f}"}],
+    LAY("T (K)", "ΔG (" + UL() + ")", {title: {text: "Reaction free energy", x: 0, font: {size: 13}}, shapes: [{type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0, line: {color: "#8a8984", width: 1}}]}), {displaylogo: false, responsive: true});
   const PL = [["dE_DFT", "ΔE DFT"], ["dZPE", "ΔZPE"], ["dH_thermal", "ΔH thermal"], ["-TdS_trans", "−TΔS trans"], ["-TdS_rot", "−TΔS rot"], ["-TdS_vib", "−TΔS vib"], ["-TdS_el", "−TΔS el"], ["ddG_solv_el", "ΔΔG solv el."], ["ddG_solv_nonel", "ΔΔG cav+disp"], ["ligand", "ΔG lig (chain)"], ["kTlnQ", "kT ln Q"]];
-  const dv = PL.map(([k]) => r.parts[k][i]).concat([r.dG[i]]), dl = PL.map(p => p[1]).concat(["ΔG"]);
-  Plotly.react("pDec", [{type: "bar", orientation: "h", y: dl.slice().reverse(), x: dv.slice().reverse(), marker: {color: dl.map((_, k) => k === 0 ? "#52514e" : C[0])},
-    text: dv.slice().reverse().map(fmt), textposition: "outside", cliponaxis: false, hovertemplate: "%{y}: %{x:.4f} " + UNIT + "<extra></extra>"}],
-    LAY(UNIT, "", {title: {text: `Decomposition at ${t} K`, x: 0, font: {size: 13}}, margin: {l: 120, r: 60, t: 36, b: 48}, hovermode: "closest", showlegend: false}), {displaylogo: false, responsive: true});
+  const dv = PL.map(([k]) => r.parts[k][i] * UF()).concat([r.dG[i] * UF()]), dl = PL.map(p => p[1]).concat(["ΔG"]);
+  const yl = dl.slice().reverse(), xv = dv.slice().reverse(), dec = UNITS[st.unit][2];
+  // the values sit in their own column right of the plot: never on the bars' labels or each other
+  Plotly.react("pDec", [{type: "bar", orientation: "h", y: yl, x: xv, marker: {color: yl.map((_, k) => k === 0 ? "#52514e" : C[0])},
+    hovertemplate: "%{y}: %{x:." + (dec + 1) + "f} " + UL() + "<extra></extra>"}],
+    LAY(UL(), "", {title: {text: `Decomposition at ${t} K`, x: 0, font: {size: 13}}, margin: {l: 10, r: 78, t: 36, b: 48}, hovermode: "closest", showlegend: false,
+      yaxis: {automargin: true, gridcolor: "#e6e5e0", zeroline: false, ticksuffix: "  "},
+      annotations: yl.map((y, k) => ({xref: "paper", x: 1, xanchor: "left", xshift: 8, yref: "y", y: y, showarrow: false,
+        text: isFinite(xv[k]) ? (xv[k] >= 0 ? "+" : "") + xv[k].toFixed(dec) : "n/a", font: {size: 11, color: "#52514e"}}))}), {displaylogo: false, responsive: true});
   const dx = PHASES[st.phase[st.x]], nx = R.nu[st.x], sx = SP(st.x);
   const lc = Array.from({length: 121}, (_, k) => dx[3] + (dx[4] - dx[3]) * k / 120);
   const z = R.T.map((tt, k) => { const base = r.dG[k] - nx * KB * tt * lnA(sx, tt) / PER;
-    return lc.map(l => base + nx * KB * tt * lnA({...sx, c: Math.pow(10, l), p_bar: Math.pow(10, l), c_liquid: Math.pow(10, l)}, tt) / PER); });
+    return lc.map(l => UF() * (base + nx * KB * tt * lnA({...sx, c: Math.pow(10, l), p_bar: Math.pow(10, l), c_liquid: Math.pow(10, l)}, tt) / PER)); });
   const zmax = Math.max(...z.flat().filter(isFinite).map(Math.abs), 1e-6);
-  const qx = `log10 ${dx[1]}(${st.x} / ${dx[2]})`;
+  const qx = `log10 ${dx[1]}(${L(st.x)} / ${dx[2]})`;
   Plotly.react("pMap", [{type: "heatmap", x: lc, y: R.T, z: z, zmin: -zmax, zmax: zmax, colorscale: [[0, C[0]], [0.5, "#e8e7e3"], [1, C[1]]],
-    colorbar: {title: {text: UNIT, side: "right"}}, hovertemplate: qx + " %{x:.2f}<br>T %{y} K<br>ΔG %{z:.3f}<extra></extra>"},
+    colorbar: {title: {text: UL(), side: "right"}}, hovertemplate: qx + " %{x:.2f}<br>T %{y} K<br>ΔG %{z:.3f}<extra></extra>"},
     {type: "contour", x: lc, y: R.T, z: z, contours: {start: 0, end: 0, size: 1, coloring: "none", showlabels: false}, line: {color: "#0b0b0b", width: 2}, showscale: false, hoverinfo: "skip"}],
-    LAY(qx, "T (K)", {title: {text: `ΔG over T and μ(${st.x}), ${dx[0]}; line: ΔG = 0, blue: products favoured`, x: 0, font: {size: 13}}, hovermode: "closest"}), {displaylogo: false, responsive: true});
+    LAY(qx, "T (K)", {title: {text: `ΔG over T and μ(${L(st.x)}), ${dx[0]}; line: ΔG = 0, blue: products favoured`, x: 0, font: {size: 13}}, hovermode: "closest"}), {displaylogo: false, responsive: true});
   const eg = Array.from({length: 100}, (_, k) => Math.pow(10, Math.log10(1.8) + (Math.log10(80) - Math.log10(1.8)) * k / 99));
   const ser = [["cosmo", "beta0", "COSMO + cav/disp (β=0)"], ["cosmo", "none", "COSMO"], ["sccs", "beta0", "SCCS + cav/disp (β=0)"], ["sccs", "none", "SCCS"]];
-  const tr = ser.map(([el, cv, nm], k) => ({x: eg, y: eg.map(e => reaction({eps: e, gas: false, el: el, cav: cv}).dG[i]), name: nm, line: {color: C[k], width: 2}, hovertemplate: "%{y:.3f}"}));
-  tr.push({x: [st.eps], y: [r.dG[i]], mode: "markers", marker: {size: 10, color: "#0b0b0b"}, name: "current", hoverinfo: "skip"});
-  Plotly.react("pEps", tr, LAY("ε", "ΔG (" + UNIT + ")", {title: {text: `ΔG at ${t} K against ε`, x: 0, font: {size: 13}}, xaxis: {type: "log", title: {text: "ε"}, gridcolor: "#e6e5e0"}}), {displaylogo: false, responsive: true});
+  const tr = ser.map(([el, cv, nm], k) => ({x: eg, y: eg.map(e => UF() * reaction({eps: e, gas: false, el: el, cav: cv}).dG[i]), name: nm, line: {color: C[k], width: 2}, hovertemplate: "%{y:.3f}"}));
+  tr.push({x: [st.eps], y: [UF() * r.dG[i]], mode: "markers", marker: {size: 10, color: "#0b0b0b"}, name: "current", hoverinfo: "skip"});
+  Plotly.react("pEps", tr, LAY("ε", "ΔG (" + UL() + ")", {title: {text: `ΔG at ${t} K against ε`, x: 0, font: {size: 13}}, xaxis: {type: "log", title: {text: "ε"}, gridcolor: "#e6e5e0"}}), {displaylogo: false, responsive: true});
   Plotly.react("pConv", [{x: R.T, y: equilibrium(c), name: "conversion", line: {color: C[2], width: 2}, hovertemplate: "%{y:.1f} %"}],
     LAY("T (K)", "conversion (%)", {title: {text: "Equilibrium conversion (dissolved reactants at their c)", x: 0, font: {size: 13}}, yaxis: {range: [-2, 102], title: {text: "conversion (%)"}, gridcolor: "#e6e5e0"}, showlegend: false}), {displaylogo: false, responsive: true});
-  let tb = `<table><tr><th>species</th><th>ν</th><th>atoms</th><th>E (${st.eset}) eV</th><th>G corr ${t} K</th><th>ΔG solv</th><th>COSMO el.</th><th>SCCS el.</th><th>GB el.</th><th>cav+disp</th><th>dipole DFT / RESP / Hirshfeld (D)</th><th>RMSD Å</th></tr>`;
+  let tb = `<table><tr><th>species</th><th>ν</th><th>atoms</th><th>E (${st.eset}) eV</th><th>G corr ${t} K (${UNITS[st.unit][1]})</th><th>ΔG solv</th><th>COSMO el.</th><th>SCCS el.</th><th>GB el.</th><th>cav+disp</th><th>dipole DFT / RESP / Hirshfeld (D)</th><th>RMSD Å</th></tr>`;
   for (const n in R.species) { const s = SP(n), m = s.mace || {}, d = s.dipole_D || {};
     const co = elec(s, c.eps, "cosmo"), sc = elec(s, c.eps, "sccs"), gb = elec(s, c.eps, "gb"), all = dgSolv(s, c);
     const cv = s.cavity ? cavTerm(c.gas ? 1 : c.eps, s.cavity.S_A2, s.cavity.V_A3, st.cav) : NaN;
     const dd = [d.dft, d.resp, d.hirshfeld].map(v => v === null || v === undefined ? "–" : v.toFixed(2)).join(" / ");
-    tb += `<tr><td>${n}</td><td>${R.nu[n] ?? "equil."}</td><td>${s.n_atoms}</td><td>${E(s).toFixed(4)}</td><td>${fmt(s.thermo.G_corr[i])}</td><td>${fmt(all)}</td><td>${fmt(co)}</td><td>${fmt(sc)}</td><td>${fmt(gb)}</td><td>${fmt(cv)}</td><td>${dd}</td><td>${m.rmsd_heavy_A !== undefined ? m.rmsd_heavy_A.toFixed(3) : "n/a"}</td></tr>`; }
+    tb += `<tr><td>${L(n)}</td><td>${R.nu[n] ?? "equil."}</td><td>${s.n_atoms}</td><td>${E(s).toFixed(4)}</td><td>${fe(s.thermo.G_corr[i])}</td><td>${fe(all)}</td><td>${fe(co)}</td><td>${fe(sc)}</td><td>${fe(gb)}</td><td>${fe(cv)}</td><td>${dd}</td><td>${m.rmsd_heavy_A !== undefined ? m.rmsd_heavy_A.toFixed(3) : "n/a"}</td></tr>`; }
   document.getElementById("tab").innerHTML = tb + "</table>";
   if (R.recipe) drawRecipe(c);
-  const fl = Object.entries(R.species).flatMap(([n, s]) => s.flags.map(f => `${n}: ${f}`));
+  const fl = Object.entries(R.species).flatMap(([n, s]) => s.flags.map(f => `${L(n)}: ${f}`));
   document.getElementById("flags").innerHTML = fl.length ? "<b>Flags</b><br>" + fl.map(f => f.replace(/</g, "&lt;")).join("<br>") : "";
 }
 function rctl() {                 // the recipe controls (dots, reagent equivalents, additive, side-equilibrium correction)
-  const rc = R.recipe, side = (R.equilibria || []).map(e => e.equation).join("; ");
+  const rc = R.recipe, side = (R.equilibria || []).map(e => Object.keys(e.nu).filter(n => e.nu[n] < 0).map(L).join(" + ") + " ⇌ " +
+    Object.keys(e.nu).filter(n => e.nu[n] > 0).map(L).join(" + ")).join("; ");
   document.getElementById("recipe").hidden = false;
-  let h = `<label><span>Dots (${rc.dot}): log<sub>10</sub> c / M <span class="v" id="vDot"></span></span><input id="r_lgdot" type="range" min="-8" max="-3" step="0.05" value="${st.rc.lgdot}"></label>`;
-  h += `<label><span>${rc.reagent} per dot: log<sub>10</sub> equivalents <span class="v" id="vEq"></span></span><input id="r_lgeq" type="range" min="0" max="4" step="0.02" value="${st.rc.lgeq}"></label>`;
+  let h = `<label><span>Dots, ${L(rc.dot)}: log<sub>10</sub> c / M <span class="v" id="vDot"></span></span><input id="r_lgdot" type="range" min="-8" max="-3" step="0.05" value="${st.rc.lgdot}"></label>`;
+  h += `<label><span>${L(rc.reagent)} per dot: log<sub>10</sub> equivalents <span class="v" id="vEq"></span></span><input id="r_lgeq" type="range" min="0" max="4" step="0.02" value="${st.rc.lgeq}"></label>`;
   if (rc.additive) {
-    h += `<label><span>${rc.additive} added</span><select id="r_add"><option value="0">none</option><option value="1">added</option></select></label>`;
-    h += `<label><span>${rc.additive} added: log<sub>10</sub> c / M <span class="v" id="vAdd"></span></span><input id="r_lgadd" type="range" min="-6" max="0.5" step="0.05" value="${st.rc.lgadd}"></label>`;
+    h += `<label><span>${L(rc.additive)} added</span><select id="r_add"><option value="0">none</option><option value="1">added</option></select></label>`;
+    h += `<label><span>${L(rc.additive)} added: log<sub>10</sub> c / M <span class="v" id="vAdd"></span></span><input id="r_lgadd" type="range" min="-6" max="0.5" step="0.05" value="${st.rc.lgadd}"></label>`;
   }
-  if (side) h += `<label title="Added to ΔG° of ${side}: e.g. ion pairing (ammonium chloride) beyond the H-bonded complex computed here"><span>ΔG° correction of ${side} (eV) <span class="v" id="vBind"></span></span><input id="r_dgbind" type="range" min="-1" max="0.5" step="0.01" value="${st.dgbind}"></label>`;
+  if (side) h += `<label title="Added to ΔG° of ${side}: e.g. ion pairing (ammonium chloride) beyond the H-bonded complex computed here"><span>ΔG° correction of ${side} <span class="v" id="vBind"></span></span><input id="r_dgbind" type="range" min="-1" max="0.5" step="0.01" value="${st.dgbind}"></label>`;
   const c = document.getElementById("rctl"); c.innerHTML = h;
   if (rc.additive) document.getElementById("r_add").value = st.rc.add ? "1" : "0";
   c.addEventListener("input", e => {
@@ -547,10 +619,10 @@ function rctl() {                 // the recipe controls (dots, reagent equivale
     else if (id === "r_lgadd") st.rc.lgadd = +v; else if (id === "r_dgbind") st.dgbind = +v;
     draw();
   });
-  document.getElementById("rcNote").innerHTML = `Equilibrium in solution of ${R.equation}` + (side ? ` together with ${side}` : "") +
-    `, from c(${rc.dot}), ${rc.reagent} = equivalents × c(${rc.dot})` + (rc.additive ? ` and the ${rc.additive} added (0 allowed: the dots release their own)` : "") +
+  document.getElementById("rcNote").innerHTML = `Equilibrium in solution of the reaction above` + (side ? ` together with ${side}` : "") +
+    `, from the dots (${L(rc.dot)}) at c<sub>dot</sub>, ${L(rc.reagent)} = equivalents × c<sub>dot</sub>` + (rc.additive ? ` and the ${L(rc.additive)} added (0 allowed: the dots release their own)` : "") +
     `. Species set to <i>gas</i> above stay at their partial pressure (open flask), <i>pure liquid</i> at fixed activity; every dissolved species follows the mass balance (the concentration sliders above do not apply here). ` +
-    `θ: fraction of the dots converted (all ${-R.nu[rc.reagent]} ${rc.reagent} per dot in one step). Temperature: the decomposition slider; energy set, ε and solvation as chosen above.`;
+    `θ: fraction of the dots converted (all ${-R.nu[rc.reagent]} ${L(rc.reagent)} per dot in one step). Temperature: the decomposition slider; energy set, ε and solvation as chosen above.`;
 }
 const sci = v => isFinite(v) ? v.toExponential(2) : "n/a";
 function drawRecipe(c) {
@@ -559,37 +631,38 @@ function drawRecipe(c) {
   document.getElementById("vDot").textContent = sci(cdot) + " M";
   document.getElementById("vEq").textContent = eqv.toFixed(eqv < 10 ? 1 : 0) + ` (${sci(eqv * cdot)} M)`;
   if (rc.additive) { document.getElementById("vAdd").textContent = st.rc.add ? sci(cadd) + " M" : "(none)"; document.getElementById("r_lgadd").disabled = !st.rc.add; }
-  if (document.getElementById("vBind")) document.getElementById("vBind").textContent = (st.dgbind >= 0 ? "+" : "") + st.dgbind.toFixed(2);
+  if (document.getElementById("vBind")) document.getElementById("vBind").textContent = ev2(st.dgbind);
   const now = speciate(S, i, cdot, eqv, cadd), a = now.a;
   const sideP = [...new Set((R.equilibria || []).flatMap(e => Object.keys(e.nu).filter(n => e.nu[n] > 0)))];
   const shown = [rc.reagent, ...sideP, ...(rc.additive ? [rc.additive] : [])].filter(n => n in a);
   document.getElementById("rkpi").innerHTML = `<div><span>dots converted at ${t} K</span><b>${isFinite(now.theta) ? (100 * now.theta).toFixed(1) + " %" : "n/a"}</b></div>` +
-    shown.map(n => `<div><span>${n === rc.reagent ? "free " : ""}${n}</span><b>${sci(a[n])} M</b></div>`).join("");
+    shown.map(n => `<div><span>${n === rc.reagent ? "free " : ""}${L(n)}</span><b>${sci(a[n])} M</b></div>`).join("");
   const cfg = {displaylogo: false, responsive: true};
   const lgE = Array.from({length: 81}, (_, k) => 4 * k / 80);
-  const curves = [[0, `no ${rc.additive || "additive"} added`, "dash"]].concat(cadd > 0 ? [[cadd, `${rc.additive} ${sci(cadd)} M`, "solid"]] : []);
+  const AD = rc.additive ? L(rc.additive) : "additive", RG = L(rc.reagent);
+  const curves = [[0, `no ${AD} added`, "dash"]].concat(cadd > 0 ? [[cadd, `${AD} ${sci(cadd)} M`, "solid"]] : []);
   Plotly.react("pRecEq", curves.map(([ca, nm, ds], k) => ({x: lgE.map(l => Math.pow(10, l)), y: lgE.map(l => 100 * speciate(S, i, cdot, Math.pow(10, l), ca).theta),
       name: nm, line: {color: C[k], width: 2, dash: ds}, hovertemplate: "%{y:.1f} %"}))
     .concat([{x: [eqv], y: [100 * now.theta], mode: "markers", marker: {size: 10, color: "#0b0b0b"}, name: "recipe", hoverinfo: "skip"}]),
-    LAY(`${rc.reagent} equivalents per dot`, "dots converted (%)", {title: {text: `Conversion against ${rc.reagent} at ${t} K, dots ${sci(cdot)} M`, x: 0, font: {size: 13}},
-      xaxis: {type: "log", title: {text: `${rc.reagent} equivalents per dot`}, gridcolor: "#e6e5e0"}, yaxis: {range: [-2, 102], title: {text: "dots converted (%)"}, gridcolor: "#e6e5e0"}}), cfg);
+    LAY(`${RG} equivalents per dot`, "dots converted (%)", {title: {text: `Conversion against ${RG} at ${t} K, dots ${sci(cdot)} M`, x: 0, font: {size: 13}},
+      xaxis: {type: "log", title: {text: `${RG} equivalents per dot`}, gridcolor: "#e6e5e0"}, yaxis: {range: [-2, 102], title: {text: "dots converted (%)"}, gridcolor: "#e6e5e0"}}), cfg);
   if (rc.additive) {
     const mx = Array.from({length: 41}, (_, k) => 4 * k / 40), my = Array.from({length: 27}, (_, k) => -6 + 6.5 * k / 26);
     const z = my.map(ly => mx.map(lx => 100 * speciate(S, i, cdot, Math.pow(10, lx), Math.pow(10, ly)).theta));
     Plotly.react("pRecMap", [{type: "heatmap", x: mx, y: my, z: z, zmin: 0, zmax: 100, colorscale: [[0, "#f1efe8"], [1, C[0]]],
-        colorbar: {title: {text: "%", side: "right"}}, hovertemplate: `log10 eq %{x:.2f}<br>log10 ${rc.additive} %{y:.2f}<br>%{z:.1f} %<extra></extra>`},
+        colorbar: {title: {text: "%", side: "right"}}, hovertemplate: `log10 eq %{x:.2f}<br>log10 ${AD} %{y:.2f}<br>%{z:.1f} %<extra></extra>`},
       {type: "contour", x: mx, y: my, z: z, contours: {start: 50, end: 50, size: 1, coloring: "none"}, line: {color: "#0b0b0b", width: 2}, showscale: false, hoverinfo: "skip"}]
       .concat(cadd > 0 ? [{x: [st.rc.lgeq], y: [st.rc.lgadd], mode: "markers", marker: {size: 10, color: "#0b0b0b", line: {color: "#fff", width: 2}}, hoverinfo: "skip", showlegend: false}] : []),
-      LAY(`log10 ${rc.reagent} equivalents per dot`, `log10 ${rc.additive} added (M)`, {title: {text: `Dots converted at ${t} K (line: 50 %); no ${rc.additive}: left plot`, x: 0, font: {size: 13}}, hovermode: "closest"}), cfg);
+      LAY(`log10 ${RG} equivalents per dot`, `log10 ${AD} added (M)`, {title: {text: `Dots converted at ${t} K (line: 50 %); no ${AD}: left plot`, x: 0, font: {size: 13}}, hovermode: "closest"}), cfg);
   }
   const sp = lgE.map(l => speciate(S, i, cdot, Math.pow(10, l), cadd).a);
-  Plotly.react("pRecSpec", shown.map((n, k) => ({x: lgE.map(l => Math.pow(10, l)), y: sp.map(q => q[n]), name: n === rc.reagent ? `free ${n}` : n,
+  Plotly.react("pRecSpec", shown.map((n, k) => ({x: lgE.map(l => Math.pow(10, l)), y: sp.map(q => q[n]), name: n === rc.reagent ? `free ${L(n)}` : L(n),
       line: {color: C[k + 2], width: 2}, hovertemplate: "%{y:.2e} M"})),
-    LAY(`${rc.reagent} equivalents per dot`, "c (M)", {title: {text: `In solution at equilibrium, ${t} K` + (cadd > 0 ? `, ${rc.additive} ${sci(cadd)} M added` : `, no ${rc.additive || "additive"} added`), x: 0, font: {size: 13}},
-      xaxis: {type: "log", title: {text: `${rc.reagent} equivalents per dot`}, gridcolor: "#e6e5e0"}, yaxis: {type: "log", exponentformat: "power", title: {text: "c (M)"}, gridcolor: "#e6e5e0"}}), cfg);
+    LAY(`${RG} equivalents per dot`, "c (M)", {title: {text: `In solution at equilibrium, ${t} K` + (cadd > 0 ? `, ${AD} ${sci(cadd)} M added` : `, no ${AD} added`), x: 0, font: {size: 13}},
+      xaxis: {type: "log", title: {text: `${RG} equivalents per dot`}, gridcolor: "#e6e5e0"}, yaxis: {type: "log", exponentformat: "power", title: {text: "c (M)"}, gridcolor: "#e6e5e0"}}), cfg);
   Plotly.react("pRecT", curves.map(([ca, nm, ds], k) => ({x: R.T, y: R.T.map((_, j) => 100 * speciate(S, j, cdot, eqv, ca).theta), name: nm,
       line: {color: C[k], width: 2, dash: ds}, hovertemplate: "%{y:.1f} %"})),
-    LAY("T (K)", "dots converted (%)", {title: {text: `Conversion against T at ${eqv.toFixed(eqv < 10 ? 1 : 0)} ${rc.reagent} per dot`, x: 0, font: {size: 13}},
+    LAY("T (K)", "dots converted (%)", {title: {text: `Conversion against T at ${eqv.toFixed(eqv < 10 ? 1 : 0)} ${RG} per dot`, x: 0, font: {size: 13}},
       yaxis: {range: [-2, 102], title: {text: "dots converted (%)"}, gridcolor: "#e6e5e0"}}), cfg);
 }
 // no solvation data yet (CP2K still running): open on the gas phase
@@ -604,8 +677,14 @@ def page(res: dict) -> str:
     for s in slim["species"].values():
         s.pop("frequencies_cm1", None)
     # NaN stays NaN: the data is a JS literal, where NaN is valid (null would count as 0 in the sums)
+    lab = species_labels(res)
+    slim["labels"] = lab
     data = json.dumps(slim, separators=(",", ":"), allow_nan=True).replace("</", "<\\/")
     title = html.escape(f"Reaction free energy: {res['name']}")
-    return (PAGE.replace("__TITLE__", title).replace("__EQ__", html.escape(" + ".join(
-        f"{-v} {n}" for n, v in res["nu"].items() if v < 0) + " → " + " + ".join(f"{v} {n}" for n, v in res["nu"].items() if v > 0)))
+    term = lambda v, n: f"{_n(abs(v))} {lab[n]}".strip()
+    eq = " + ".join(term(v, n) for n, v in res["nu"].items() if v < 0) + " → " + " + ".join(term(v, n) for n, v in res["nu"].items() if v > 0)
+    for e in res.get("equilibria") or []:
+        eq += "<br>" + " + ".join(term(v, n) for n, v in e["nu"].items() if v < 0) + " ⇌ " + " + ".join(
+            term(v, n) for n, v in e["nu"].items() if v > 0)
+    return (PAGE.replace("__TITLE__", title).replace("__EQ__", "<br>".join(html.escape(x) for x in eq.split("<br>")))
         .replace("__DATA__", data).replace("__PER__", repr(model.per_factor(res))).replace("__JS__", JS_MODEL))

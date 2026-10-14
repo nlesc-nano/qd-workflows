@@ -116,7 +116,7 @@ def load(path: str) -> dict:
             "energy_eV": float(e) * scale, "energy_input": float(e), "charge": int(sp.get("charge", 0)),
             "mult": int(sp.get("mult", 1)), "phase": phase,
             "c": float(sp.get("c", 1.0)), "c_liquid": sp.get("c_liquid"), "p_bar": sp.get("p_bar", 1.0),
-            "symmetry_number": sp.get("symmetry_number"),
+            "symmetry_number": sp.get("symmetry_number"), "label": sp.get("label"),
             "charges_file": str((src.parent / sp["charges"]).resolve()) if sp.get("charges") else None,
         }
         if (entry["mult"] - 1) % 2 != (sum(Z(s) for s in symbols) - entry["charge"]) % 2:
