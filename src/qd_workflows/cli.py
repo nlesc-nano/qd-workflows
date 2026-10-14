@@ -238,7 +238,7 @@ def main(argv=None) -> int:
     p.add_argument("--name", default="props")
     p.add_argument("--pieces", action="store_true", help="resubmit the job until the run finishes (short QoS)")
     p.add_argument("--md", action="store_true", help="also run MD (constant-T and ramp replicas): the MD subset")
-    p.add_argument("--cpu-time", default=None, help="wall time of the CPU (xTB) stage, if the profile splits the run")
+    p.add_argument("--cpu-time", default=None, help="wall time of the CPU (assembly) stage, if the profile splits the run")
 
     p = pp.add_parser("chains", help="one CP2K chain (geo_opt, field, PDOS, TREXIO, QDEX) per record at <record>/cp2k")
     p.add_argument("records", nargs="*", help="record directories")

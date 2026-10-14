@@ -1,4 +1,6 @@
-"""Orchestr.AI PROPS runs (MACE-MH-1 / xtb properties of library records) on a GPU cluster."""
+"""Orchestr.AI PROPS runs of library records: MACE-MH-1 on a GPU, the CP2K chains, the CPU assembly.
+No xTB: IR/Raman and solvation come from the DFT chain (vibspec_source and solvation_charges "dft").
+Records above MAX_ATOMS atoms are left out (no DFT chain for them yet)."""
 from __future__ import annotations
 
 import json
@@ -14,15 +16,17 @@ from .cluster import sbatch_account
 ALL_STEPS = ["relax", "structure", "hessian", "field", "vibspec", "stability", "detachment",
              "solvation", "sites", "report", "wigner", "md"]
 # With a `props.cpu` section in the cluster profile the run is split in two jobs: MACE-MH-1
-# steps on a GPU, then the xTB steps (and the report) on a CPU node, which the GPU job submits
-# when it ends. g-xTB and GFN2-xTB are CPU programs: on the GPU node they left the A100 idle
-# (54 min of g-xTB Raman for a 141-atom dot).
+# steps on a GPU, then the assembly steps (field, vibspec, solvation, sites, report) on a CPU node,
+# which the GPU job submits when it ends; they need no GPU.
 # With `props.dft_chain` the GPU job also submits one CP2K chain per record (geo_opt, field
 # single points, PDOS, TREXIO, QDEX) and the CPU job waits for all of them: IR/Raman and
 # solvation come from the chains' finite-field runs (Orchestr.AI field step).
 GPU_STEPS = ["relax", "structure", "hessian", "stability", "detachment", "wigner", "md"]
 CPU_STEPS = ["field", "vibspec", "solvation", "sites", "report"]
 DFT_MAX_ATOMS = 2000
+MAX_ATOMS = DFT_MAX_ATOMS     # the batch takes only dots that get the DFT chain
+# Orchestr.AI settings that keep xTB out of the batch: DFT tensors for IR/Raman, DFT solvation
+DFT_SETTINGS = {"vibspec_source": "dft", "solvation_charges": "dft"}
 
 
 RUN = "python -m orchestr_ai.postprocessing {config}"
@@ -56,6 +60,11 @@ echo "[props] DFT chains: ${{ids:-none}}"
 """
 
 
+def _n_atoms(record_dir: Path) -> int:
+    """Atom count of a record (first line of start.xyz)."""
+    return int((record_dir / "start.xyz").read_text().split("\n", 1)[0].split()[0])
+
+
 def _seconds(t: str) -> int:
     days, _, hms = t.rpartition("-")
     parts = [int(x) for x in hms.split(":")]
@@ -70,9 +79,10 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
     """
     Write `<out_dir>/{config.yaml, job.sh}`: a GPU job running `run_type: PROPS` over
     `records` (directories with record.json and start.xyz). If the cluster profile has a
-    `props.cpu` section, the xTB steps go to `{config_cpu.yaml, job_cpu.sh}`, a CPU job
+    `props.cpu` section, the assembly steps go to `{config_cpu.yaml, job_cpu.sh}`, a CPU job
     that the GPU job submits when it ends and that only reads the GPU steps from the cache.
-    Paths to the MACE model, g-xTB, the bulk CIFs and the shared references come from the
+    Records above `max_atoms` (default MAX_ATOMS = 2,000) are left out and listed in the result.
+    Paths to the MACE model, the bulk CIFs and the shared references come from the
     profile's `props` section. With `pieces`, each job resubmits itself until its run
     finishes (for queues where only short jobs start soon).
     """
@@ -83,6 +93,12 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
     missing = [r for r in recs if not (Path(r) / "record.json").is_file()]
     if missing:
         raise FileNotFoundError(f"no record.json in {', '.join(missing)}")
+    limit = int(max_atoms or MAX_ATOMS)
+    size = {r: _n_atoms(Path(r)) for r in recs}
+    skipped = {Path(r).name: size[r] for r in recs if size[r] > limit}
+    recs = [r for r in recs if size[r] <= limit]
+    if not recs:
+        raise ValueError(f"every record has more than {limit} atoms: {skipped}")
     steps = list(steps or ALL_STEPS)
     split = bool(pp.get("cpu"))
     gpu_steps = [s for s in steps if s in GPU_STEPS] if split else steps
@@ -93,11 +109,10 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
              "mace_head": pp.get("head", "omat_pbe"),
              "props": {"records": recs, "steps": stage_steps, "force": False,
                        # md runs only for the MD subset (wigner always)
-                       "settings": {"device": "auto", "dtype": "float64", "md_enabled": bool(md)}}}
+                       "settings": {"device": "auto", "dtype": "float64", "md_enabled": bool(md), **DFT_SETTINGS}}}
         if upstream:
             c["props"]["upstream"] = upstream
-        if max_atoms:
-            c["props"]["max_atoms"] = int(max_atoms)
+        c["props"]["max_atoms"] = limit
         return c
 
     def runner(cfg, job, wall, then=""):
@@ -106,7 +121,7 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
             return RUN_PIECES.format(seconds=max(_seconds(wall) - 60, 60), run=run, job=job, then=then)
         return f"{run}; rc=$?\n{then}exit $rc" if then else run
 
-    result = {"records": recs}
+    result = {"records": recs, "skipped_too_large": skipped}
     if gpu_steps:
         wall = time or pp.get("time", "01:00:00")
         (out / "config.yaml").write_text(yaml.safe_dump(config(gpu_steps), sort_keys=False))
