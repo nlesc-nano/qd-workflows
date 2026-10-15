@@ -1,0 +1,15 @@
+# Dependabot: weekly version updates of the documentation site's requirements (docs/requirements.txt).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(docs)"
+    ignore:
+      # MkDocs 2.0 removes the plugin system and rewrites theming: Material for MkDocs does not run
+      # on it (mkdocs-material requires mkdocs<2). Stay on MkDocs 1.x.
+      # https://squidfunk.github.io/mkdocs-material/blog/2026/02/18/mkdocs-2.0/
+      - dependency-name: mkdocs
+        versions: [">=2"]
