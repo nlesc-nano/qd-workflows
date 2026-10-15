@@ -79,6 +79,19 @@ LBFGS_MOTION = """&MOTION
 """
 
 
+# One GAPW single point (CUTOFF 400 Ry, 4 grids, non-periodic MULTIPOLE cell) holds the cell's
+# real-space grids, which outweigh the basis for small and medium dots: Cd16Se13Cl6 in a 23.6 A cube
+# took 13.3 GB over 3 ranks (hyperion, CP2K 2026.2; 4.5 GB per rank), whatever the rank count.
+GRID_MEM_REF_GB = 13.5
+GRID_MEM_REF_VOL_A3 = 23.631 ** 3
+
+
+def grid_memory_gb(cell: str) -> float:
+    """Memory (GB) of one single point of the dot in its cell, scaled from the reference by volume."""
+    a, b, c = (float(x) for x in str(cell).split())
+    return GRID_MEM_REF_GB * a * b * c / GRID_MEM_REF_VOL_A3
+
+
 def cell_abc(coords: np.ndarray, vacuum: float = VACUUM_A) -> str:
     extent = np.ptp(np.asarray(coords, float), axis=0) + vacuum
     return " ".join(f"{x:.3f}" for x in extent)
@@ -266,6 +279,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "PROJECT": project, "QDW_PYTHON": py, "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
         "CLUSTER": cluster_ref, "QDEX": cluster.get("qdex", {}).get("command", "qdex"),
         "FIELD": "1" if field else "0", "FIELD_PARALLEL": int(cp.get("field_parallel", 13)),
+        "GRID_MEM_GB": f"{grid_memory_gb(info['cell_A']):.0f}", "GRID_MEM_MB": int(1024 * grid_memory_gb(info["cell_A"])),
         "RECORD_DIR": str(Path(record).resolve().parent) if record else "",
     }
     (out / "chain.sh").write_text(render((TEMPLATES / "slurm" / "cp2k_chain.sh").read_text(), job))
