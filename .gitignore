@@ -5,3 +5,7 @@ dist/
 .DS_Store
 runs/
 third_party/gxtb/bin/
+
+# MkDocs build output
+site/
+_site_check/
