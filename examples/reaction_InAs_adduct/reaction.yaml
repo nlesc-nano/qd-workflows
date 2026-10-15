@@ -1,0 +1,24 @@
+# InAs dot etched by HCl delivered as the CH3NH2...HCl adduct (in an amine medium HCl is bound to
+# the amine; in the gas phase the proton stays on Cl: H-bonded complex, N...H 1.66 A, H-Cl 1.30 A).
+# Same dots, AsH3 and CH3NH2 as examples/reaction_InAs_HCl (HLE17 energies, Hartree).
+# CH3NH2_HCl energy: E(CH3NH2) + E(HCl) given here + the binding energy computed with qdw's CP2K
+# settings for all three (HLE17, GAPW: dE_bind = -0.3954 eV), so that the settings offsets cancel.
+name: InAs285_adduct
+energy_method: HLE17
+equation: "origin + 12 CH3NH2_HCl -> QD_Cl + 4 AsH3 + 20 CH3NH2"
+energy_unit: hartree
+T: [250, 800, 10]
+per: CH3NH2_HCl
+conditions: {eps: 2.38, electrostatics: cosmo, cavity: beta0}
+scan: {species: CH3NH2_HCl, log10_c: [-8, 1]}
+ligand: CH3NH2
+species:
+  origin:     {xyz: origin_285.xyz, energy: xyz, charge: 0, mult: 1, c: 1.0e-6}
+  CH3NH2_HCl: {xyz: CH3NH2_HCl.xyz, energy: -36.0399911214, charge: 0, mult: 1, c: 1.0e-2}
+  QD_Cl:      {xyz: QD_Cl_285.xyz,  energy: xyz, charge: 0, mult: 1, c: 1.0e-9}
+  AsH3:       {xyz: AsH3.xyz,       energy: xyz, charge: 0, mult: 1, c: 1.0e-6, p_bar: 1.0e-4}
+  CH3NH2:     {xyz: CH3NH2.xyz,     energy: xyz, charge: 0, mult: 1, phase: solvent, c_liquid: 3.04, c: 1.0e-5}
+settings:
+  sp_functional: HLE17
+  sccs: false                     # COSMO on RESP charges for all species
+  energy_check_functional: PBE0

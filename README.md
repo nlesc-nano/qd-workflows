@@ -8,6 +8,8 @@ The packages keep their own repositories; this one pins them
 (`components.yaml`), describes each HPC cluster (`clusters/`), and holds the job
 templates and glue code (`src/qd_workflows`).
 
+Documentation (pipeline, theory with every formula, command line): the MkDocs site in `docs/` (`mkdocs serve`), built on Read the Docs from `.readthedocs.yaml`. Start at [docs/index.md](docs/index.md) or [the pipeline overview](docs/pipeline/overview.md).
+
 ## Layout
 
 | Path | Holds |
@@ -17,6 +19,7 @@ templates and glue code (`src/qd_workflows`).
 | `src/qd_workflows/templates/cp2k/` | CP2K inputs (geo_opt, PDOS, TREXIO, sample energy-force) with `{{PLACEHOLDERS}}` |
 | `src/qd_workflows/templates/slurm/` | job scripts |
 | `src/qd_workflows/cp2k/` | input generation, MO window, TREXIO trimming, force parsing |
+| `src/qd_workflows/reaction/` | `qdw reaction`: free energies of a user's reaction vs T, eps and concentrations ([docs/reactions.md](docs/reactions.md)) |
 | `src/qd_workflows/compare.py` | `qdw compare`: two `props/properties.json` value by value, with tolerances (Phase 0 gate) |
 | `schema/` | `qd-schema`, the shared file formats (ensemble manifest, CP2K summary; later the library record) |
 | `envs/compute-gpu.yml`, `containers/compute.def` | GPU compute environment and its Apptainer image (untested) |
@@ -68,6 +71,18 @@ qdw cp2k trim run/trexio/orbitals.h5 run/orbitals.h5 --window run/window.json
 Resources come from the cluster profile: the core count scales with the square
 of the number of basis functions, calibrated on a 4.2 nm CdSe run (24k basis
 functions, 240 cores, 340 GB).
+
+## Reaction free energies (on demand)
+
+From DFT-relaxed structures and energies of a balanced reaction: MACE-MH-1 Hessians for the
+thermal terms, CP2K SCCS and GB solvation, and the reaction free energy against T, the
+dielectric constant and every species' concentration, with an interactive page. Formulas and
+usage: [docs/reactions.md](docs/reactions.md).
+
+```bash
+qdw reaction check reaction.yaml
+qdw reaction prepare reaction.yaml --cluster nhr --out runs/x && (cd runs/x && bash submit.sh)
+```
 
 ## Phase 0 gate
 

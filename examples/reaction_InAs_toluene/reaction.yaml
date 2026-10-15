@@ -1,0 +1,38 @@
+# Post-synthesis HCl treatment: InAs dots made in oleylamine (InCl3 + As precursor), passivated by
+# Cl and amine, washed, redispersed in toluene and treated with HCl; oleylamine added or not.
+# The knobs (recipe): dot concentration, HCl equivalents per dot, added amine (0 = none).
+# Every etched dot releases 8 amines; free amine binds HCl (CH3NH2...HCl adduct), which lowers the
+# free HCl: the reaction and that equilibrium are solved together from the amounts put in.
+# Same structures and HLE17 energies as examples/reaction_InAs_HCl and examples/reaction_InAs_adduct.
+name: InAs285_HCl_toluene
+energy_method: HLE17
+equation: "origin + 12 HCl -> QD_Cl + 4 AsH3 + 8 CH3NH2"
+equilibria:
+  - "CH3NH2 + HCl -> CH3NH2_HCl"
+energy_unit: hartree
+T: [250, 800, 10]
+per: HCl
+conditions: {eps: 2.38, electrostatics: cosmo, cavity: beta0}   # toluene
+scan: {species: HCl, log10_c: [-8, 1]}
+ligand: CH3NH2                 # stands in for oleylamine
+recipe:
+  dot: origin
+  c_dot: 1.0e-5                # M (10 uM dots)
+  reagent: HCl
+  equivalents: 100             # HCl per dot
+  additive: CH3NH2             # oleylamine added to the toluene (stand-in)
+  c_additive: 0.0              # M; 0 = none added
+species:
+  origin:     {xyz: ../reaction_InAs_HCl/origin_285.xyz, energy: xyz, c: 1.0e-5}
+  HCl:        {xyz: ../reaction_InAs_HCl/HCl.xyz,        energy: xyz, c: 1.0e-3, p_bar: 1.0e-2}
+  QD_Cl:      {xyz: ../reaction_InAs_HCl/QD_Cl_285.xyz,  energy: xyz, c: 1.0e-9}
+  # AsH3 leaves to the headspace (open flask, N2 flow): gas at a low partial pressure;
+  # set it to dissolved on the page for a closed vial
+  AsH3:       {xyz: ../reaction_InAs_HCl/AsH3.xyz,       energy: xyz, phase: gas, c: 1.0e-6, p_bar: 1.0e-4}
+  CH3NH2:     {xyz: ../reaction_InAs_HCl/CH3NH2.xyz,     energy: xyz, c: 1.0e-3}
+  # E(CH3NH2) + E(HCl) + dE_bind (HLE17, GAPW, qdw settings: -0.3954 eV)
+  CH3NH2_HCl: {xyz: ../reaction_InAs_adduct/CH3NH2_HCl.xyz, energy: -36.0399911214, c: 1.0e-3}
+settings:
+  sp_functional: HLE17
+  sccs: false
+  energy_check_functional: PBE0

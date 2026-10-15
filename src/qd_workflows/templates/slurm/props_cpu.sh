@@ -3,7 +3,7 @@
 #SBATCH -t {{TIME}}
 #SBATCH -p {{PARTITION}}
 #SBATCH --qos={{QOS}}
-{{CONSTRAINT}}#SBATCH -c {{CPUS}}
+{{CONSTRAINT}}{{ACCOUNT}}#SBATCH -c {{CPUS}}
 #SBATCH --mem={{MEM}}
 {{SETUP}}
 {{CONDA_INIT}}
@@ -19,5 +19,6 @@ export QDPROPS_CIF_DIRS={{CIF_DIRS}}
 export QDPROPS_REFS={{REFS}}
 {{EXTRA_ENV}}
 
-# xTB steps only: the MACE steps come from the GPU stage's cache (props.upstream: cached)
+# assembly steps only (field, vibspec, solvation, sites, report): the MACE steps come from the
+# GPU stage's cache (props.upstream: cached)
 {{RUN}}
