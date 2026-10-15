@@ -5,7 +5,7 @@
 #SBATCH -N {{NODES}}
 #SBATCH --mem-per-cpu={{MEM_PER_CPU}}
 #SBATCH --qos={{QOS}}
-{{PARTITION}}{{SETUP}}
+{{PARTITION}}{{ACCOUNT}}{{SETUP}}
 {{CP2K_SETUP}}
 
 echo "${SLURM_NTASKS} processes"

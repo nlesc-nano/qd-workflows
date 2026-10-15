@@ -13,6 +13,10 @@ dependencies = [
   "h5py",
 ]
 
+[project.optional-dependencies]
+# qdw reaction: MACE runs (with Orchestr.AI), plots and the solvation post-processing
+reaction = ["ase", "matplotlib", "scipy", "scikit-image"]
+
 [project.scripts]
 qdw = "qd_workflows.cli:main"
 
@@ -20,4 +24,4 @@ qdw = "qd_workflows.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qd_workflows = ["templates/*/*"]
+qd_workflows = ["templates/*/*", "reaction/data/*.json"]

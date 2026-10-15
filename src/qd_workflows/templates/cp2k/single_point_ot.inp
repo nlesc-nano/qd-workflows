@@ -34,10 +34,7 @@
 {{SCF_PRINT}}
     &END
     WFN_RESTART_FILE_NAME {{WFN_FILE}}
-    &XC
-      &XC_FUNCTIONAL PBE
-      &END
-    &END
+{{XC}}
   &END
   &SUBSYS
     &TOPOLOGY

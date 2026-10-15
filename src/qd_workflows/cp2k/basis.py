@@ -65,8 +65,10 @@ def kinds_for(elements, basis_file, potential_file, basis_family: str, potential
     return {e: kind_for(e, basis_file, potential_file, basis_family, potential_family) for e in sorted(set(elements))}
 
 
-def kind_blocks(kinds: dict[str, Kind]) -> str:
+def kind_blocks(kinds: dict[str, Kind], aux_fit: str | None = None) -> str:
+    """&KIND blocks; aux_fit (e.g. admm-dzp) adds the ADMM auxiliary basis <aux_fit>-q<valence>."""
+    aux = (lambda k: f"\n      BASIS_SET AUX_FIT  {aux_fit}-q{k.valence}") if aux_fit else (lambda k: "")
     return "\n".join(
-        f"    &KIND {k.element}\n      BASIS_SET  {k.basis}\n      POTENTIAL  {k.potential}\n    &END"
+        f"    &KIND {k.element}\n      BASIS_SET  {k.basis}{aux(k)}\n      POTENTIAL  {k.potential}\n    &END"
         for k in kinds.values()
     )
