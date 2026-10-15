@@ -57,14 +57,28 @@ the CP2K chain.
 
 Desorption of Z-type ligands $\mathrm{MX}_q$, one unit after another, for dots up to 600 atoms.
 A unit is a surface cation with its own bonded X; a cation with fewer bonded X is completed by
-the closest other X (flagged non-molecular). The default search moves symmetry-equivalent units
-together (`detach_search: symmetric`); the alternative is a beam search (2 structures per level).
-After every removal the units are redefined on the relaxed, reconstructed surface. Candidates are
-relaxed in batches on the GPU (up to 4,000 atoms per MACE call), from a 0.02 Å random
-perturbation so they leave flat valleys, and polished to 0.005 eV/Å before ranking.
+the closest other X (flagged non-molecular). After every removal the units are redefined on the
+relaxed, reconstructed surface. Candidates are relaxed in batches on the GPU (up to 4,000 atoms per
+MACE call), from a 0.02 Å random perturbation so they leave flat valleys.
 
-Along the best path, Hessians of the products (up to 300 atoms) give the vibrational free-energy
-change of each step. Output: the ladder $\Delta E_k$, $\Delta G_k(T)$, the files
+The default is a **greedy, quick** search, meant to describe the desorption energies
+qualitatively at a bounded cost:
+
+- one unit removed per step, the cheapest one (`detach_search: greedy`);
+- after a removal only the units within 7 Å of it are re-relaxed, plus any unit within 0.3 eV of
+  the best; the others keep their previous $\Delta E$;
+- at most 12 removals (`detach_max_levels`);
+- candidates relaxed to 0.05 eV/Å, no polishing (`detach_quick`);
+- one Hessian per path, for the last state (dots up to 300 atoms); the vibrational free energy of
+  the states in between is linear in $k$ from the intact dot.
+
+On Cd68Se55Cl26 the first four removals equal those of the full beam search and the path drifts
+higher by ~0.1 eV per unit after that; on Pb236S201Cl70 it equals the full greedy ladder. Cost on
+an A100: 3.6 min (149 atoms), 8.5 min (507 atoms). The alternatives are `detach_search: beam`
+(2 structures per level, every unit, polished to 0.005 eV/Å: accurate, ~7,000 relaxations at
+300 atoms) and `symmetric` (symmetry-equivalent units together: cheap, but its paths were up to
+2.2 eV higher on Cd68). A MACE-MH-1 force call costs ~80 ms whatever the size, so the number of
+optimiser steps sets the cost. Output: the ladder $\Delta E_k$, $\Delta G_k(T)$, the files
 `props/detach_<k>.xyz` (one per state), and every relaxed configuration the search evaluated, for
 the Boltzmann average $\langle k\rangle(T, \mu)$.
 
