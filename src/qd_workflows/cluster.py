@@ -54,8 +54,17 @@ def cp2k_resources(cluster: dict, basis_functions: int) -> Resources:
         cores = per_node * math.ceil(cores / per_node)
     memory_gb = cal["memory_gb"] * scale
     floor_gb = _gb(cluster.get("mem_per_cpu", "2g"))
-    mem_per_cpu = f"{max(floor_gb, math.ceil(memory_gb / cores))}g"
-    return Resources(cores=cores, mem_per_cpu=mem_per_cpu, memory_gb=memory_gb)
+    mem = max(floor_gb, math.ceil(memory_gb / cores))
+    if cluster.get("node_memory_gb"):
+        # Slurm charges --mem-per-cpu per hardware thread: with many ranks on a node the floor
+        # asks for more than the node has (NHR: 134 ranks x 2 threads x 7 GB = 1.9 TB > 1.4 TB).
+        per_node = int(cluster["cores_per_node"])
+        tasks = -(-cores // -(-cores // per_node))               # ranks on the fullest node
+        cap = int(cluster["node_memory_gb"] // (tasks * int(cluster.get("threads_per_core", 1))))
+        if cap < 1:
+            raise ValueError(f"{tasks} ranks per node do not fit in {cluster['node_memory_gb']} GB")
+        mem = min(mem, cap)
+    return Resources(cores=cores, mem_per_cpu=f"{mem}g", memory_gb=memory_gb)
 
 
 def _gb(text: str) -> int:
