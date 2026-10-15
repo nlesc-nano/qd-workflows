@@ -8,7 +8,7 @@ The packages keep their own repositories; this one pins them
 (`components.yaml`), describes each HPC cluster (`clusters/`), and holds the job
 templates and glue code (`src/qd_workflows`).
 
-The whole pipeline, stage by stage: [docs/workflow.md](docs/workflow.md).
+Documentation (pipeline, theory with every formula, command line): the MkDocs site in `docs/` (`mkdocs serve`), built on Read the Docs from `.readthedocs.yaml`. Start at [docs/index.md](docs/index.md) or [the pipeline overview](docs/pipeline/overview.md).
 
 ## Layout
 

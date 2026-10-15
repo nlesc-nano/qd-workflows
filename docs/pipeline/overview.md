@@ -1,10 +1,8 @@
-# The qd-workflows pipeline
+# Pipeline overview
 
-Formulas of every step: [formulas.md](formulas.md).
-
-One batch of library records goes through three Slurm stages: MACE-MH-1 on a GPU, one CP2K
-chain per dot on CPU nodes, then the CPU stage that assembles the properties and the report.
-Every step is cached: a job that stops continues where it stopped when resubmitted.
+One batch of library records goes through three Slurm stages. MACE-MH-1 runs on a GPU; each dot
+gets one CP2K chain on CPU nodes; then a CPU job assembles the properties and the report. The GPU
+job submits the chains and the CPU job itself, so a batch is one `sbatch`.
 
 ```mermaid
 flowchart TB
@@ -45,14 +43,20 @@ flowchart TB
     FT -.->|"fine-tuned MACE model"| GPU
 
     RX["qdw reaction<br/>on demand, outside the batch"]:::side
-    classDef side fill:#f4f4f1,stroke:#8a8984,stroke-dasharray: 4 3
+    classDef side stroke-dasharray: 4 3
 ```
+
+| Stage | Where | Steps | Page |
+|---|---|---|---|
+| 1 · GPU stage | one GPU (A100) | relax, structure, hessian, stability, detachment, wigner (md) | [GPU stage](gpu-stage.md) |
+| 2 · CP2K chain | CPU nodes, one job per dot | geo_opt, field, esp, pdos, window, TREXIO, trim, QDEX | [CP2K chain](cp2k-chain.md) |
+| 3 · CPU stage | one CPU node | field, vibspec, solvation, sites, report | [CPU stage](cpu-stage.md) |
 
 ## Thermochemistry and equilibria
 
-What happens to the energies after the Hessian. Every box is a formula in
-[formulas.md](formulas.md); the dashboards evaluate the last two rows live (sliders for T, ε,
-concentrations and the precursor shift).
+What happens to the energies after the Hessian. Every box is a formula in the
+[Theory](../theory/thermochemistry.md) pages; the dashboards evaluate the last rows live, with
+sliders for $T$, $\varepsilon$, the concentrations and the precursor shift.
 
 ```mermaid
 flowchart TB
@@ -87,8 +91,8 @@ flowchart TB
 | IR / Raman intensities | DFT Born charges and Raman tensors (finite field) on the MACE modes |
 | Solvation | COSMO on the DFT potential + cavity/dispersion |
 
-No xTB: `qdw props prepare` sets `vibspec_source: dft` and `solvation_charges: dft`, so IR/Raman and
-solvation come only from the DFT chain, and the xTB electronic step is not part of the batch.
+No xTB: `qdw props prepare` sets `vibspec_source: dft` and `solvation_charges: dft`, so IR/Raman
+and solvation come only from the DFT chain. (Orchestr.AI keeps its xTB steps for standalone runs.)
 
 ## Size routing
 
@@ -98,14 +102,9 @@ solvation come only from the DFT chain, and the xTB electronic step is not part 
 | ≤ 2,000 | analytic Hessian, the CP2K chain and QDEX; no desorption ladder above 600 |
 | > 2,000 | not in the batch: `qdw props prepare` leaves these records out (to be decided) |
 
-## Commands
+## The fine-tuning loop
 
-```bash
-qdw props prepare <records> --cluster nhr --out jobs/batch   # GPU job; it submits the chains and the CPU job
-(cd jobs/batch && sbatch job.sh)
-qdw cp2k chain relaxed.xyz --project <id> --record record.json --out cp2k   # one chain by hand
-qdw reaction prepare reaction.yaml --cluster nhr --out runs/x                # on demand
-```
-
-Dashed in the diagram: the fine-tuning loop. Its pieces exist (`qdw cp2k prepare --step sample`,
-`qdw cp2k label`), but nothing runs it automatically yet. `qdw reaction` stands outside the batch.
+Dashed in the diagram. The Wigner and MD ensembles of the GPU stage are labelled with CP2K
+single points (`qdw cp2k prepare --step sample`, energies and forces, `qdw cp2k label`), which
+make a fine-tuning set for MACE; a fine-tuned model reruns the GPU stage. The pieces exist;
+nothing runs the loop automatically yet.
