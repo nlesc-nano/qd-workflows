@@ -26,6 +26,21 @@ QDEX={{QDEX}}
 qdex_run() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDEX")")/lib OMP_NUM_THREADS=$1 "$QDEX" --config config.yaml; }
 cp2k() { {{LAUNCH}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }
 cp2k_n() { {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out > /dev/null 2>&1; }   # $1 ranks
+# How many single points of the dot fit side by side, at most $1: each holds the cell's real-space
+# grids (~{{GRID_MEM_GB}} GB, whatever its rank count); 80 % of the job's memory is used.
+side_by_side() {
+    local mem_mb
+    if [ -n "${SLURM_MEM_PER_NODE:-}" ] && [ "$SLURM_MEM_PER_NODE" -gt 0 ]; then
+        mem_mb=$(( SLURM_MEM_PER_NODE * ${SLURM_NNODES:-1} ))
+    elif [ -n "${SLURM_MEM_PER_CPU:-}" ]; then
+        mem_mb=$(( SLURM_MEM_PER_CPU * SLURM_NTASKS ))
+    else                                     # --mem=0: the whole node(s)
+        mem_mb=$(( $(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo) * ${SLURM_NNODES:-1} ))
+    fi
+    local n=$(( mem_mb * 8 / 10 / {{GRID_MEM_MB}} ))
+    [ $n -ge 1 ] || n=1; [ $n -le $1 ] || n=$1
+    echo $n
+}
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
 
 # 1. geo_opt (from the MACE-relaxed structure)
@@ -56,12 +71,13 @@ if [ "{{FIELD}}" = "1" ]; then
     todo=$(orch_field status field)
     if [ "$todo" != "all done" ]; then
         echo "[chain] field: $todo"
-        R=$(( SLURM_NTASKS / {{FIELD_PARALLEL}} )); [ $R -ge 1 ] || R=1
+        FP=$(side_by_side {{FIELD_PARALLEL}}); echo "[chain] field: $FP side by side"
+        R=$(( SLURM_NTASKS / FP )); [ $R -ge 1 ] || R=1
         k=0
         for r in $todo; do
             n=$R; case $r in mono_*) n=$(( R < 8 ? R : 8 ));; esac
             (cd "field/$r" && cp2k_n $n) &
-            k=$((k + 1)); if [ $k -ge {{FIELD_PARALLEL}} ]; then wait; k=0; fi
+            k=$((k + 1)); if [ $k -ge $FP ]; then wait; k=0; fi
         done
         wait
     fi
@@ -84,10 +100,11 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" != "all done" ]; then
         echo "[chain] esp: $todo"
+        EP=$(side_by_side 2)                 # the two dots side by side if both fit
+        NR=$(( SLURM_NTASKS / EP > 0 ? SLURM_NTASKS / EP : 1 ))
         for r in $todo; do
             case $r in
-                dot_0) (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS / 2 > 0 ? SLURM_NTASKS / 2 : 1 ))) & ;;
-                dot_*) (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS / 2 > 0 ? SLURM_NTASKS / 2 : 1 ))) & ;;
+                dot_*) if [ "$EP" -ge 2 ]; then (cd "esp/$r" && cp2k_n $NR) & else (cd "esp/$r" && cp2k_n $NR); fi ;;
                 *)     (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS < 8 ? SLURM_NTASKS : 8 ))) ;;
             esac
         done
