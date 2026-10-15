@@ -1,4 +1,5 @@
 site_name: qd-workflows
+site_url: https://qd-workflows.readthedocs.io/
 site_description: Workflows that tie the quantum-dot packages together (QD_builder, Orchestr.AI, CP2K, QDEX)
 repo_url: https://github.com/nlesc-nano/qd-workflows
 edit_uri: edit/main/docs/

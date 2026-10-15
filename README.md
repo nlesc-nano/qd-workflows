@@ -1,5 +1,9 @@
 # qd-workflows
 
+[![Documentation](https://readthedocs.org/projects/qd-workflows/badge/?version=latest)](https://qd-workflows.readthedocs.io)
+
+Documentation: **https://qd-workflows.readthedocs.io**
+
 Workflows that tie the quantum-dot packages together: structures from
 QD_builder, MACE-MH-1 properties and Wigner ensembles from Orchestr.AI,
 CP2K PBE and QDEX for the QDSpace webapp, and the fine-tuning loop.

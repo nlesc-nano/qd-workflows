@@ -1,8 +1,11 @@
 # Reactions and equilibria
 
-A dot is a charge-balanced binary $[\mathrm{MA}]_n(\mathrm{MX}_q)_m$: $n$ MA units (the core) and $m$ Z-type ligand units $\mathrm{MX}_q$. Energies $E$ are MACE-MH-1 energies at MACE-MH-1 minima; $k_BT$ at 298.15 K is 25.69 meV.
-
-The reactions the pipeline evaluates for every dot, and the equilibria they define. The dashboards evaluate them live for any $T$, $\varepsilon$ and concentration.
+The reactions the pipeline evaluates for every dot $[\mathrm{MA}]_n(\mathrm{MX}_q)_m$ ($n$ core units MA such as
+CdSe, $m$ surface metal-halide units $\mathrm{MX}_q$ such as CdCl$_2$; see
+[Notation](thermochemistry.md#notation-what-ma-and-mx_q-are)), and the equilibria they define. They
+use the free energies $G^\circ$, $G^\mathrm{sol}$ and chemical potentials $\mu$ of
+[Thermochemistry](thermochemistry.md); the dashboards evaluate them live for any $T$, $\varepsilon$
+and concentration.
 
 ## Reactions of the dot
 
