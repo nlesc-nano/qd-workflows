@@ -53,11 +53,11 @@ qdex:
   eps_out: 2.24
   g_shell: 2
 
-# GPU jobs (Orchestr.AI run_type PROPS): one A100 80 GB of a 4-GPU, 144-core node (gpu-a100),
+# GPU jobs (Orchestr.AI run_type PROPS): one A100 80 GB of a 4-GPU, 144-core node (gpu-a100:shared),
 # or one H200 of a 4-GPU, 256-core node (gpu-h200).
 props:
   dft_chain: true           # the GPU job submits a CP2K chain per record; the CPU job waits for them
-  partition: gpu-a100
+  partition: gpu-a100:shared   # 150 core-h per GPU-hour; gpu-a100 bills the whole node (600) even for one GPU
   test_partition: gpu-a100:test
   gres: gpu:A100:1
   cpus: 36

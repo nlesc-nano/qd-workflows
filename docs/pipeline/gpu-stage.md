@@ -95,11 +95,20 @@ Structure ensembles for DFT labelling and fine-tuning:
   $Q_j \sim \mathcal N\!\left(0, \frac{\hbar}{2\omega_j}\coth\frac{\hbar\omega_j}{2k_BT}\right)$; modes
   below 20 cm⁻¹ are left out and modes below 50 cm⁻¹ are sampled with the width of a 50 cm⁻¹
   mode (a straight-line displacement along a rotation-like mode stretches bonds).
-- **md** (`--md`, a subset of the library): short Langevin MD (BAOAB, 2 fs, 5 ps) for six
-  replicas at constant temperatures or ramps, one batched model call per step; frames every
-  100 fs after 0.5 ps, each with its exact MACE energy and forces.
+- **md** (`--md`, a subset of the library): short canonical MD (velocity Verlet, 2 fs, 5 ps)
+  with the CSVR thermostat of Bussi, Donadio and Parrinello (coupling time 100 fs; Langevin
+  BAOAB with `md_thermostat: langevin`) for six replicas at constant temperatures or ramps, one
+  batched model call per step; frames every 100 fs after 0.5 ps. CSVR rescales the velocities
+  so that the kinetic energy $K$ follows its canonical distribution: over a time $\Delta t$, with
+  $c = e^{-\Delta t/\tau}$, $N_f = 3N-3$ and $\bar K = N_f k_BT/2$,
+  $K' = K + (1-c)\left[\frac{\bar K}{N_f}\left(R_1^2 + \textstyle\sum_{i=2}^{N_f} R_i^2\right) - K\right]
+  + 2R_1\sqrt{\frac{c(1-c)\bar K K}{N_f}}$ ($R_i$ standard normal), applied for half a step
+  before and after each Verlet step.
 
-Every structure carries energy, forces and MACE descriptors; files go to `props/ensemble/`.
+Every frame is written with its positions, the MACE-MH-1 energy (also per atom) and forces, and
+velocities where it has them (extxyz: info `energy`, `energy_per_atom`, `label`; arrays `forces`,
+`vel_A_fs`), so the files can be used for training as written and DFT labels can be added next to
+them; MACE descriptors go to `embeddings.npz`. Files go to `props/ensemble/`.
 
 ## Settings that matter
 
