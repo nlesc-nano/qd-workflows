@@ -9,6 +9,7 @@ flowchart LR
     H --> ST["stability"]
     H --> D["detachment<br/>≤ 600 atoms"]
     H --> W["wigner (+ md)"]
+    D --> DE["detach_ensemble<br/>(ladder MD)"]
     D -.-> SITES["(sites, CPU stage)"]
 ```
 
@@ -97,13 +98,27 @@ Structure ensembles for DFT labelling and fine-tuning:
   mode (a straight-line displacement along a rotation-like mode stretches bonds).
 - **md** (`--md`, a subset of the library): short canonical MD (velocity Verlet, 2 fs, 5 ps)
   with the CSVR thermostat of Bussi, Donadio and Parrinello (coupling time 100 fs; Langevin
-  BAOAB with `md_thermostat: langevin`) for six replicas at constant temperatures or ramps, one
+  BAOAB with `md_thermostat: langevin`) for two replicas, 300 K and a 300 → 1000 K ramp, one
   batched model call per step; frames every 100 fs after 0.5 ps. CSVR rescales the velocities
   so that the kinetic energy $K$ follows its canonical distribution: over a time $\Delta t$, with
   $c = e^{-\Delta t/\tau}$, $N_f = 3N-3$ and $\bar K = N_f k_BT/2$,
   $K' = K + (1-c)\left[\frac{\bar K}{N_f}\left(R_1^2 + \textstyle\sum_{i=2}^{N_f} R_i^2\right) - K\right]
   + 2R_1\sqrt{\frac{c(1-c)\bar K K}{N_f}}$ ($R_i$ standard normal), applied for half a step
   before and after each Verlet step.
+
+- **frames from the desorption search** (`detach_frames`, on by default): every candidate
+  relaxation keeps snapshots at its start (the dot right after the unit is removed: large forces
+  on the under-coordinated atoms) and at the first optimiser steps that release 25, 50 and 75 % of
+  its energy drop (none for a drop below 0.05 eV). All frames of the relaxations on the best path
+  are kept, plus a seeded random subset of at most 100 from the other candidates:
+  `props/ensemble/detach_relax.extxyz`. The frames come from the batched L-BFGS at no extra
+  model cost and are spooled to disk as the search runs, so a resumed search keeps them.
+- **detach_ensemble**: short CSVR MD (1 ps, frames every 100 fs after 0.2 ps) at 300 and 600 K
+  from the ladder states $k$ = 1, 4, 8, 12 (those the search reached, and always the last one),
+  starting from Maxwell–Boltzmann velocities; all replicas share one batched model call per
+  step: `props/ensemble/detach_md.extxyz`. The ladder minima themselves add little to a training
+  set (their MACE forces are zero); the relaxation snapshots and the MD sample the newly exposed,
+  reconstructing surfaces away from the minimum.
 
 Every frame is written with its positions, the MACE-MH-1 energy (also per atom) and forces, and
 velocities where it has them (extxyz: info `energy`, `energy_per_atom`, `label`; arrays `forces`,

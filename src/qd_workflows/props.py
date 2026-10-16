@@ -14,14 +14,14 @@ from . import TEMPLATES, render
 from .cluster import sbatch_account
 
 ALL_STEPS = ["relax", "structure", "hessian", "field", "vibspec", "stability", "detachment",
-             "solvation", "sites", "report", "wigner", "md"]
+             "solvation", "sites", "report", "wigner", "md", "detach_ensemble", "monomer_ensemble"]
 # With a `props.cpu` section in the cluster profile the run is split in two jobs: MACE-MH-1
 # steps on a GPU, then the assembly steps (field, vibspec, solvation, sites, report) on a CPU node,
 # which the GPU job submits when it ends; they need no GPU.
 # With `props.dft_chain` the GPU job also submits one CP2K chain per record (geo_opt, field
 # single points, PDOS, TREXIO, QDEX) and the CPU job waits for all of them: IR/Raman and
 # solvation come from the chains' finite-field runs (Orchestr.AI field step).
-GPU_STEPS = ["relax", "structure", "hessian", "stability", "detachment", "wigner", "md"]
+GPU_STEPS = ["relax", "structure", "hessian", "stability", "detachment", "wigner", "md", "detach_ensemble", "monomer_ensemble"]
 CPU_STEPS = ["field", "vibspec", "solvation", "sites", "report"]
 DFT_MAX_ATOMS = 2000
 MAX_ATOMS = DFT_MAX_ATOMS     # the batch takes only dots that get the DFT chain
