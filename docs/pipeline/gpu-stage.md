@@ -32,8 +32,12 @@ detachment or migration during the relaxation is flagged.
 
 ## hessian
 
-Analytic (autograd) MACE Hessian up to 2,000 atoms, central finite differences of the forces
-otherwise (0.01 Å). It is mass-weighted, the three translations and three rotations are removed
+Central finite differences of the MACE forces (0.01 Å, $6N$ force evaluations), batched on the
+GPU: the displaced copies reuse the reference structure's graph (same neighbour list, shifted
+positions) and go through the model up to 4,000 atoms per call. This is 3–3.5× faster than the
+autograd Hessian, which with cuEquivariance runs one row per backward pass (its kernels have no
+`vmap` rule), and agrees with it to 0.03 cm⁻¹ or better (see [Validation](../reference/validation.md)).
+The autograd Hessian is still available (`--hessian analytic`). The Hessian is mass-weighted, the three translations and three rotations are removed
 exactly (diagonalisation in the complement of the Eckart vectors), leaving $3N - 6$ modes. From the
 frequencies: zero-point energy, $U_\mathrm{vib}$, $S_\mathrm{vib}$, $C_v$, $F_\mathrm{vib}$ on the
 temperature grid (50–800 K, every 25 K) with quasi-RRHO entropy, and the vibrational density of
@@ -102,7 +106,7 @@ Every structure carries energy, forces and MACE descriptors; files go to `props/
 | Setting | Default | Effect |
 |---|---|---|
 | `fmax` | 0.01 eV/Å | relaxation convergence |
-| `analytic_max_atoms` | 2000 | analytic Hessian up to here |
+| `hessian` | `fd` | `fd`, `analytic` (autograd) or `auto` (analytic up to `analytic_max_atoms`) |
 | `hessian_max_atoms` | 2000 | larger dots: no Hessian or anything built on it |
 | `detach_max_atoms` | 600 | desorption search up to here |
 | `detach_thermo_max_atoms` | 300 | Hessians of the desorption products up to here |

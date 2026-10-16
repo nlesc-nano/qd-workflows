@@ -47,6 +47,26 @@ Measured on an A100 80 GB (hyperion, float64):
 MACE-MH-1 in float64 needs about 11.5 MB per atom for a force call, which sets the batch limit
 of 4,000 atoms per call (46 GB).
 
+### Finite-difference against autograd Hessian
+
+On the production GPU (NHR, A100 80 GB, float64, cuEquivariance), finite differences with graph
+reuse and 4,000 atoms per call, compared with the stored autograd Hessian of the same record
+(frequencies above 50 cm⁻¹):
+
+| Atoms | Record | FD time | Force calls | Max Δν (cm⁻¹) | Median Δν (cm⁻¹) |
+|---|---|---|---|---|---|
+| 141 | CdSe Cd60Se39Cl42 | 6.7 s | 31 | 0.01 | 0.004 |
+| 149 | CdSe Cd68 | 6.7 s | 35 | 0.01 | 0.003 |
+| 316 | InP In119P80Cl117 | 19.3 s | 158 | 0.03 | 0.006 |
+| 507 | PbS Pb236S201Cl70 | 51.7 s | 444 | 0.03 | 0.020 |
+| 679 | ZnSe Zn301Se224Cl154 | 100.5 s | 891 | 0.02 | 0.004 |
+| 957 | HgTe Hg453Te402Cl102 | 173.1 s | 1,436 | 0.02 | 0.001 |
+| 1,946 | InAs In844As715Cl387 | 737.2 s | 5,838 | 0.02 | 0.003 |
+
+The autograd Hessian takes about 3–3.5× longer at the same sizes (about 43 min at 2,000 atoms),
+because cuEquivariance kernels have no `vmap` batching rule and MACE falls back to one row per
+backward pass.
+
 ## End-to-end check
 
 One small record through all three stages (GPU stage, CP2K chain, CPU stage) on the production
