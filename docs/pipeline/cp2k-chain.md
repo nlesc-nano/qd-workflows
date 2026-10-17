@@ -10,7 +10,7 @@ flowchart TB
     GEO["1 · geo_opt<br/>from the MACE structure"] --> FIELD["2 · field<br/>13 finite-field single points<br/>+ MA, MX_q monomers"]
     FIELD --> ESP["2b · esp<br/>potential + density cubes<br/>→ solvation.json"]
     ESP --> PDOS["3 · pdos<br/>all MO energies"] --> WIN["4 · MO window"]
-    WIN --> TRX["5 · TREXIO<br/>one diagonalisation"] --> TRIM["6 · trim"] --> QDEX["7 · QDEX<br/>→ webapp.json"]
+    WIN --> TRX["5 · TREXIO<br/>one diagonalisation"] --> TRIM["6 · trim"] --> QDEX["7 · QDEX<br/>qdex + qdex_trap<br/>→ webapp.json, dashboards"]
     GEO -. ".wfn" .-> FIELD
     GEO -. ".wfn" .-> ESP
     GEO -. ".wfn" .-> PDOS
@@ -83,8 +83,17 @@ isosurface and the isosurface area, written to `cp2k/solvation.json`
 
 ## 7 · QDEX
 
-With the record's `record.json` present, QDEX runs on the trimmed orbitals on the first node's
-cores, then `qdw qdex webapp` writes `qdex/webapp.json` ([QDEX](qdex.md)).
+With the record's `record.json` present, QDEX runs twice on the trimmed orbitals, on the first
+node's cores ([QDEX](qdex.md)):
+
+| Run | sBSE |
+|---|---|
+| `qdex/` | every transition of the balanced window |
+| `qdex_trap/` | the same, without the transitions from or to surface states (`excitations: trap_filter: true`) |
+
+In each, `qdw qdex webapp` writes `webapp.json`, and `qdex dashboards .` rebuilds the HTML pages
+from the HDF5 files (log in `dashboards.out`; a failure there is reported and the chain goes on).
+The trap-filtered run reads the same `../orbitals.h5` and takes about a minute for Cd68Se55Cl26.
 
 ## Resources
 

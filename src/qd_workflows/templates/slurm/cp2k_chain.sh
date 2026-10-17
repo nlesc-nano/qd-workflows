@@ -7,7 +7,7 @@
 #SBATCH --qos={{QOS}}
 {{PARTITION}}{{ACCOUNT}}{{SETUP}}
 # CP2K track of one structure in one job: geo_opt -> field single points -> PDOS -> MO window
-# -> TREXIO -> trim -> QDEX (when record.json is here).
+# -> TREXIO -> trim -> QDEX, all transitions and without the surface traps (when record.json is here).
 # Every step is skipped when its output is already there, so a job stopped by the
 # time limit continues where it stopped when resubmitted.
 {{CP2K_SETUP}}
@@ -23,7 +23,8 @@ qdw() { env -u PYTHONHOME PYTHONPATH={{QDW_PYTHONPATH}} LD_LIBRARY_PATH=$(dirnam
 orch_field() { env -u PYTHONHOME PYTHONPATH={{QDW_PYTHONPATH}} LD_LIBRARY_PATH=$(dirname "$(dirname "$QDW_PY")")/lib "$QDW_PY" -m orchestr_ai.qd.field "$@"; }
 # QDEX: its own environment too, on the cores of the first node.
 QDEX={{QDEX}}
-qdex_run() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDEX")")/lib OMP_NUM_THREADS=$1 "$QDEX" --config config.yaml; }
+qdex_env() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDEX")")/lib "$@"; }
+qdex_run() { qdex_env OMP_NUM_THREADS=$1 "$QDEX" --config config.yaml; }
 cp2k() { {{LAUNCH}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }
 cp2k_n() { {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out > /dev/null 2>&1; }   # $1 ranks
 # How many single points of the dot fit side by side, at most $1: each holds the cell's real-space
@@ -133,12 +134,21 @@ if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/o
 [ -s orbitals.h5 ] || qdw cp2k trim "$T" orbitals.h5 --window window.json
 
 # 7. QDEX: QP gap, diagonal sBSE (Resta), SOC, fuzzy bands, PDOS and COOP -> qdex_electronic.h5,
-#    qdex_excitations.h5, HOMO-1..LUMO+1 cubes; webapp.json (summary, band-edge excitons, spectra)
+#    qdex_excitations.h5, HOMO-1..LUMO+1 cubes; webapp.json (summary, band-edge excitons, spectra);
+#    the HTML dashboards (fuzzy bands and exciton analysis, SF and SOC) rebuilt from the HDF5 files.
+#    qdex: every transition in the sBSE; qdex_trap: the same without the transitions from or to
+#    surface states (Facet or Localized), on the same orbitals.
 if [ -s record.json ]; then
     NT=${SLURM_CPUS_ON_NODE:-8}
-    [ -s qdex/config.yaml ] || qdw qdex prepare record.json --window window.json --out qdex --threads "$NT" --cluster {{CLUSTER}}
-    if [ ! -s qdex/qdex_excitations.h5 ]; then echo "[chain] qdex"; (cd qdex && qdex_run "$NT" > qdex.out 2>&1); fi
-    qdw qdex webapp qdex -o qdex/webapp.json > /dev/null
+    for Q in qdex qdex_trap; do
+        [ -s $Q/config.yaml ] || qdw qdex prepare record.json --window window.json --out $Q --threads "$NT" --cluster {{CLUSTER}} $([ $Q = qdex_trap ] && echo --trap-filter)
+        if [ ! -s $Q/qdex_excitations.h5 ]; then echo "[chain] $Q"; (cd $Q && qdex_run "$NT" > qdex.out 2>&1); fi
+        qdw qdex webapp $Q -o $Q/webapp.json > /dev/null
+        if [ ! -s $Q/exciton_analysis_sf.html ]; then
+            echo "[chain] $Q dashboards"
+            (cd $Q && qdex_env "$QDEX" dashboards . > dashboards.out 2>&1) || echo "[chain] $Q dashboards failed ($Q/dashboards.out)"
+        fi
+    done
 fi
 echo "[chain] done: $(pwd)"
 touch .done

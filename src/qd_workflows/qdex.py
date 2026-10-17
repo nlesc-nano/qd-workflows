@@ -42,12 +42,14 @@ def find_cif(name: str, dirs) -> str:
 
 
 def prepare(record_path: str, window_path: str, out_dir: str, cluster: dict, *, orbitals: str = "../orbitals.h5",
-            geom: str = "../relaxed.xyz", threads: int = 8, max_states: int | None = None) -> dict:
+            geom: str = "../relaxed.xyz", threads: int = 8, max_states: int | None = None,
+            trap_filter: bool = False) -> dict:
     """
     Write `<out_dir>/config.yaml` with Ivan's QDEX settings (bulk QP with the scaled
     vertex, diagonal sBSE with the Resta kernel, SOC, toluene eps_out, fuzzy bands,
     PDOS and COOP). The sBSE space is balanced: min(occupied, virtual) MOs of the
-    TREXIO window, at most `max_states`.
+    TREXIO window, at most `max_states`. With `trap_filter`, the transitions from or to
+    surface states (Facet or Localized) are left out of the sBSE.
     """
     q, cp = cluster.get("qdex", {}), cluster["cp2k"]
     record = json.loads(Path(record_path).read_text())
@@ -61,7 +63,8 @@ def prepare(record_path: str, window_path: str, out_dir: str, cluster: dict, *, 
                    "basis_name": cp["basis"], "material": str(record["material"]).upper(), "nthreads": int(threads)},
         "environment": {"eps_out": float(q.get("eps_out", 2.24))},
         "quasiparticles": {"model": "bulk", "bulk_vertex": "scaled"},
-        "excitations": {"mode": "diagonal_sbse", "kernel": "resta", "nhomos": n, "nlumos": n},
+        "excitations": {"mode": "diagonal_sbse", "kernel": "resta", "nhomos": n, "nlumos": n,
+                        **({"trap_filter": True} if trap_filter else {})},
         "fuzzy": {"run_fuzzy": True, "cif": find_cif(cif_name, cif_dirs) if cif_name else None, "soc_window": 10.0,
                   "pdos_atoms": elements, "coop_pairs": coop_pairs(record), "fuzzy_sigma": 0.01,
                   "pdos_sigma": 0.08, "ewin": [-5.0, 5.0],

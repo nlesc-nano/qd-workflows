@@ -59,7 +59,8 @@ def _qdex(args) -> int:
     from . import qdex
     if args.action == "prepare":
         info = qdex.prepare(args.record, args.window, args.out, load_cluster(args.cluster), orbitals=args.orbitals,
-                            geom=args.geom, threads=args.threads, max_states=args.max_states)
+                            geom=args.geom, threads=args.threads, max_states=args.max_states,
+                            trap_filter=args.trap_filter)
     elif args.action == "webapp":
         info = qdex.webapp(args.dir, args.window)
         if args.output:
@@ -217,6 +218,8 @@ def main(argv=None) -> int:
     p.add_argument("--geom", default="../relaxed.xyz", help="geometry, relative to --out")
     p.add_argument("--threads", type=int, default=8, help='OpenMP threads for QDEX')
     p.add_argument("--max-states", type=int, help="occupied and virtual MOs in the sBSE, at most (default 1000)")
+    p.add_argument("--trap-filter", action="store_true",
+                   help="leave the transitions from or to surface states (Facet, Localized) out of the sBSE")
     p = qp.add_parser("summary", help="frontier levels, gaps and excitons (spin-free and SOC) as JSON")
     p.add_argument("dir", help="QDEX run directory (qdex_electronic.h5, qdex_excitations.h5)")
     p.add_argument("-o", "--output", help='JSON file to write (default: print)')

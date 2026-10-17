@@ -167,6 +167,7 @@ Config.yaml from the record and the MO window.
 qdw qdex prepare [-h] --window WINDOW --out OUT [--cluster CLUSTER]
                         [--orbitals ORBITALS] [--geom GEOM]
                         [--threads THREADS] [--max-states MAX_STATES]
+                        [--trap-filter]
                         record
 ```
 
@@ -180,6 +181,7 @@ qdw qdex prepare [-h] --window WINDOW --out OUT [--cluster CLUSTER]
 | `--geom` | geometry, relative to --out | `../relaxed.xyz` |
 | `--threads` | OpenMP threads for QDEX | `8` |
 | `--max-states` | occupied and virtual MOs in the sBSE, at most (default 1000) |  |
+| `--trap-filter` | leave the transitions from or to surface states (Facet, Localized) out of the sBSE |  |
 
 ### qdw qdex summary
 

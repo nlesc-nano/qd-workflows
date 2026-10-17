@@ -32,6 +32,10 @@ its output.
 | `qdex_excitations.h5` | every exciton up to 4.5 eV with its descriptors |
 | `spatial_MO_*.cube` | HOMO−1 … LUMO+1 on a 0.8 Å grid |
 | `webapp.json` (~40 kB) | what the webapp loads, below |
+| `fuzzy_dashboard_sf.html`, `fuzzy_dashboard_soc.html` | fuzzy bands, PDOS, IPR, surface/core character, COOP, the MO cubes |
+| `exciton_analysis_sf.html`, `exciton_analysis_soc.html` | the lowest 100 excitons: descriptors, NTOs, transition densities |
+| `spectrum_{sf,soc}.dat`, `spectrum_*.png` | absorption spectra |
+| `qdex.out`, `dashboards.out` | the logs of the run and of the dashboards |
 
 `webapp.json` (`qdw qdex webapp`):
 
@@ -42,3 +46,20 @@ its output.
   and 0.10 eV.
 
 `qdw qdex summary` prints the frontier levels, gaps and excitons as JSON.
+
+QDEX itself writes the HDF5 files, the MO cubes and the spectra as data (`output.html: false`,
+`plot: false`): `qdex dashboards <run dir>` rebuilds the HTML pages and the spectrum plots from `qdex_electronic.h5` and
+`qdex_excitations.h5` without recomputing anything, so the pages can be remade whenever they are
+needed. The chain does it after each run.
+
+## Surface traps filtered out
+
+The chain runs QDEX a second time in `cp2k/qdex_trap/` with the same settings plus
+`excitations: trap_filter: true` (`qdw qdex prepare --trap-filter`): every MO of the active space
+is classified by its angular coverage of the dot, and the transitions from or to a *Facet* or
+*Localized* (surface) state are left out of the spin-free and SOC sBSE. It reads the
+same `../orbitals.h5` and writes the same files, with its own `webapp.json` and dashboards; the
+webapp import publishes them as `qdex/*_traps_filtered.{html,json}` next to the unfiltered ones.
+
+On Cd68Se55Cl26 the lowest spin-free exciton moves from 2.69 to 2.77 eV and its oscillator
+strength from 0.32 to 0.55; the SOC excitons stay the same.
