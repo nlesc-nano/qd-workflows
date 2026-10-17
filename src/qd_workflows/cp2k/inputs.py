@@ -94,8 +94,9 @@ def grid_memory_gb(cell: str) -> float:
 
 # ---------------- the cell on a common grid ----------------
 # CP2K (pw_grid_info.F) gives a cell edge of length L (bohr) n = 2 floor(L sqrt(Ecut[Ry]) / 2 pi) + 1
-# points at the density cutoff, then the next length its FFT accepts (FFTW3: 2^a 3^b 5^c 7^d 11^e,
-# b <= 3, c <= 2, d <= 1, e <= 1; fftw3_lib.F). The spacing L/n then differs slightly from edge to edge
+# points at the density cutoff, then the next length its FFT accepts: 2^a 3^b 5^c (b <= 3, c <= 2). The
+# FFTW3 source lists factors 7 and 11 as well, but CP2K 2026.2 on NHR skips them (a 36.574 Å edge got
+# 450 points, not 440 = 2^3 5 11; 15.71 Å got 192, not 189 = 3^3 7; checked 2026-10-17). The spacing L/n then differs slightly from edge to edge
 # and from system to system. Every edge here is n h instead, with h just under the largest spacing the
 # cutoff allows and n a length CP2K picks for n h: the same grid spacing in every direction of every
 # dot, stripped dot and monomer, so energy differences between them are free of grid jitter.
@@ -105,16 +106,14 @@ GRID_MARGIN = 1e-6              # h = (1 - margin) x the largest spacing
 
 
 def fft_lengths(limit: int = 20000) -> list[int]:
-    """The FFT lengths CP2K's FFTW3 interface accepts, up to `limit`."""
+    """The FFT lengths CP2K picks, up to `limit` (2^a 3^b 5^c, checked on NHR's CP2K 2026.2)."""
     out = set()
     for b in range(4):
         for c in range(3):
-            for d in range(2):
-                for e in range(2):
-                    n = 3 ** b * 5 ** c * 7 ** d * 11 ** e
-                    while n < limit:
-                        out.add(n)
-                        n *= 2
+            n = 3 ** b * 5 ** c
+            while n < limit:
+                out.add(n)
+                n *= 2
     return sorted(out)
 
 

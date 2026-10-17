@@ -17,8 +17,16 @@ def test_every_template_has_the_cutoff_of_the_grid():
 
 def test_fft_lengths_are_cp2k_fftw3():
     n = fft_lengths(1000)
-    assert {2, 3, 5, 7, 11, 27, 25, 77, 990} <= set(n)
-    assert not {13, 49, 81, 125, 121} & set(n)          # 13 not allowed; at most 7^1, 3^3, 5^2, 11^1
+    assert {2, 3, 5, 27, 25, 192, 288, 450, 900} <= set(n)
+    assert not {7, 11, 13, 81, 125, 189, 440, 448} & set(n)     # CP2K 2026.2 on NHR: 192, 450 (not 189, 440)
+
+
+def test_grid_points_measured_on_nhr():
+    # CP2K 2026.2 (FFTW3, CLX build), 400 Ry: finest grid points of these edges (stage1/gridcheck)
+    for L, n in ((15.0, 192), (15.710224, 192), (23.939389, 288), (36.574067, 450), (36.557, 450), (36.502, 450),
+                 (15.959593, 192), (18.702648, 225), (29.924236, 360), (37.405295, 450), (56.107943, 675),
+                 (18.537, 225), (29.176, 360)):                    # odd lengths (225, 675) are taken
+        assert grid_points(L) == n
 
 
 def test_grid_points_follow_cp2k():
@@ -33,7 +41,7 @@ def test_aligned_edges_share_one_spacing(want):
     h = grid_spacing()
     L = aligned_length(want)
     n = grid_points(L)
-    assert want <= L < want * 1.06
+    assert want <= L < want * 1.08                    # small cells jump most (15 -> 15.96 Å)
     assert abs(L / n - h) < 1e-12                       # CP2K's own spacing is the common one
     assert grid_points(float(f"{L:.6f}")) == n          # still so after printing ABC with 6 decimals
 
