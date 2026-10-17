@@ -65,3 +65,19 @@ props:
     - /scratch/iinfante/escience/qdw-test/QD_Builder/examples/cifs
     - /scratch/iinfante/escience/qdw-test/QD_Builder/examples/library/cifs
   refs: /scratch/iinfante/escience/qdw-test/references
+
+# Compute budget (qdw campaign status): Hyperion (DIPC) has no allocation, only fair share among the
+# bcmaterials users; the charge is cores x hours of every user of the account since period_start.
+budget:
+  account: bcmaterials
+  period_start: 2026-10-01
+  allocation_core_h: null
+  charge: {}
+
+# The structure-database campaign on this cluster (qdw campaign poll reaches it over ssh).
+campaign:
+  label: hyperion
+  host: hyperion
+  path: /scratch/iinfante/qdw_campaign
+  python: /dipc/iinfante/.conda/envs/qdw-compute/bin/python
+  pythonpath: /scratch/iinfante/qdw_campaign/code/qd-workflows/src

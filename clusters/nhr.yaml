@@ -80,3 +80,25 @@ props:
     cpus: 96
     mem: 180G
     time: "01:00:00"
+
+# Compute budget (qdw campaign status): the project's charge since the period started, from sacct of every
+# user of the account, at NHR's rates (core-h per node-hour or GPU-hour). The allocation itself is only in
+# the NHR portal (Slurm does not hold it): copy it here each period.
+budget:
+  account: bep00157
+  period_start: 2026-10-01
+  period_end: 2026-12-31
+  allocation_core_h: null    # TODO: from the NHR portal
+  charge:
+    cpu-clx: {per_node_h: 96}
+    cpu-genoa: {per_node_h: 192}
+    gpu-a100:shared: {per_gpu_h: 150}
+    gpu-a100: {per_node_h: 600}
+    gpu-h200: {per_node_h: 600}    # TODO: check the H200 rate in the portal
+
+# The structure-database campaign on this cluster (qdw campaign poll reaches it over ssh).
+campaign:
+  host: nhr
+  path: /scratch/usr/becivinf/qdw_campaign
+  python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
+  pythonpath: /scratch/usr/becivinf/qdw_campaign/code/qd-workflows/src

@@ -178,6 +178,26 @@ def _status(args) -> int:
         time.sleep(args.watch)
 
 
+def _campaign(args) -> int:
+    from . import campaign
+    if args.action == "status":
+        cl = None
+        if args.cluster:
+            from .cluster import load_cluster
+            cl = load_cluster(args.cluster)
+        res = campaign.status(args.dir, update=args.update, cluster=cl)
+        print(json.dumps(res, indent=1, default=str) if args.json else campaign.text(res))
+    elif args.action == "poll":
+        res = campaign.poll(args.clusters.split(",") if args.clusters else None, update=not args.no_update)
+        print(json.dumps(res, indent=1, default=str) if args.json else campaign.poll_text(res))
+    else:
+        campaign.add(args.dir, {"id": args.id, "material": args.material, "source": args.source,
+                                "record": args.record, "log": args.log,
+                                "legacy": dict(kv.split("=", 1) for kv in args.legacy) if args.legacy else None})
+        print(f"{args.id} added to {campaign.ledger_path(args.dir)}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="qdw", description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -340,6 +360,26 @@ def main(argv=None) -> int:
     p.add_argument("--watch", type=float, help="refresh every this many seconds")
     p.add_argument("--lines", type=int, default=25, help="log lines to show")
 
+    cp = sub.add_parser("campaign", help="the dots of the structure database: ledger, state, budget").add_subparsers(
+        dest="action", required=True)
+    p = cp.add_parser("status", help="state of every dot (from its files, the queue and the logs), the budget, what changed")
+    p.add_argument("dir", help="campaign directory (with campaign.yaml)")
+    p.add_argument("--json", action="store_true", help="machine-readable (for the watchdog and the agents)")
+    p.add_argument("--update", action="store_true", help="keep this as the snapshot the next call compares with")
+    p.add_argument("--cluster", help="cluster profile for the budget (default: the ledger's `cluster`)")
+    p = cp.add_parser("poll", help="campaign status on every cluster whose profile has a campaign block (over ssh)")
+    p.add_argument("--clusters", help="comma-separated profile names (default: all with a campaign block)")
+    p.add_argument("--json", action="store_true", help="machine-readable")
+    p.add_argument("--no-update", action="store_true", help="look only: keep the snapshots as they are")
+    p = cp.add_parser("add", help="list one more dot in the ledger")
+    p.add_argument("dir", help="campaign directory")
+    p.add_argument("id", help="dot id (the record name)")
+    p.add_argument("--material", help="CdSe, InP, ...")
+    p.add_argument("--source", default="qd_builder", help="qd_builder | legacy | pilot")
+    p.add_argument("--record", help="record directory")
+    p.add_argument("--log", help="the run log of its batch")
+    p.add_argument("--legacy", nargs="*", help="key=path of earlier results (geo=..., qdex=...)")
+
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref", help='reference properties.json')
     p.add_argument("new", help='properties.json to compare')
@@ -348,7 +388,7 @@ def main(argv=None) -> int:
 
     args = ap.parse_args(argv)
     return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "reaction": _reaction,
-            "compare": _compare, "log": _log, "status": _status}[args.group](args)
+            "compare": _compare, "log": _log, "status": _status, "campaign": _campaign}[args.group](args)
 
 
 if __name__ == "__main__":
