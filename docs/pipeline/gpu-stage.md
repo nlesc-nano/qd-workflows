@@ -75,7 +75,15 @@ qualitatively at a bounded cost:
 - at most 12 removals (`detach_max_levels`);
 - candidates relaxed to 0.05 eV/Å, no polishing (`detach_quick`);
 - one Hessian per path, for the last state (dots up to 300 atoms); the vibrational free energy of
-  the states in between is linear in $k$ from the intact dot.
+  the states in between is linear in $k$ from the intact dot;
+- a step with more than 16 symmetry-distinct candidates is first **screened** by unrelaxed single
+  points: the 12 lowest (up to 32 within 0.5 eV of the lowest) are relaxed, the others get an
+  optimistic estimate and are relaxed, in batches, only if they could beat the best relaxed one
+  (`detach_screen*`);
+- after a removal at most the 24 lowest estimates are re-relaxed (`detach_refresh_max`).
+
+The search, its theory and its approximations are explained step by step in
+[Desorption ladder](../theory/desorption.md).
 
 On Cd68Se55Cl26 the first four removals equal those of the full beam search and the path drifts
 higher by ~0.1 eV per unit after that; on Pb236S201Cl70 it equals the full greedy ladder. Cost on

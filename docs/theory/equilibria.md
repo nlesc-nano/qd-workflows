@@ -38,6 +38,7 @@ $$
 
 ### Desorption ladder
 
+(A step-by-step account of the search, its theory and its approximations: [Desorption ladder](desorption.md).)
 $\mathrm{dot}_{k-1} \to \mathrm{dot}_k + \mathrm{MX}_q$, for dots up to 600 atoms. Removing a unit $u$
 from the relaxed structure $R_k$ costs
 
