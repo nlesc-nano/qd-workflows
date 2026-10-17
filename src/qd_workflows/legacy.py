@@ -55,7 +55,7 @@ def _size(symbols, coords, core: set) -> dict:
             "axes_nm": [round(float(a), 3) for a in axes], "aspect_ratio": round(float(axes[2] / max(axes[0], 1e-6)), 3)}
 
 
-def record_of(d: dict, symbols: list, coords, geo: Path) -> dict:
+def record_of(d: dict, symbols: list, coords, geo: Path, stripped: dict | None = None) -> dict:
     """record.json of a legacy dot from its geometry (charges by the builder recipe)."""
     material = d.get("material") or d["id"].split("-")[0]
     comp = Counter(symbols)
@@ -79,15 +79,19 @@ def record_of(d: dict, symbols: list, coords, geo: Path) -> dict:
                                  "passivation": {"ligand": "/".join(ligands) or None}}}}
     if d.get("reconstruction"):
         rec["reconstruction"] = d["reconstruction"]
+    if stripped:
+        rec["origin"]["stripped_atoms"] = stripped                      # solvent/ligand atoms of the DFT run, not in the id
     return rec
 
 
-def make_records(campaign_dir, out_dir, searches=(), *, max_atoms: int = 2000, update_ledger: bool = False) -> dict:
+def make_records(campaign_dir, out_dir, searches=(), *, max_atoms: int = 2000, update_ledger: bool = False,
+                 strip_extra: bool = False) -> dict:
     """
     Write records for the legacy dots of the ledger that have none. Returns
     {"made": [ids], "missing": {id: reason}, "skipped": {id: reason}}; a dot is missing when no geometry exists
     or its atoms do not match the formula in its id (the geometry may belong to another dot), skipped when it has
-    more than `max_atoms` atoms or already has a record.
+    more than `max_atoms` atoms or already has a record. With `strip_extra`, atoms of elements that are not in the
+    id's formula (the organic ligands or solvent of the earlier DFT runs) are removed first; what is left must match.
     """
     led = campaign.load(campaign_dir)
     out = Path(out_dir)
@@ -105,6 +109,12 @@ def make_records(campaign_dir, out_dir, searches=(), *, max_atoms: int = 2000, u
             continue
         symbols, coords, _ = read_frames(geo)[-1]                    # the last frame is the final geometry
         want = formula_of(d["id"])
+        stripped = None
+        if strip_extra:
+            keep = [i for i, el in enumerate(symbols) if el in want]
+            if len(keep) < len(symbols):
+                stripped = dict(Counter(el for el in symbols if el not in want))
+                symbols, coords = [symbols[i] for i in keep], coords[keep]
         got = Counter(symbols)
         if got != want:
             res["missing"][d["id"]] = f"{geo.name} has {sum(got.values())} atoms, id says {sum(want.values())}"
@@ -115,7 +125,7 @@ def make_records(campaign_dir, out_dir, searches=(), *, max_atoms: int = 2000, u
         rd = out / d["id"]
         rd.mkdir(parents=True, exist_ok=True)
         write_xyz(rd / "start.xyz", symbols, coords, d["id"])
-        (rd / "record.json").write_text(json.dumps(record_of(d, symbols, coords, geo), indent=1))
+        (rd / "record.json").write_text(json.dumps(record_of(d, symbols, coords, geo, stripped), indent=1))
         done[d["id"]] = str(rd)
         res["made"].append(d["id"])
     if update_ledger and done:

@@ -216,7 +216,7 @@ def _campaign(args) -> int:
     elif args.action == "legacy-records":
         from . import legacy
         res = legacy.make_records(args.dir, args.out, args.search or [], max_atoms=args.max_atoms,
-                                  update_ledger=args.update_ledger)
+                                  update_ledger=args.update_ledger, strip_extra=args.strip_extra)
         print(json.dumps(res, indent=1))
     else:
         campaign.add(args.dir, {"id": args.id, "material": args.material, "source": args.source,
@@ -429,6 +429,8 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True, help="directory for the records, one per dot")
     p.add_argument("--search", nargs="*", help="geometry paths with {id}, tried when the ledger has no legacy.geo")
     p.add_argument("--max-atoms", type=int, default=2000)
+    p.add_argument("--strip-extra", action="store_true",
+                   help="drop atoms of elements not in the id's formula (organic ligands/solvent of the DFT run)")
     p.add_argument("--update-ledger", action="store_true", help="list each new record in the ledger")
     p = cp.add_parser("add", help="list one more dot in the ledger")
     p.add_argument("dir", help="campaign directory")

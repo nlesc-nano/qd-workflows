@@ -267,3 +267,21 @@ def test_legacy_records(tmp_path, capsys):
     assert again["made"] == [] and again["skipped"]["InP-In-In3P2Cl3"] == "has a record"
     assert main(["campaign", "legacy-records", str(camp), "--out", str(tmp_path / "rec2"), "--max-atoms", "8"]) == 0
     assert json.loads(capsys.readouterr().out)["made"] == []
+
+
+def test_legacy_records_strip_extra(tmp_path):
+    from qd_workflows import legacy
+    camp = tmp_path / "camp"
+    camp.mkdir()
+    atoms = ["In"] * 3 + ["P"] * 2 + ["Cl"] * 3 + ["N", "C", "H", "H", "H"]
+    _xyz(tmp_path / "g.xyz", atoms)
+    (camp / "campaign.yaml").write_text(yaml.safe_dump({"name": "t", "dots": [
+        {"id": "InP-In-In3P2Cl3", "material": "InP", "source": "legacy", "legacy": {"geo": str(tmp_path / "g.xyz")}}]}))
+    res = legacy.make_records(camp, tmp_path / "rec")
+    assert "id says 8" in res["missing"]["InP-In-In3P2Cl3"]                       # without the option: not made
+    res = legacy.make_records(camp, tmp_path / "rec", strip_extra=True)
+    assert res["made"] == ["InP-In-In3P2Cl3"]
+    rec = json.loads((tmp_path / "rec" / "InP-In-In3P2Cl3" / "record.json").read_text())
+    assert rec["n_atoms"] == 8 and rec["total_charge"] == 0
+    assert rec["origin"]["stripped_atoms"] == {"N": 1, "C": 1, "H": 3}
+    assert (tmp_path / "rec" / "InP-In-In3P2Cl3" / "start.xyz").read_text().startswith("8\n")
