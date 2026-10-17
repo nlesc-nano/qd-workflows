@@ -12,6 +12,16 @@ item to "Decided" with his words.
 
 ## Decided
 
+- 2026-10-18 · Library selection for the ledger: the 904 records of the scope (541 II-VI, 306 III-V, 57 IV-VI, reproduced by
+  series) are 847 distinct structures: 57 records are the same structure in two series (54 III-V clean in builder and
+  builder_100; 3 II-VI identical in a vacancy and a swap series), 14 ids carry two different structures (vacancy and swap).
+  Proposal: relax each structure once, key the 14 swap variants apart; Ivan: "Yes go ahead". Key used: `<id>_swap` (the id
+  is also the CP2K project and job name; `_swap` is the convention of the earlier InP dots), record.json id rewritten in the
+  copy, `origin.campaign_key` says so. Ledger (backup campaign.yaml.before-library-2026-10-18): 862 dots = 831 library +
+  4 earlier CdSe rebuilt from their library record + 23 relaxed earlier dots + pilot + 3 without a start (Cd177Se140Cl174
+  not in the library; the 2 earlier CdSe above 2,000 atoms). Duplicates' other series paths in `also_in` (results to be
+  copied to both webapp paths). Started the same day, in parallel as the plan says: stage 1 of the 835 new dots, stage 2
+  (GPU, no CPU steps) and stage 2 bis (CP2K chains) of the 23 relaxed dots, each through its role agent.
 - 2026-10-18 · NHR user-scratch cleanup (proposal `proposals/2026-10-18-nhr-scratch.txt`): Ivan: "can't you run the calculations
   in the project folder that has more space ? Didn't we decide this before already ?" Yes: the campaign runs in
   /scratch/projects/bep00157/qdw_campaign, so the 95 % file warning on /scratch/usr/becivinf does not block it. Proposal
