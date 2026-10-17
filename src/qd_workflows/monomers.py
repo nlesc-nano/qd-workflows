@@ -201,11 +201,20 @@ def _differs(mine: Path, entry: Path, sym, pts) -> str:
 
 # ---------------- jobs ----------------
 def prepare_jobs(out_dir: str, cluster: dict, cluster_ref: str, materials, *, time_gpu: str = "01:00:00",
-                 time_cpu: str = "02:00:00", qos: str | None = None) -> dict:
+                 time_cpu: str = "02:00:00", qos: str | None = None, test_queue: bool = False) -> dict:
     """
     gpu.sh (MACE monomers and their training frames), cpu.sh (the CP2K library runs, side by side on
-    one node) and submit.sh (the CPU job after the GPU job) in out_dir.
+    one node) and submit.sh (the CPU job after the GPU job) in out_dir. test_queue: both jobs on the
+    profile's test partitions (1 h).
     """
+    import copy
+    if test_queue:
+        cluster = copy.deepcopy(cluster)
+        for block in (cluster["props"], cluster["cp2k"]):
+            if not block.get("test_partition"):
+                raise KeyError("--test-queue: the profile names no test_partition")
+            block["partition"] = block["test_partition"]
+        time_gpu = time_cpu = "01:00:00"
     from .cluster import sbatch_account
     from .cp2k.inputs import cp2k_launch, cp2k_partition, cp2k_setup
     from .props import _job

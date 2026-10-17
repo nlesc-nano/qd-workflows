@@ -187,7 +187,7 @@ def _monomers(args) -> int:
         print(json.dumps(monomers.species(args.materials), indent=1))
     elif args.action == "prepare":
         res = monomers.prepare_jobs(args.dir, load_cluster(args.cluster), args.cluster, args.materials.split(","),
-                                    qos=args.qos)
+                                    qos=args.qos, test_queue=args.test_queue)
         print(f"{len(res['species'])} monomers -> {res['library']}; submit with {args.dir}/submit.sh")
     elif args.action == "write":
         print("\n".join(monomers.write_cp2k(lib, args.xyz, load_cluster(args.cluster))))
@@ -392,6 +392,7 @@ def main(argv=None) -> int:
     p.add_argument("--cluster", required=True, help="cluster profile (needs cp2k.monomer_library)")
     p.add_argument("--materials", required=True, help="comma-separated: CdSe,InP,PbS,...")
     p.add_argument("--qos", help="Slurm QOS")
+    p.add_argument("--test-queue", action="store_true", help="both jobs on the test partitions (1 h)")
     p = mp.add_parser("write", help="the library's CP2K inputs from the MACE geometries (inside cpu.sh)")
     p.add_argument("xyz", help="monomers.xyz of the GPU job")
     p.add_argument("--cluster", required=True)

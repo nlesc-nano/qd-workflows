@@ -124,3 +124,12 @@ def test_prepare_jobs(tmp_path):
     assert "#SBATCH -N 1" in cpu and f"--ntasks-per-node={cluster['cores_per_node']}" in cpu
     assert "cp2k_n 8" in cpu and "--dependency=afterok" in (tmp_path / "job" / "submit.sh").read_text()
     assert json.loads((tmp_path / "job" / "species.json").read_text())[1]["materials"] == ["CdSe", "CdTe"]
+
+
+def test_test_queue_and_campaign_profile(tmp_path):
+    cluster = load_cluster("nhr_campaign")
+    monomers.prepare_jobs(str(tmp_path / "t"), cluster, "nhr_campaign", ["CdSe"], test_queue=True)
+    assert "#SBATCH -p gpu-a100:test" in (tmp_path / "t" / "gpu.sh").read_text()
+    cpu = (tmp_path / "t" / "cpu.sh").read_text()
+    assert "#SBATCH -p cpu-clx:test" in cpu and "--ntasks-per-node=96" in cpu and "--mem=360G" in cpu
+    assert "PYTHONPATH=/scratch/usr/becivinf/qdw_campaign/code/Orchestr.AI/src" in (tmp_path / "t" / "gpu.sh").read_text()
