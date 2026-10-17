@@ -5,13 +5,6 @@ item to "Decided" with his words.
 
 ## Open
 
-- **2026-10-17 · 11 earlier InP dots carry extra organic atoms.** Their DFT geometries (`pbe_final.xyz`) hold N, C, H
-  next to In, P, Cl (e.g. In31P16Cl45: 141 atoms, id says 92, extra N7 C7 H35), so they do not match the id's
-  formula and got no record. Options: (a) strip the organic species and re-relax the In/P/Cl core as the id says
-  (consistent with the library dots and the webapp); (b) keep them as they are (a different system). Recommendation: (a),
-  with the origin noted in record.json. Dots: In149P104Cl135_swap, In149P108Cl123, In31P16Cl45, In365P288Cl231,
-  In407P336Cl201F12, In407P336Cl213, In415P324Cl273_swap, P-In204P149Cl165_swap, P-In204P153Cl153, P-In40P23Cl51,
-  P-In52P31Cl63. Asked by: supervisor.
 - **2026-10-17 · AlSb Hirshfeld still at 200 SCF steps** after the first rerun (ESP converged in exactly 200). Second
   identical rerun is job 9582082 (32 ranks). If it fails again: CG + 2PNT for all monomers (see the AlSb item above).
 - **2026-10-17 · Hyperion home files:** moving CsPbX3 frees none of the 282,572 home files (97 % are in `.conda`:
@@ -35,6 +28,10 @@ item to "Decided" with his words.
 
 ## Decided
 
+- 2026-10-17 · The 11 earlier InP dots whose DFT geometry carries extra organic atoms (C, N, H in 1:1:5, methylamine): "Yes strip"
+  (Ivan). `qdw campaign legacy-records --strip-extra` (qd-workflows 9c445af) removed them, re-checked the In/P/Cl
+  composition against each id (all 11 neutral, 92 to 1,012 atoms), recorded the stripped atoms in record.json
+  (`origin.stripped_atoms`). Stage 1 relax of the 11: whole node, 4 groups, job 9582087 (<= 600 core-h).
 - 2026-10-17 · Stage 1 of the earlier dots: "For the legacy records I am ok with code change . Legacy structures should
   always be re relaxed with the correct input etc . If there is no geometry forget about them and rerun them from
   scratch . I am ok with whole node batch ." (Ivan). Done: `qdw campaign legacy-records` (qd-workflows 6f3707a, tested)
