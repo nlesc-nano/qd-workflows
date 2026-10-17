@@ -8,7 +8,7 @@ cores_per_node: 96           # cpu-clx (96 cores, ~380 GB); cpu-clx:large has 76
 request: nodes               # every CP2K job on whole nodes, all cores as MPI ranks (Ivan's rule)
 min_cores: 96
 mem_per_cpu: 3g
-node_memory_gb: 360          # usable on a standard cpu-clx node
+node_memory_gb: 330          # usable on a standard cpu-clx node (380 GB minus the 40 GB Slurm keeps, MemSpecLimit)
 threads_per_core: 2
 qos: normal
 account: bep00157
