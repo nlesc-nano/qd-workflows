@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import TEMPLATES, render
-from ..cluster import cp2k_resources, sbatch_account
+from ..cluster import cp2k_resources, node_memory, sbatch_account
 from ..cp2k import inputs
 from ..cp2k.basis import kind_blocks, kinds_for
 from ..xyz import read_xyz, write_xyz
@@ -266,9 +266,9 @@ def assign_ranks(plan: dict, cluster: dict) -> int:
 
 
 def launch_threads(cp: dict) -> str:
-    """MPI launch of $1 ranks with $2 OpenMP threads each."""
+    """MPI launch of $1 ranks with $2 OpenMP threads each ($STEP_MEM per node with srun, when set)."""
     if cp.get("launcher") == "srun":
-        return "srun --exact -n $1 -c $2 --cpu-bind=cores"
+        return "srun --exact -n $1 -c $2 ${STEP_MEM:+--mem=$STEP_MEM} --cpu-bind=cores"
     return "mpirun -np $1"
 
 
@@ -284,8 +284,9 @@ def job(run: Path, cluster: dict, plan: dict, *, time: str | None = None, qos: s
     # finished runs when resubmitted)
     wall = time or ("01:00:00" if test_queue else cp["time"].get("chain", "12:00:00"))
     res = cp2k_resources(cluster, n_bf)
-    # whole nodes: all their memory (stored HFX integrals); otherwise per allocated CPU
-    mem = "#SBATCH --mem=0" if total >= per_node else f"#SBATCH --mem-per-cpu={res.mem_per_cpu}"
+    # whole nodes: all their memory (stored HFX integrals); otherwise the cores' memory, per node
+    # (a --mem-per-cpu job may never start on NHR, see cluster.node_memory)
+    mem = "#SBATCH --mem=0" if total >= per_node else f"#SBATCH --mem={node_memory(cluster, total, res.mem_per_cpu)}"
     order = sorted((n for n in plan if plan[n]["runs"]), key=lambda n: -plan[n]["n_bf"])
     values = {
         "JOB_NAME": f"rx-cp2k-{run.name}"[:64], "TIME": wall, "NTASKS": max(1, total // threads),

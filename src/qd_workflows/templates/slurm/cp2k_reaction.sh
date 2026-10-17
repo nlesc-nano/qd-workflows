@@ -38,6 +38,16 @@ if [ "$PIECES" = 1 ] && [ $piece -lt $MAX_PIECES ]; then
     echo "[reaction] piece $piece, next: ${next:-not queued}"
 fi
 cp2k_n() { OMP_NUM_THREADS=$2 {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }   # $1 ranks, $2 threads each
+# Memory per node of a species' runs (srun --mem): its cores' share of 90 % of the job's memory,
+# at most 90 % of a node. The job asks for memory per node, and a step that asks for none takes
+# all of it: the other species would wait for it. Empty without a per-node figure from Slurm.
+step_mem() {  # cores
+    [ "${SLURM_MEM_PER_NODE:-0}" -gt 0 ] || return 0
+    local node=$(( SLURM_MEM_PER_NODE * 9 / 10 ))
+    local m=$(( node * ${SLURM_NNODES:-1} * $1 / TOTAL ))
+    [ $m -le $node ] || m=$node
+    echo ${m}M
+}
 # SCCS runs: one thread per rank. With OpenMP threads the SCCS polarisation loop of CP2K 2026.2
 # goes wrong (HCl, eps 80: diverges with 4 threads, converges in 13 steps with 1; AsH3, eps 2-4:
 # +3.8 and +8.3 eV with 4 threads). Other runs: THREADS per rank.
@@ -93,6 +103,7 @@ run_one() {  # dir cores [parent .wfn]
 
 species_chain() {  # name cores
     local s=species/$1/cp2k n=$2 e
+    local STEP_MEM; STEP_MEM=$(step_mem "$n")
     run_one "$s/charges" "$n"
     local w="$ROOT/$s/charges/$1-charges-RESTART.wfn"
     for e in "$s"/energy_*; do run_one "$e" "$n" "$w"; done      # isolated single points (energy check)

@@ -117,6 +117,26 @@ reads at run time the memory Slurm granted, and runs side by side at most
 $\lfloor 0.8\, M_\mathrm{job} / M_\mathrm{run}\rfloor$ field single points (at most 13) and esp dots
 (at most 2). Examples: 5 at a time in 96 GB, all 13 in 336 GB (NHR, 48 × 7 GB).
 
+The job asks for its memory per node, `#SBATCH --mem` = the ranks on a node × `mem_per_cpu`, at
+most `node_memory_gb`, with the ranks spread evenly over the nodes (`--ntasks-per-node`). It does
+not ask per core: on NHR's cpu-genoa a job with `-n 48 --mem-per-cpu=7g` was planned on an idle
+node in every backfill cycle and never started (the Cd68 chain waited over an hour), while the same
+total as `--mem=336G` starts at once. Asked per node, the memory belongs to the job, not to its
+ranks, and an `srun` step that names none takes all of it: the next run side by side waits for it.
+So every run side by side asks for its share,
+
+$$
+M_\mathrm{step} = \frac{0.9\, M_\mathrm{node}}{k},\qquad
+k = \begin{cases} n & \text{one node}\\ \lceil n / N \rceil + 1 & N \text{ nodes}\end{cases}
+$$
+
+per node for $n$ runs side by side (`srun --mem`; on several nodes one run more per node, for a run
+across two nodes, and the chain places one run less per node). The chain prints the runs, ranks and
+memory of each step (`[chain] field: 13 side by side, 3 ranks and 23819M each`); what `srun` and
+CP2K print goes to `srun.log` in each run's directory, and the chain prints its last lines for the
+runs that did not finish. The reaction job (`qdw reaction`) does the same for its species, with a
+share by cores.
+
 ## Running a chain
 
 ```bash

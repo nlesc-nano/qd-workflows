@@ -6,9 +6,8 @@ scheduler: slurm
 cores_per_node: 192          # cpu-genoa
 request: cores
 min_cores: 48
-mem_per_cpu: 7g              # ~1.5 TB per 192-core node
-node_memory_gb: 1400         # usable; Slurm counts --mem-per-cpu per hardware thread
-threads_per_core: 2          # (-n 192 x 7g is refused: 384 threads x 7 GB)
+mem_per_cpu: 7g              # per core; CP2K jobs ask per node: #SBATCH --mem=<cores x 7 GB>
+node_memory_gb: 1400         # usable; the cap of --mem (-n 48 --mem-per-cpu=7g never starts on cpu-genoa)
 qos: normal
 account: bep00157           # project account (the personal one, becivinf, is out of compute time)
 setup: []
