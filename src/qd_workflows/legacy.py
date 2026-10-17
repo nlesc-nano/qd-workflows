@@ -36,12 +36,13 @@ def formula_of(dot_id: str) -> Counter:
 
 
 def find_geometry(d: dict, searches: list[str]) -> Path | None:
-    """The DFT geometry of a legacy dot: ledger `legacy.geo`, else the first template `{id}` that exists."""
+    """The DFT geometry of a legacy dot: ledger `legacy.geo`, else the first template (`{id}`, `{stem}`) that exists."""
     geo = (d.get("legacy") or {}).get("geo")
     if geo and Path(geo).is_file():
         return Path(geo)
+    stem = re.sub(r"-(reconstructed|clean)$", "", d["id"])        # `{stem}`: the id without the surface suffix
     for t in searches:
-        p = Path(t.format(id=d["id"]))
+        p = Path(t.format(id=d["id"], stem=stem))
         if p.is_file():
             return p
     return None
