@@ -12,6 +12,11 @@ item to "Decided" with his words.
 
 ## Decided
 
+- 2026-10-18 · NHR user-scratch cleanup (proposal `proposals/2026-10-18-nhr-scratch.txt`): Ivan: "can't you run the calculations
+  in the project folder that has more space ? Didn't we decide this before already ?" Yes: the campaign runs in
+  /scratch/projects/bep00157/qdw_campaign, so the 95 % file warning on /scratch/usr/becivinf does not block it. Proposal
+  shelved, nothing approved or deleted. Note: the campaign still READS from /scratch/usr/becivinf (MACE model, CIFs, QDEX
+  build, basis data, mostly under qdw_tests): that stays out of any cleanup until moved to the project space.
 - 2026-10-18 · Hirshfeld monomer runs: Ivan asked whether the webapp needs Hirshfeld; supervisor checked (the webapp never
   reads or shows it; only a GB fallback used it) and recommended dropping the runs; Ivan: "Yes". Done: Orchestr.AI
   3960395 (field step without monomers; solvation without COSMO data = vacuum, with a warning and a model line; sites
