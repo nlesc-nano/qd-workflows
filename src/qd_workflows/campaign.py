@@ -15,6 +15,8 @@ The watchdog and the agents read `qdw campaign status --json --update`; people r
       - id: CdSe-Se-Cd176Se147Cl58-clean
         material: CdSe
         source: pilot              # qd_builder | legacy | pilot
+        surface: clean             # clean | reconstructed
+        reconstruction: null       # reconstructed only: vacancy | swap (QD_builder reconstruction_pattern)
         record: /scratch/.../rec/CdSe-Se-Cd176Se147Cl58-clean
         log: /scratch/.../pilot.log
       - id: InP-In-In149P108Cl123
@@ -187,7 +189,8 @@ def props_state(props: Path) -> dict:
 
 
 def dot_state(d: dict, jobs: list[dict], now: datetime) -> dict:
-    out: dict = {"id": d["id"], "material": d.get("material"), "source": d.get("source"), "problems": []}
+    out: dict = {"id": d["id"], "material": d.get("material"), "source": d.get("source"),
+                 "surface": d.get("surface"), "reconstruction": d.get("reconstruction"), "problems": []}
     rec = Path(d["record"]) if d.get("record") else None
     if rec is None or not rec.is_dir():
         if d.get("source") == "legacy":
