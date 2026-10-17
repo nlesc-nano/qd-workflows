@@ -3,7 +3,8 @@
 #SBATCH -t {{TIME}}
 #SBATCH -n {{NTASKS}}
 #SBATCH -N {{NODES}}
-#SBATCH --mem-per-cpu={{MEM_PER_CPU}}
+#SBATCH --ntasks-per-node={{NODE_TASKS}}
+#SBATCH --mem={{MEM}}
 #SBATCH --qos={{QOS}}
 {{PARTITION}}{{ACCOUNT}}{{SETUP}}
 {{CP2K_SETUP}}

@@ -14,8 +14,8 @@ job script hard-codes a path. Shipped profiles: `nhr` (NHR@ZIB, production) and 
 | `cores_per_node` | 192 | CPU cores of a node (CP2K jobs) |
 | `request` | `cores` | `cores`: shared nodes, a job asks for a core count; `nodes`: whole nodes |
 | `min_cores` | 48 | smallest CP2K job |
-| `mem_per_cpu` | `7g` | memory per core, a floor for CP2K jobs |
-| `node_memory_gb`, `threads_per_core` | 1400, 2 | usable node memory; Slurm counts `--mem-per-cpu` per hardware thread |
+| `mem_per_cpu` | `7g` | memory per core, a floor for CP2K jobs; they ask for the cores' memory per node (`#SBATCH --mem`) |
+| `node_memory_gb` | 1400 | usable node memory: the cap of a job's `--mem` |
 | `qos` | `normal` | default QoS |
 | `account` | `bep00157` | `#SBATCH --account` of every job (omit for the user's default) |
 | `setup` | `[]` | shell lines at the top of every job (e.g. `source /etc/profile.d/lmod.sh`) |

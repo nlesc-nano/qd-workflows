@@ -34,11 +34,13 @@ def sbatch_account(cluster: dict) -> str:
 @dataclass
 class Resources:
     cores: int
-    mem_per_cpu: str
+    mem_per_cpu: str      # per core
+    mem_per_node: str     # what the job asks for (#SBATCH --mem): the fullest node's cores x mem_per_cpu
     memory_gb: float      # estimated total
 
     def as_dict(self) -> dict:
-        return {"cores": self.cores, "mem_per_cpu": self.mem_per_cpu, "memory_gb": round(self.memory_gb, 1)}
+        return {"cores": self.cores, "mem_per_cpu": self.mem_per_cpu, "mem_per_node": self.mem_per_node,
+                "memory_gb": round(self.memory_gb, 1)}
 
 
 def cp2k_resources(cluster: dict, basis_functions: int) -> Resources:
@@ -56,15 +58,32 @@ def cp2k_resources(cluster: dict, basis_functions: int) -> Resources:
     floor_gb = _gb(cluster.get("mem_per_cpu", "2g"))
     mem = max(floor_gb, math.ceil(memory_gb / cores))
     if cluster.get("node_memory_gb"):
-        # Slurm charges --mem-per-cpu per hardware thread: with many ranks on a node the floor
-        # asks for more than the node has (NHR: 134 ranks x 2 threads x 7 GB = 1.9 TB > 1.4 TB).
-        per_node = int(cluster["cores_per_node"])
-        tasks = -(-cores // -(-cores // per_node))               # ranks on the fullest node
-        cap = int(cluster["node_memory_gb"] // (tasks * int(cluster.get("threads_per_core", 1))))
-        if cap < 1:
+        tasks = node_tasks(cluster, cores)
+        mem = min(mem, int(cluster["node_memory_gb"] // tasks))
+        if mem < 1:
             raise ValueError(f"{tasks} ranks per node do not fit in {cluster['node_memory_gb']} GB")
-        mem = min(mem, cap)
-    return Resources(cores=cores, mem_per_cpu=f"{mem}g", memory_gb=memory_gb)
+    return Resources(cores=cores, mem_per_cpu=f"{mem}g", mem_per_node=node_memory(cluster, cores, f"{mem}g"),
+                     memory_gb=memory_gb)
+
+
+def node_tasks(cluster: dict, cores: int) -> int:
+    """Ranks per node of a job with `cores` ranks spread evenly on as few nodes as they need
+    (#SBATCH --ntasks-per-node: Slurm would otherwise fill the first node, e.g. 192 + 10)."""
+    nodes = -(-cores // int(cluster["cores_per_node"]))
+    return -(-cores // nodes)
+
+
+def node_memory(cluster: dict, cores: int, mem_per_cpu: str) -> str:
+    """
+    The job's memory per node (#SBATCH --mem) for `cores` ranks of `mem_per_cpu` each, at most what a
+    node holds (`node_memory_gb`). Jobs ask per node, not per CPU: on NHR's cpu-genoa a job with
+    -n 48 --mem-per-cpu=7g is planned on an idle node every backfill cycle and never started,
+    while --mem=336G starts at once (and Slurm counts --mem-per-cpu per hardware thread).
+    """
+    gb = node_tasks(cluster, cores) * _gb(mem_per_cpu)
+    if cluster.get("node_memory_gb"):
+        gb = min(gb, int(cluster["node_memory_gb"]))
+    return f"{max(gb, 1)}G"
 
 
 def _gb(text: str) -> int:

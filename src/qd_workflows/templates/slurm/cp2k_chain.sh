@@ -3,7 +3,8 @@
 #SBATCH -t {{TIME}}
 #SBATCH -n {{NTASKS}}
 #SBATCH -N {{NODES}}
-#SBATCH --mem-per-cpu={{MEM_PER_CPU}}
+#SBATCH --ntasks-per-node={{NODE_TASKS}}
+#SBATCH --mem={{MEM}}
 #SBATCH --qos={{QOS}}
 {{PARTITION}}{{ACCOUNT}}{{SETUP}}
 # CP2K track of one structure in one job: geo_opt -> field single points -> PDOS -> MO window
@@ -25,22 +26,39 @@ orch_field() { env -u PYTHONHOME PYTHONPATH={{QDW_PYTHONPATH}} LD_LIBRARY_PATH=$
 QDEX={{QDEX}}
 qdex_run() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDEX")")/lib OMP_NUM_THREADS=$1 "$QDEX" --config config.yaml; }
 cp2k() { {{LAUNCH}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }
-cp2k_n() { {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out > /dev/null 2>&1; }   # $1 ranks
+# $1 ranks, $STEP_MEM per node (see step_mem); srun's and CP2K's messages in srun.log next to the run
+cp2k_n() { {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out > srun.log 2>&1; }
 # How many single points of the dot fit side by side, at most $1: each holds the cell's real-space
 # grids (~{{GRID_MEM_GB}} GB, whatever its rank count); 80 % of the job's memory is used.
 side_by_side() {
-    local mem_mb
-    if [ -n "${SLURM_MEM_PER_NODE:-}" ] && [ "$SLURM_MEM_PER_NODE" -gt 0 ]; then
-        mem_mb=$(( SLURM_MEM_PER_NODE * ${SLURM_NNODES:-1} ))
-    elif [ -n "${SLURM_MEM_PER_CPU:-}" ]; then
-        mem_mb=$(( SLURM_MEM_PER_CPU * SLURM_NTASKS ))
-    else                                     # --mem=0: the whole node(s)
-        mem_mb=$(( $(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo) * ${SLURM_NNODES:-1} ))
+    local mem_mb n nn=${SLURM_NNODES:-1}
+    if [ "${SLURM_MEM_PER_NODE:-0}" -gt 0 ]; then
+        n=$(( SLURM_MEM_PER_NODE * 8 / 10 / {{GRID_MEM_MB}} ))   # per node; on several nodes one
+        [ "$nn" -le 1 ] || n=$(( (n - 1) * nn ))                  # place less (a run across two, step_mem)
+    else
+        if [ -n "${SLURM_MEM_PER_CPU:-}" ]; then
+            mem_mb=$(( SLURM_MEM_PER_CPU * SLURM_NTASKS ))
+        else                                 # the whole node(s)
+            mem_mb=$(( $(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo) * nn ))
+        fi
+        n=$(( mem_mb * 8 / 10 / {{GRID_MEM_MB}} ))
     fi
-    local n=$(( mem_mb * 8 / 10 / {{GRID_MEM_MB}} ))
     [ $n -ge 1 ] || n=1; [ $n -le $1 ] || n=$1
     echo $n
 }
+# Memory per node of each of $1 runs side by side (srun --mem): an equal share of 90 % of a node
+# among the runs on it (on several nodes one more, a run across two). The job asks for memory per
+# node, and a step that asks for none takes all of it: the other runs would wait for it. Empty
+# without a per-node figure from Slurm (then srun asks for none).
+step_mem() {
+    [ "${SLURM_MEM_PER_NODE:-0}" -gt 0 ] || return 0
+    local nn=${SLURM_NNODES:-1}
+    local k=$(( ($1 + nn - 1) / nn + (nn > 1 ? 1 : 0) ))
+    [ $k -le $1 ] || k=$1
+    echo $(( SLURM_MEM_PER_NODE * 9 / 10 / k ))M
+}
+# The last lines srun and CP2K printed for the unfinished runs $2... of step directory $1.
+why() { local d=$1 r; shift; for r in "$@"; do echo "[chain] $d/$r: $(tail -n 2 "$d/$r/srun.log" 2>/dev/null | tr '\n' ' ')"; done; }
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
 
 # 1. geo_opt (from the MACE-relaxed structure)
@@ -71,8 +89,9 @@ if [ "{{FIELD}}" = "1" ]; then
     todo=$(orch_field status field)
     if [ "$todo" != "all done" ]; then
         echo "[chain] field: $todo"
-        FP=$(side_by_side {{FIELD_PARALLEL}}); echo "[chain] field: $FP side by side"
+        FP=$(side_by_side {{FIELD_PARALLEL}})
         R=$(( SLURM_NTASKS / FP )); [ $R -ge 1 ] || R=1
+        STEP_MEM=$(step_mem $FP); echo "[chain] field: $FP side by side, $R ranks${STEP_MEM:+ and $STEP_MEM} each"
         k=0
         for r in $todo; do
             n=$R; case $r in mono_*) n=$(( R < 8 ? R : 8 ));; esac
@@ -81,7 +100,8 @@ if [ "{{FIELD}}" = "1" ]; then
         done
         wait
     fi
-    [ "$(orch_field status field)" = "all done" ] || { echo "[chain] field runs incomplete"; exit 1; }
+    todo=$(orch_field status field)
+    [ "$todo" = "all done" ] || { echo "[chain] field runs incomplete"; why field $todo; exit 1; }
 fi
 
 # 2b. Solvation: potential and density cubes of the intact dot (restart of the geo_opt .wfn), the
@@ -102,6 +122,7 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
         echo "[chain] esp: $todo"
         EP=$(side_by_side 2)                 # the two dots side by side if both fit
         NR=$(( SLURM_NTASKS / EP > 0 ? SLURM_NTASKS / EP : 1 ))
+        STEP_MEM=$(step_mem $EP); echo "[chain] esp: $EP side by side, $NR ranks${STEP_MEM:+ and $STEP_MEM} each"
         for r in $todo; do
             case $r in
                 dot_*) if [ "$EP" -ge 2 ]; then (cd "esp/$r" && cp2k_n $NR) & else (cd "esp/$r" && cp2k_n $NR); fi ;;
@@ -110,10 +131,11 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
         done
         wait
     fi
-    if [ "$(qdw cp2k esp status esp)" = "all done" ]; then
+    todo=$(qdw cp2k esp status esp)
+    if [ "$todo" = "all done" ]; then
         qdw cp2k esp collect esp -o solvation.json > /dev/null && echo "[chain] solvation.json"
     else
-        echo "[chain] esp runs incomplete: solvation from the field step's charges"
+        echo "[chain] esp runs incomplete: solvation from the field step's charges"; why esp $todo
     fi
 ) || echo "[chain] solvation step failed: solvation from the field step's charges"; fi
 

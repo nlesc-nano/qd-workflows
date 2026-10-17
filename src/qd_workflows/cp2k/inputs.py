@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import TEMPLATES, render
-from ..cluster import cp2k_resources, sbatch_account
+from ..cluster import cp2k_resources, node_tasks, sbatch_account
 from ..xyz import read_xyz, write_xyz
 from .basis import kind_blocks, kinds_for
 
@@ -104,10 +104,15 @@ def cp2k_setup(cp: dict) -> str:
     return f"module purge\nmodule load {cp['module']}"
 
 
-def cp2k_launch(cp: dict, ranks: str = "${SLURM_NTASKS}") -> str:
-    """MPI launch prefix: srun (SLURM-native builds) or mpirun (default)."""
+def cp2k_launch(cp: dict, ranks: str = "${SLURM_NTASKS}", step_mem: bool = False) -> str:
+    """
+    MPI launch prefix: srun (SLURM-native builds) or mpirun (default). step_mem: srun asks for
+    $STEP_MEM per node when it is set (runs side by side: without it the first step of a job that
+    asks --mem per node takes all of it and the others wait).
+    """
     if cp.get("launcher") == "srun":
-        return f"srun --exact -n {ranks} --cpu-bind=cores"
+        mem = " ${STEP_MEM:+--mem=$STEP_MEM}" if step_mem else ""
+        return f"srun --exact -n {ranks}{mem} --cpu-bind=cores"
     return f"mpirun -np {ranks}"
 
 
@@ -204,7 +209,8 @@ def prepare(
         "TIME": time or cp["time"].get(step, cp["time"]["sample"]),
         "NTASKS": res.cores,
         "NODES": -(-res.cores // int(cluster["cores_per_node"])),   # as few nodes as the cores need
-        "MEM_PER_CPU": res.mem_per_cpu,
+        "NODE_TASKS": node_tasks(cluster, res.cores),   # spread evenly: --mem is per node
+        "MEM": res.mem_per_node,
         "QOS": qos or cluster.get("qos", "regular"),
         # Shell setup the job needs whatever shell submitted it (e.g. Lmod for `module`).
         "SETUP": "\n".join(cluster.get("setup", [])),
@@ -271,9 +277,10 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
     total_time = time or chain_time(info["basis_functions"], res["cores"], cp["time"].get("chain", cp["time"]["geo_opt"]))
     job = {
         "JOB_NAME": f"cp2k-{project}"[:64], "TIME": total_time, "NTASKS": res["cores"],
-        "NODES": -(-res["cores"] // int(cluster["cores_per_node"])), "MEM_PER_CPU": res["mem_per_cpu"],
+        "NODES": -(-res["cores"] // int(cluster["cores_per_node"])), "NODE_TASKS": node_tasks(cluster, res["cores"]),
+        "MEM": res["mem_per_node"],
         "QOS": qos or cluster.get("qos", "regular"), "SETUP": "\n".join(cluster.get("setup", [])),
-        "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "LAUNCH_N": cp2k_launch(cp, "$1"),
+        "CP2K_SETUP": cp2k_setup(cp), "LAUNCH": cp2k_launch(cp), "LAUNCH_N": cp2k_launch(cp, "$1", step_mem=True),
         "PARTITION": cp2k_partition(cp), "ACCOUNT": sbatch_account(cluster),
         "OMP_NUM_THREADS": cp.get("omp_num_threads", 1), "EXECUTABLE": cp["executable"],
         "PROJECT": project, "QDW_PYTHON": py, "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
