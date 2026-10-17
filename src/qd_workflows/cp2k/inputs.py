@@ -92,9 +92,63 @@ def grid_memory_gb(cell: str) -> float:
     return GRID_MEM_REF_GB * a * b * c / GRID_MEM_REF_VOL_A3
 
 
-def cell_abc(coords: np.ndarray, vacuum: float = VACUUM_A) -> str:
-    extent = np.ptp(np.asarray(coords, float), axis=0) + vacuum
-    return " ".join(f"{x:.3f}" for x in extent)
+# ---------------- the cell on a common grid ----------------
+# CP2K (pw_grid_info.F) gives a cell edge of length L (bohr) n = 2 floor(L sqrt(Ecut[Ry]) / 2 pi) + 1
+# points at the density cutoff, then the next length its FFT accepts (FFTW3: 2^a 3^b 5^c 7^d 11^e,
+# b <= 3, c <= 2, d <= 1, e <= 1; fftw3_lib.F). The spacing L/n then differs slightly from edge to edge
+# and from system to system. Every edge here is n h instead, with h just under the largest spacing the
+# cutoff allows and n a length CP2K picks for n h: the same grid spacing in every direction of every
+# dot, stripped dot and monomer, so energy differences between them are free of grid jitter.
+CUTOFF_RY = 400                 # CUTOFF of every template (tests/test_cell.py checks)
+BOHR_A = 0.529177210903
+GRID_MARGIN = 1e-6              # h = (1 - margin) x the largest spacing
+
+
+def fft_lengths(limit: int = 20000) -> list[int]:
+    """The FFT lengths CP2K's FFTW3 interface accepts, up to `limit`."""
+    out = set()
+    for b in range(4):
+        for c in range(3):
+            for d in range(2):
+                for e in range(2):
+                    n = 3 ** b * 5 ** c * 7 ** d * 11 ** e
+                    while n < limit:
+                        out.add(n)
+                        n *= 2
+    return sorted(out)
+
+
+_FFT = fft_lengths()
+
+
+def grid_points(length_a: float, cutoff_ry: float = CUTOFF_RY) -> int:
+    """The points CP2K puts along a cell edge of length_a (Å) at this density cutoff."""
+    n_min = 2 * int(np.floor(length_a / BOHR_A * np.sqrt(cutoff_ry) / (2 * np.pi))) + 1
+    return next(n for n in _FFT if n >= n_min)
+
+
+def grid_spacing(cutoff_ry: float = CUTOFF_RY) -> float:
+    """The common grid spacing (Å): just under pi / sqrt(Ecut[Ry]) bohr."""
+    return (1.0 - GRID_MARGIN) * np.pi / np.sqrt(cutoff_ry) * BOHR_A
+
+
+def aligned_length(min_length_a: float, cutoff_ry: float = CUTOFF_RY) -> float:
+    """The shortest edge >= min_length_a that is n x grid_spacing with CP2K choosing exactly n points."""
+    h = grid_spacing(cutoff_ry)
+    for n in _FFT:
+        if n * h >= min_length_a and grid_points(n * h, cutoff_ry) == n:
+            return n * h
+    raise ValueError(f"cell edge {min_length_a} Å beyond the FFT lengths")
+
+
+def cell_abc(coords: np.ndarray, vacuum: float = VACUUM_A, min_length: float = 0.0,
+             cutoff_ry: float | None = CUTOFF_RY) -> str:
+    """ABC of a non-periodic cell: the extent plus `vacuum` (6 Å each side), at least `min_length`,
+    each edge rounded up to the common grid (cutoff_ry None: not rounded)."""
+    extent = np.maximum(np.ptp(np.asarray(coords, float), axis=0) + vacuum, min_length)
+    if cutoff_ry is None:
+        return " ".join(f"{x:.3f}" for x in extent)
+    return " ".join(f"{aligned_length(x, cutoff_ry):.6f}" for x in extent)
 
 
 def cp2k_setup(cp: dict) -> str:

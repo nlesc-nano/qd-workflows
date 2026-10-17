@@ -116,8 +116,7 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
         names.append(name)
     if monomers:
         for label, sym, pts in _frames(Path(monomers)):
-            ext = np.ptp(pts, axis=0) + 12.0
-            cell = " ".join(f"{max(x, MONOMER_MIN_CELL_A):.3f}" for x in ext)
+            cell = cell_abc(pts, min_length=MONOMER_MIN_CELL_A)        # 6 Å each side, common grid
             _write(out / label, esp_input(base, label, scratch=True, cell=cell), sym, pts, f"{label} monomer (MACE)")
             names.append(label)
     (out / "runs.txt").write_text("\n".join(names) + "\n")

@@ -95,9 +95,9 @@ def write_cp2k(library: str, monomers_xyz: str, cluster: dict) -> list[str]:
     """The library's CP2K runs from the MACE geometries (one xyz frame per monomer, "<name> <name>"
     or "<label> <name>"): <library>/<name>/hirshfeld and <library>/<name>/esp, each with cp2k.inp and
     geom.xyz written exactly as a dot's chain writes its monomer runs. Returns the run directories."""
-    from orchestr_ai.qd.field import monomer_input
+    from orchestr_ai.qd.field import monomer_cell, monomer_input
     from .cp2k import esp
-    from .cp2k.inputs import prepare
+    from .cp2k.inputs import cell_abc, prepare
     lib = Path(library)
     runs = []
     for label, name, sym, pts in read_frames(monomers_xyz):
@@ -115,10 +115,9 @@ def write_cp2k(library: str, monomers_xyz: str, cluster: dict) -> list[str]:
             base = (Path(tmp) / "base" / "cp2k.inp").read_text()
         h = d / "hirshfeld"
         h.mkdir(exist_ok=True)
-        (h / "cp2k.inp").write_text(monomer_input(base, f"mono_{lab}"))
+        (h / "cp2k.inp").write_text(monomer_input(base, f"mono_{lab}", monomer_cell(base, pts)))
         (h / "geom.xyz").write_text(_xyz(sym, pts, lab))
-        ext = np.ptp(np.asarray(pts, float), axis=0) + 12.0
-        cell = " ".join(f"{max(x, esp.MONOMER_MIN_CELL_A):.3f}" for x in ext)
+        cell = cell_abc(pts, min_length=esp.MONOMER_MIN_CELL_A)
         esp._write(d / "esp", esp.esp_input(base, lab, scratch=True, cell=cell), sym, pts, f"{lab} monomer (MACE)")
         (d / "monomer.json").write_text(json.dumps({"name": name, "label": lab, "symbols": list(sym),
                                                     "positions": np.asarray(pts, float).tolist()}, indent=1))
