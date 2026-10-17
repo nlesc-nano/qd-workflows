@@ -225,3 +225,45 @@ def test_cli_status_text(camp, capsys, monkeypatch):
     assert main(["campaign", "status", str(camp / "camp")]) == 0
     out = capsys.readouterr().out
     assert "needs attention" in out and "B" in out
+
+
+def _xyz(path, atoms):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{len(atoms)}\nx\n" + "\n".join(f"{s} {i * 2.5} {i * 0.5} {-i * 0.3}" for i, s in enumerate(atoms)) + "\n")
+
+
+def test_legacy_records(tmp_path, capsys):
+    from qd_workflows import legacy
+    camp = tmp_path / "camp"
+    atoms_ok = ["In"] * 3 + ["P"] * 2 + ["Cl"] * 3           # In3P2Cl3: charge 9 - 6 - 3 = 0
+    _xyz(tmp_path / "geo" / "a.xyz", ["In"] * 2 + atoms_ok)    # an earlier frame with another stoichiometry...
+    with (tmp_path / "geo" / "a.xyz").open("a") as f:           # ...then the final frame
+        f.write(f"{len(atoms_ok)}\nfinal\n" + "\n".join(f"{s} {i} 0 0" for i, s in enumerate(atoms_ok)) + "\n")
+    _xyz(tmp_path / "trim" / "InP-P-In3P2Cl3-reconstructed" / "InP-P-In3P2Cl3-reconstructed-opt.xyz", atoms_ok)
+    _xyz(tmp_path / "trim" / "InP-In-In3P2Cl4-reconstructed" / "InP-In-In3P2Cl4-reconstructed-opt.xyz", atoms_ok)
+    led = {"name": "t", "dots": [
+        {"id": "InP-In-In3P2Cl3", "material": "InP", "source": "legacy", "surface": "reconstructed",
+         "reconstruction": "vacancy", "legacy": {"geo": str(tmp_path / "geo" / "a.xyz")}},
+        {"id": "InP-P-In3P2Cl3-reconstructed", "material": "InP", "source": "legacy", "legacy": {"qdex": "/none"}},
+        {"id": "InP-In-In3P2Cl4-reconstructed", "material": "InP", "source": "legacy"},        # atoms do not match
+        {"id": "InP-In-In9P9Cl9-reconstructed", "material": "InP", "source": "legacy"},        # no geometry
+        {"id": "InP-In-In3P2Cl3-big", "material": "InP", "source": "legacy", "legacy": {"geo": str(tmp_path / "geo" / "a.xyz")}},
+        {"id": "CdSe-pilot", "material": "CdSe", "source": "pilot"}]}
+    camp.mkdir()
+    (camp / "campaign.yaml").write_text(yaml.safe_dump(led))
+    res = legacy.make_records(camp, tmp_path / "rec", [str(tmp_path / "trim" / "{id}" / "{id}-opt.xyz")],
+                              max_atoms=8, update_ledger=True)
+    assert res["made"] == ["InP-In-In3P2Cl3", "InP-P-In3P2Cl3-reconstructed", "InP-In-In3P2Cl3-big"]
+    assert "id says 9" in res["missing"]["InP-In-In3P2Cl4-reconstructed"]
+    assert res["missing"]["InP-In-In9P9Cl9-reconstructed"] == "no geometry found"
+    rec = json.loads((tmp_path / "rec" / "InP-In-In3P2Cl3" / "record.json").read_text())
+    assert rec["n_atoms"] == 8 and rec["total_charge"] == 0 and rec["family"] == "III-V"
+    assert rec["composition"] == {"In": 3, "P": 2, "Cl": 3} and rec["ligands"] == {"Cl": 3} and rec["reconstruction"] == "vacancy"
+    assert (tmp_path / "rec" / "InP-In-In3P2Cl3" / "start.xyz").read_text().startswith("8\n")      # last frame, not the first
+    dots = {d["id"]: d for d in campaign.load(camp)["dots"]}
+    assert dots["InP-In-In3P2Cl3"]["record"] == str(tmp_path / "rec" / "InP-In-In3P2Cl3")
+    assert "record" not in dots["CdSe-pilot"]
+    again = legacy.make_records(camp, tmp_path / "rec", [], max_atoms=8)           # a second call leaves them alone
+    assert again["made"] == [] and again["skipped"]["InP-In-In3P2Cl3"] == "has a record"
+    assert main(["campaign", "legacy-records", str(camp), "--out", str(tmp_path / "rec2"), "--max-atoms", "8"]) == 0
+    assert json.loads(capsys.readouterr().out)["made"] == []

@@ -213,6 +213,11 @@ def _campaign(args) -> int:
     elif args.action == "poll":
         res = campaign.poll(args.clusters.split(",") if args.clusters else None, update=not args.no_update)
         print(json.dumps(res, indent=1, default=str) if args.json else campaign.poll_text(res))
+    elif args.action == "legacy-records":
+        from . import legacy
+        res = legacy.make_records(args.dir, args.out, args.search or [], max_atoms=args.max_atoms,
+                                  update_ledger=args.update_ledger)
+        print(json.dumps(res, indent=1))
     else:
         campaign.add(args.dir, {"id": args.id, "material": args.material, "source": args.source,
                                 "record": args.record, "log": args.log,
@@ -419,6 +424,12 @@ def main(argv=None) -> int:
     p.add_argument("--clusters", help="comma-separated profile names (default: all with a campaign block)")
     p.add_argument("--json", action="store_true", help="machine-readable")
     p.add_argument("--no-update", action="store_true", help="look only: keep the snapshots as they are")
+    p = cp.add_parser("legacy-records", help="records (record.json + start.xyz) for the earlier DFT dots from their geometries")
+    p.add_argument("dir", help="campaign directory")
+    p.add_argument("--out", required=True, help="directory for the records, one per dot")
+    p.add_argument("--search", nargs="*", help="geometry paths with {id}, tried when the ledger has no legacy.geo")
+    p.add_argument("--max-atoms", type=int, default=2000)
+    p.add_argument("--update-ledger", action="store_true", help="list each new record in the ledger")
     p = cp.add_parser("add", help="list one more dot in the ledger")
     p.add_argument("dir", help="campaign directory")
     p.add_argument("id", help="dot id (the record name)")
