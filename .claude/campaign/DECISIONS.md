@@ -11,12 +11,20 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
+- **2026-10-18 · Agents blocked by the auto-mode permission check.** The DFT agent's `sbatch` on NHR (and then a read-only
+  ssh) was denied ("Shared Cluster Mutation"); nothing submitted. The supervisor does not submit in its place without Ivan.
+  Ivan: allow the submissions (main session or a permission rule for the agents)?
 - **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
   104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
   demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
 
 ## Decided
 
+- 2026-10-18 (supervisor) · Stage 2 bis order and the six chains above 2,000 core-h: approved. Chain scripts exist for all 23
+  relaxed earlier dots (<record>/cp2k/chain.sh). Estimates (pilot Cd176, 429 core-h, scaled n_bf^1.72): 17 chains of 96 to
+  1,728 core-h, about 8,350 in all, first; then InP-In407P336Cl201F12 2,003, InP-In407P336Cl213 2,003, InP-In415P324Cl273_swap
+  2,171, CdSe-Cd446Se352Cl188 2,178; then CdSe-Cd663Se560Cl206 4,171 and CdSe-Se-Cd856Se731Cl250 6,460, over the next days
+  within 12,000 core-h/day. CdSe-Cd373Se304Cl138 may hit its 12 h cap: one resubmit. Waiting on the permission item above.
 - 2026-10-18 (supervisor) · Spin state of the MA diatomics: kept closed-shell, as every dot and the MACE references; the MA
   monomers now only enter the ESP/COSMO reference. Revisit only if a III-V ladder looks wrong.
 - 2026-10-18 (supervisor) · Webapp for dots without a ladder: no longer needed, every dot up to 2,000 atoms gets the ladder.
