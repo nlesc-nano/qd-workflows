@@ -5,20 +5,20 @@ zinc blende or wurtzite). Part of stage 1 of the campaign.
 
     MACE-MH-1 (GPU job): Orchestr.AI's monomer library, <props.refs>/<head>/monomers/<name>-<key>/:
                          geometry, energy, frequencies, G(T); the training frames (--ensemble).
-    CP2K (CPU job):      <cp2k.monomer_library>/<name>/hirshfeld  zero-field single point (Hirshfeld
-                                                                  charges, the field step's mono_<label>)
-                         <cp2k.monomer_library>/<name>/esp        potential and density cubes (the ESP
+    CP2K (CPU job):      <cp2k.monomer_library>/<name>/esp        potential and density cubes (the ESP
                                                                   step's <label>, COSMO solvation)
                          Small molecules: many runs side by side on one node, a few ranks each.
+                         (No Hirshfeld run: solvation uses the COSMO data of these cubes, and without
+                         them the dot's thermodynamics are in vacuum.)
 
-The DFT chain of a dot links its field/mono_<label> and esp/<label> to the library entry
-(`qdw monomers link`) when the entry has finished and its input and geometry are the ones the chain
-would run; otherwise the chain runs the monomer itself.
+The DFT chain of a dot links its esp/<label> to the library entry (`qdw monomers link`) when the entry
+has finished and its input and geometry are the ones the chain would run; otherwise the chain runs the
+monomer itself.
 
     qdw monomers species CdSe InP PbS ...         # the monomer names of these materials
     qdw monomers prepare <dir> --cluster nhr --materials CdSe,InP,...   # gpu.sh, cpu.sh, submit.sh
     qdw monomers status [--cluster nhr]
-    qdw monomers link <field dir> <esp dir> --monomers props/monomers.xyz --library <lib>
+    qdw monomers link --esp <esp dir> --monomers props/monomers.xyz --library <lib>
 """
 from __future__ import annotations
 
@@ -93,9 +93,8 @@ def _xyz(sym, pts, comment: str) -> str:
 
 def write_cp2k(library: str, monomers_xyz: str, cluster: dict) -> list[str]:
     """The library's CP2K runs from the MACE geometries (one xyz frame per monomer, "<name> <name>"
-    or "<label> <name>"): <library>/<name>/hirshfeld and <library>/<name>/esp, each with cp2k.inp and
-    geom.xyz written exactly as a dot's chain writes its monomer runs. Returns the run directories."""
-    from orchestr_ai.qd.field import monomer_cell, monomer_input
+    or "<label> <name>"): <library>/<name>/esp with cp2k.inp and geom.xyz written exactly as a dot's
+    chain writes its monomer run. Returns the run directories."""
     from .cp2k import esp
     from .cp2k.inputs import cell_abc, prepare
     lib = Path(library)
@@ -103,20 +102,16 @@ def write_cp2k(library: str, monomers_xyz: str, cluster: dict) -> list[str]:
     for label, name, sym, pts in read_frames(monomers_xyz):
         lab = label if label in ("MA", "MX") else _label_of(name)
         d = lib / name
-        runs += [str(d / "hirshfeld"), str(d / "esp")]
-        if run_done(d / "hirshfeld") and run_done(d / "esp"):
+        runs.append(str(d / "esp"))
+        if run_done(d / "esp"):
             continue                           # finished: never rewritten
         d.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "m.xyz").write_text(_xyz(sym, pts, name))
-            # (the restart line is removed from both monomer inputs: they start from an atomic guess)
+            # (the restart line is removed from the monomer input: it starts from an atomic guess)
             prepare(str(Path(tmp) / "m.xyz"), "sample", f"{name}-base", str(Path(tmp) / "base"), cluster,
                     wfn="../../geo_opt/none-RESTART.wfn")
             base = (Path(tmp) / "base" / "cp2k.inp").read_text()
-        h = d / "hirshfeld"
-        h.mkdir(exist_ok=True)
-        (h / "cp2k.inp").write_text(monomer_input(base, f"mono_{lab}", monomer_cell(base, pts)))
-        (h / "geom.xyz").write_text(_xyz(sym, pts, lab))
         cell = cell_abc(pts, min_length=esp.MONOMER_MIN_CELL_A)
         esp._write(d / "esp", esp.esp_input(base, lab, scratch=True, cell=cell), sym, pts, f"{lab} monomer (MACE)")
         (d / "monomer.json").write_text(json.dumps({"name": name, "label": lab, "symbols": list(sym),
@@ -146,23 +141,23 @@ def status(library: str) -> dict:
     lib = Path(library)
     res = {}
     for d in sorted(p for p in lib.iterdir() if (p / "monomer.json").is_file()) if lib.is_dir() else []:
-        res[d.name] = {k: run_done(d / k) for k in ("hirshfeld", "esp")}
+        res[d.name] = {k: run_done(d / k) for k in ("esp",)}
     return {"library": str(lib), "monomers": res,
             "done": sorted(n for n, r in res.items() if all(r.values())),
             "todo": sorted(n for n, r in res.items() if not all(r.values()))}
 
 
 # ---------------- the chain's side ----------------
-def link(field_dir: str | None, esp_dir: str | None, monomers_xyz: str, library: str) -> list[dict]:
+def link(esp_dir: str | None, monomers_xyz: str, library: str) -> list[dict]:
     """
-    Replace a dot's monomer runs (field/mono_<label>, esp/<label>) by links to the library entry of
+    Replace a dot's monomer runs (esp/<label>) by links to the library entry of
     the same monomer, when that entry has finished, has the same geometry and, after normalized(),
     the same input as the run the chain prepared. Returns one row per run: linked, or why not.
     """
     lib = Path(library)
     rows = []
     for label, name, sym, pts in read_frames(monomers_xyz):
-        for kind, top, run in (("hirshfeld", field_dir, f"mono_{label}"), ("esp", esp_dir, label)):
+        for kind, top, run in (("esp", esp_dir, label),):
             if not top:
                 continue
             mine, entry = Path(top) / run, lib / name / kind
@@ -242,7 +237,7 @@ def prepare_jobs(out_dir: str, cluster: dict, cluster_ref: str, materials, *, ti
 #SBATCH --mem={mem}
 #SBATCH --qos={qos or cluster.get('qos', 'regular')}
 {cp2k_partition(cp)}{sbatch_account(cluster)}{chr(10).join(cluster.get('setup', []))}
-# CP2K monomer library: every monomer's Hirshfeld single point and ESP cubes, {n} ranks each,
+# CP2K monomer library: every monomer's ESP cubes, {n} ranks each,
 # {per_node // n} side by side on one node (small molecules). Finished runs are skipped.
 {cp2k_setup(cp)}
 export OMP_NUM_THREADS=1

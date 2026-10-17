@@ -107,18 +107,11 @@ cd ..
 [ -s relaxed.xyz ] || qdw cp2k relaxed "geo_opt/$P-pos-1.xyz" -o relaxed.xyz
 
 # 2. Finite-field single points: 13 restarted from the geo_opt .wfn ({{FIELD_PARALLEL}} at a time, the
-#    job's ranks shared among them) + the MA and MX_q monomers -> Born charges, Raman tensors,
-#    Hirshfeld charges (Orchestr.AI field step). Finished runs are skipped.
+#    job's ranks shared among them) -> Born charges, Raman tensors, Hirshfeld charges of the dot
+#    (Orchestr.AI field step). Finished runs are skipped.
 if [ "{{FIELD}}" = "1" ]; then
     [ -s field/base/cp2k.inp ] || qdw cp2k prepare relaxed.xyz --step sample --project "$P-field" --wfn "../../geo_opt/$P-RESTART.wfn" --out field/base $EXTRA
-    MONO="{{RECORD_DIR}}/props/monomers.xyz"
-    [ -s field/runs.txt ] || orch_field prepare field/base/cp2k.inp field $( [ -s "$MONO" ] && echo --monomers "$MONO" )
-    # The monomers (MA, MX_q) from the monomer library, computed once per formula in stage 1, when its
-    # entry has the same input and geometry; otherwise they run here with the field runs.
-    if [ -n "$MONOLIB" ] && [ -s "$MONO" ]; then
-        qdw monomers link --field field --monomers "$MONO" --library "$MONOLIB" > field/monomers_link.json 2>&1 || true
-        plog event chain "field monomers: $(grep -c '"status": "linked"' field/monomers_link.json) of $(grep -c '"run":' field/monomers_link.json) from the monomer library"
-    fi
+    [ -s field/runs.txt ] || orch_field prepare field/base/cp2k.inp field
     todo=$(orch_field status field)
     if [ "$todo" != "all done" ]; then
         echo "[chain] field: $todo"
@@ -129,8 +122,7 @@ if [ "{{FIELD}}" = "1" ]; then
         plog event chain "field: $(echo $todo | wc -w) single points, $FP side by side, $R ranks${STEP_MEM:+, $STEP_MEM} each"
         k=0
         for r in $todo; do
-            n=$R; case $r in mono_*) n=$(( R < 8 ? R : 8 ));; esac
-            (cd "field/$r" && cp2k_n $n) &
+            (cd "field/$r" && cp2k_n $R) &
             k=$((k + 1)); if [ $k -ge $FP ]; then wait; k=0; fi
         done
         wait

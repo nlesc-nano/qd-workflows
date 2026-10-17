@@ -196,7 +196,7 @@ def _monomers(args) -> int:
     elif args.action == "status":
         print(json.dumps(monomers.status(lib), indent=1))
     else:
-        rows = monomers.link(args.field, args.esp, args.monomers, lib)
+        rows = monomers.link(args.esp, args.monomers, lib)
         print(json.dumps(rows, indent=1))
     return 0
 
@@ -407,7 +407,6 @@ def main(argv=None) -> int:
         p.add_argument("--library")
         p.add_argument("--cluster")
     p = mp.add_parser("link", help="link a dot's monomer runs to the library entries (inside the chain)")
-    p.add_argument("--field", help="the chain's field directory")
     p.add_argument("--esp", help="the chain's esp directory")
     p.add_argument("--monomers", required=True, help="props/monomers.xyz of the dot")
     p.add_argument("--library")

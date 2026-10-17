@@ -50,7 +50,7 @@ def chain_and_library(tmp_path, monkeypatch):
     (tmp_path / "dot.xyz").write_text(DOT_XYZ)
     prepare(str(tmp_path / "dot.xyz"), "sample", "Dot-field", str(run / "field" / "base"), cluster,
             wfn="../../geo_opt/Dot-RESTART.wfn")
-    field_mod.prepare(str(run / "field" / "base" / "cp2k.inp"), str(run / "field"), str(mono))
+    field_mod.prepare(str(run / "field" / "base" / "cp2k.inp"), str(run / "field"))
     esp.prepare(str(run / "field" / "base" / "cp2k.inp"), str(run / "esp"), monomers=str(mono))
     # the library (stage 1)
     lib = tmp_path / "lib"
@@ -68,23 +68,22 @@ def _finish(d: Path, cubes: bool):
 def test_library_inputs_equal_the_chains(chain_and_library):
     run, lib, mono, _ = chain_and_library
     for name, label, sym in (("CdSe", "MA", ["Cd", "Se"]), ("CdCl2", "MX", ["Cd", "Cl", "Cl"])):
-        for mine, entry in ((run / "field" / f"mono_{label}", lib / name / "hirshfeld"),
-                            (run / "esp" / label, lib / name / "esp")):
+        for mine, entry in ((run / "esp" / label, lib / name / "esp"),):
             assert monomers.normalized((mine / "cp2k.inp").read_text(), sym) == \
                    monomers.normalized((entry / "cp2k.inp").read_text(), sym)
 
 
 def test_link_replaces_finished_entries_only(chain_and_library):
     run, lib, mono, _ = chain_and_library
-    rows = monomers.link(str(run / "field"), str(run / "esp"), str(mono), str(lib))
+    rows = monomers.link(str(run / "esp"), str(mono), str(lib))
     assert {r["status"] for r in rows} == {"library run not finished"}
     for name in ("CdSe", "CdCl2"):
-        _finish(lib / name / "hirshfeld", cubes=False)
         _finish(lib / name / "esp", cubes=True)
     assert monomers.status(str(lib))["done"] == ["CdCl2", "CdSe"]
-    rows = monomers.link(str(run / "field"), str(run / "esp"), str(mono), str(lib))
-    assert [r["status"] for r in rows] == ["linked"] * 4
-    assert (run / "field" / "mono_MX").is_symlink() and (run / "esp" / "MA").resolve() == (lib / "CdSe" / "esp").resolve()
+    rows = monomers.link(str(run / "esp"), str(mono), str(lib))
+    assert [r["status"] for r in rows] == ["linked"] * 2
+    assert (run / "esp" / "MX").is_symlink() and (run / "esp" / "MA").resolve() == (lib / "CdSe" / "esp").resolve()
+    assert not (lib / "CdSe" / "hirshfeld").exists() and not list((run / "field").glob("mono_*"))
     # the steps' own checks see them finished
     from qd_workflows.cp2k import esp
     assert "MA" not in esp.status(str(run / "esp")).split()
@@ -93,25 +92,23 @@ def test_link_replaces_finished_entries_only(chain_and_library):
 def test_link_refuses_another_input_or_geometry(chain_and_library):
     run, lib, mono, _ = chain_and_library
     for name in ("CdSe", "CdCl2"):
-        _finish(lib / name / "hirshfeld", cubes=False)
         _finish(lib / name / "esp", cubes=True)
-    inp = lib / "CdCl2" / "hirshfeld" / "cp2k.inp"
+    inp = lib / "CdCl2" / "esp" / "cp2k.inp"
     inp.write_text(inp.read_text().replace("CUTOFF  400", "CUTOFF  600"))
     g = lib / "CdSe" / "esp" / "geom.xyz"
     g.write_text(g.read_text().replace("2.41000000", "2.45000000"))
-    rows = {r["run"]: r["status"] for r in monomers.link(str(run / "field"), str(run / "esp"), str(mono), str(lib))}
-    assert rows["field/mono_MX"].startswith("differs: input") and rows["esp/MA"] == "differs: geometry"
-    assert rows["field/mono_MA"] == "linked" and not (run / "field" / "mono_MX").is_symlink()
+    rows = {r["run"]: r["status"] for r in monomers.link(str(run / "esp"), str(mono), str(lib))}
+    assert rows["esp/MX"].startswith("differs: input") and rows["esp/MA"] == "differs: geometry"
+    assert not (run / "esp" / "MX").is_symlink() and not (run / "esp" / "MA").is_symlink()
 
 
 def test_finished_entries_are_never_rewritten(chain_and_library):
     _run, lib, mono, cluster = chain_and_library
-    for k in ("hirshfeld", "esp"):
-        _finish(lib / "CdSe" / k, cubes=k == "esp")
+    _finish(lib / "CdSe" / "esp", cubes=True)
     (lib / "CdSe" / "esp" / "cp2k.inp").write_text("kept")
     monomers.write_cp2k(str(lib), str(mono), cluster)
     assert (lib / "CdSe" / "esp" / "cp2k.inp").read_text() == "kept"
-    assert monomers.todo(str(lib)) == [str(lib / "CdCl2" / "hirshfeld"), str(lib / "CdCl2" / "esp")]
+    assert monomers.todo(str(lib)) == [str(lib / "CdCl2" / "esp")]
 
 
 def test_prepare_jobs(tmp_path):

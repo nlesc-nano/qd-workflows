@@ -52,11 +52,3 @@ def test_cell_abc_of_a_dot_and_of_a_monomer():
     assert all(grid_points(x) * grid_spacing() == pytest.approx(x, abs=1e-6) for x in abc)
     raw = [float(x) for x in cell_abc(pts, cutoff_ry=None).split()]
     assert raw == [36.5, 36.4, 36.4] and all(a >= r for a, r in zip(abc, raw))
-
-
-def test_monomer_cells_equal_orchestr_ai():
-    field = pytest.importorskip("orchestr_ai.qd.field")
-    base = "      CUTOFF  400\n"
-    for pts in (np.array([[0, 0, 0], [0, 0, 2.41]]), np.array([[0, 0, 0], [0, 0, 2.28], [0, 0, -2.28]]),
-                np.array([[0, 0, 0], [2.3, 0, 0], [-1.15, 1.99, 0], [-1.15, -1.99, 0]])):
-        assert field.monomer_cell(base, pts) == cell_abc(pts, min_length=15.0)
