@@ -20,7 +20,7 @@ def test_nhr_memory_per_node():
 def test_side_by_side_steps_ask_for_their_memory():
     cp = {"launcher": "srun"}
     assert "--mem" not in cp2k_launch(cp)             # one step on all ranks: the whole job's memory
-    assert cp2k_launch(cp, "$1", step_mem=True) == "srun --exact -n $1 ${STEP_MEM:+--mem=$STEP_MEM} --cpu-bind=cores"
+    assert cp2k_launch(cp, "$1", step_mem=True) == "srun --exact -n $1 ${STEP_NODES:+-N $STEP_NODES} ${STEP_MEM:+--mem=$STEP_MEM} --cpu-bind=cores"
     assert cp2k_launch({"launcher": "mpirun"}, "$1", step_mem=True) == "mpirun -np $1"
 
 

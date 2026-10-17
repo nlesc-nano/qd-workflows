@@ -27,8 +27,19 @@ QDEX={{QDEX}}
 qdex_env() { env -u PYTHONPATH -u PYTHONHOME LD_LIBRARY_PATH=$(dirname "$(dirname "$QDEX")")/lib "$@"; }
 qdex_run() { qdex_env OMP_NUM_THREADS=$1 "$QDEX" --config config.yaml; }
 cp2k() { {{LAUNCH}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out; }
-# $1 ranks, $STEP_MEM per node (see step_mem); srun's and CP2K's messages in srun.log next to the run
-cp2k_n() { {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out > srun.log 2>&1; }
+# $1 ranks, $STEP_MEM per node (see step_mem), on as few nodes as the ranks need: a run that fits on one
+# node stays on one (spread over two it holds memory on both and talks across them); srun's and CP2K's
+# messages in srun.log next to the run
+PPN=${SLURM_NTASKS_PER_NODE:-{{NODE_TASKS}}}; PPN=${PPN%%(*}
+cp2k_n() { local STEP_NODES=$(( ($1 + PPN - 1) / PPN )); {{LAUNCH_N}} {{EXECUTABLE}} -i cp2k.inp -o cp2k.out > srun.log 2>&1; }
+# Ranks of each of $1 runs side by side: on several nodes, as many as let ceil($1 / nodes) runs share a
+# node (13 runs on 2 x 96 cores: 7 per node, 13 ranks each); else an equal share of the job's ranks.
+ranks_each() {
+    local n=$1 nn=${SLURM_NNODES:-1} r
+    if [ "$nn" -gt 1 ] && [ "$n" -ge "$nn" ]; then r=$(( PPN / ((n + nn - 1) / nn) )); else r=$(( SLURM_NTASKS / n )); fi
+    [ $r -ge 1 ] || r=1
+    echo $r
+}
 # How many single points of the dot fit side by side, at most $1: each holds the cell's real-space
 # grids (~{{GRID_MEM_GB}} GB, whatever its rank count); 80 % of the job's memory is used.
 side_by_side() {
@@ -47,15 +58,15 @@ side_by_side() {
     [ $n -ge 1 ] || n=1; [ $n -le $1 ] || n=$1
     echo $n
 }
-# Memory per node of each of $1 runs side by side (srun --mem): an equal share of 90 % of a node
-# among the runs on it (on several nodes one more, a run across two). The job asks for memory per
-# node, and a step that asks for none takes all of it: the other runs would wait for it. Empty
-# without a per-node figure from Slurm (then srun asks for none).
+# Memory per node of each of $1 runs of $2 ranks side by side (srun --mem): an equal share of 90 % of a
+# node among the runs on it (a run of more ranks than a node holds counts on each of its nodes). The job
+# asks for memory per node, and a step that asks for none takes all of it: the other runs would wait for
+# it. Empty without a per-node figure from Slurm (then srun asks for none).
 step_mem() {
     [ "${SLURM_MEM_PER_NODE:-0}" -gt 0 ] || return 0
-    local nn=${SLURM_NNODES:-1}
-    local k=$(( ($1 + nn - 1) / nn + (nn > 1 ? 1 : 0) ))
-    [ $k -le $1 ] || k=$1
+    local nn=${SLURM_NNODES:-1} span=$(( (${2:-1} + PPN - 1) / PPN ))
+    local k=$(( ($1 * span + nn - 1) / nn ))
+    [ $k -ge 1 ] || k=1; [ $k -le $1 ] || k=$1
     echo $(( SLURM_MEM_PER_NODE * 9 / 10 / k ))M
 }
 # The last lines srun and CP2K printed for the unfinished runs $2... of step directory $1.
@@ -105,8 +116,8 @@ if [ "{{FIELD}}" = "1" ]; then
     if [ "$todo" != "all done" ]; then
         echo "[chain] field: $todo"
         FP=$(side_by_side {{FIELD_PARALLEL}})
-        R=$(( SLURM_NTASKS / FP )); [ $R -ge 1 ] || R=1
-        STEP_MEM=$(step_mem $FP); echo "[chain] field: $FP side by side, $R ranks${STEP_MEM:+ and $STEP_MEM} each"
+        R=$(ranks_each $FP)
+        STEP_MEM=$(step_mem $FP $R); echo "[chain] field: $FP side by side, $R ranks${STEP_MEM:+ and $STEP_MEM} each"
         STEP=field; t=$(date +%s)
         plog event chain "field: $(echo $todo | wc -w) single points, $FP side by side, $R ranks${STEP_MEM:+, $STEP_MEM} each"
         k=0
@@ -146,8 +157,8 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     if [ "$todo" != "all done" ]; then
         echo "[chain] esp: $todo"
         EP=$(side_by_side 3)                 # the dots (intact, stripped, added) side by side if they fit
-        NR=$(( SLURM_NTASKS / EP > 0 ? SLURM_NTASKS / EP : 1 ))
-        STEP_MEM=$(step_mem $EP); echo "[chain] esp: $EP side by side, $NR ranks${STEP_MEM:+ and $STEP_MEM} each"
+        NR=$(ranks_each $EP)
+        STEP_MEM=$(step_mem $EP $NR); echo "[chain] esp: $EP side by side, $NR ranks${STEP_MEM:+ and $STEP_MEM} each"
         t=$(date +%s); plog event chain "esp: $(echo $todo | wc -w) cube runs, $EP dot(s) side by side, $NR ranks each"
         k=0
         for r in $todo; do

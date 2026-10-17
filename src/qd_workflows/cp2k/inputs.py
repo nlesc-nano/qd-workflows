@@ -108,10 +108,11 @@ def cp2k_launch(cp: dict, ranks: str = "${SLURM_NTASKS}", step_mem: bool = False
     """
     MPI launch prefix: srun (SLURM-native builds) or mpirun (default). step_mem: srun asks for
     $STEP_MEM per node when it is set (runs side by side: without it the first step of a job that
-    asks --mem per node takes all of it and the others wait).
+    asks --mem per node takes all of it and the others wait), on $STEP_NODES nodes when it is set
+    (a run that fits on one node stays there).
     """
     if cp.get("launcher") == "srun":
-        mem = " ${STEP_MEM:+--mem=$STEP_MEM}" if step_mem else ""
+        mem = " ${STEP_NODES:+-N $STEP_NODES} ${STEP_MEM:+--mem=$STEP_MEM}" if step_mem else ""
         return f"srun --exact -n {ranks}{mem} --cpu-bind=cores"
     return f"mpirun -np {ranks}"
 
