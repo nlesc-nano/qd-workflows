@@ -81,8 +81,8 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 - 2026-10-17 · Hyperion: CsPbX3 data (it is on /scratch/iinfante, not in home; 30 paths, 1.32 TiB, 46,385 files, list in
   `proposals/2026-10-17-hyperion-cspbx3.txt`) goes to the archive: "You should just move the files in /scratch/iinfante
   in the archive in hyperion as well where you have 10 TB available" (Ivan). Archive = /data/ivan.infante/cspbx3
-  (/data/iinfante does not exist). Copy running since 23:21 (rsync, log ~/cspbx3_copy.log on Hyperion). The originals
-  are removed only after the copy is verified and Ivan confirms. Still open: home /dipc/iinfante at 94 % of files
+  (/data/iinfante does not exist). Done 2026-10-18 00:56: copy ended cleanly (1.45 TB), all 30 paths matched in
+  file count and bytes, the 30 originals removed (Ivan approved the proposal by name). /scratch/iinfante: 1.38 TiB -> 58 GiB. Still open: home /dipc/iinfante at 94 % of files
   (97 % are in .conda envs/pkgs; not touched by this move).
 - 2026-10-17 · Move the campaign's data to the NHR project space `/scratch/projects/bep00157/qdw_campaign`:
   "Settle the project-space move first, and go with your recommendation." (Ivan). Plan: copy (not move) code,
