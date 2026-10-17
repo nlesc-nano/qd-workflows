@@ -31,7 +31,7 @@ its output.
 | `qdex_electronic.h5` | orbitals, projections, PDOS, COOP, fuzzy-band weights |
 | `qdex_excitations.h5` | every exciton up to 4.5 eV with its descriptors |
 | `spatial_MO_*.cube` | HOMO−1 … LUMO+1 on a 0.8 Å grid |
-| `webapp.json` (~40 kB) | what the webapp loads, below |
+| `webapp.json` (~140 kB) | what the webapp loads, below |
 
 `webapp.json` (`qdw qdex webapp`):
 
@@ -39,6 +39,7 @@ its output.
   ($f \ge 0.05$); spin-free and with SOC;
 - **band-edge excitons**: up to 0.5 eV above the lowest (20 to 300 states) with their descriptors;
 - **absorption spectra** of every computed state on a fixed grid (0.5–6.0 eV), broadenings 0.03
-  and 0.10 eV.
+  and 0.10 eV, and the sticks: energy and $f$ of every stored state with $f \ge 10^{-5}$, from
+  which the webapp broadens the spectrum at any width.
 
 `qdw qdex summary` prints the frontier levels, gaps and excitons as JSON.
