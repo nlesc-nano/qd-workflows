@@ -5,23 +5,6 @@ item to "Decided" with his words.
 
 ## Open
 
-- **2026-10-17 · AlSb Hirshfeld monomer (parked) and whether Hirshfeld is needed.** Ivan asked: "Do you need hirahfeld ? I thought
-  you didn't need that anymore". Checked in Orchestr.AI `qd/steps/solvation.py` (line 155, branch feat/monomer-library):
-  with solvation_charges "dft" the step uses the COSMO data of the ESP runs when present, else `_run_dft`: Generalized Born
-  on the CP2K Hirshfeld charges of the dot and of the monomers (the field step's mono_* runs); it raises "no DFT charges for
-  the MA monomer" without them. The chain falls back to it when the ESP runs are incomplete. RESP charges exist only in
-  `qdw reaction`, not in the chain. So the Hirshfeld monomer runs are the safety net for solvation. Options: (1) leave AlSb
-  parked until an AlSb dot reaches stage 2 bis (no change; recommended now); (2) fix AlSb by running the MA diatomics as
-  triplets (UKS, see the spin item) or, rejected by Ivan on 2026-10-17, CG + 2PNT for all monomers; (3) drop the Hirshfeld
-  monomer runs and make ESP mandatory, accepting no solvation fallback for a dot whose ESP step fails.
-  Checked for the webapp (QDSpaceWebApp frontend, 2026-10-17): no Hirshfeld charge is read or shown (only stored in
-  props/properties.json `field.hirshfeld_by_element_e`). The Thermodynamics tab shows COSMO from the ESP runs
-  (solvation_cubes.json) or "vacuum only"; IR/Raman use the field step's Born charges and Raman tensors, not Hirshfeld.
-  The only consumer is the GB fallback, which the webapp would label "GFN2-xTB charges + GB" (wrong). Without monomer
-  Hirshfeld the solvation step raises instead of degrading to vacuum. Recommendation: option (3) with two code
-  changes, before the stage 2 bis chains start: drop the Hirshfeld monomer runs (field step + library) and let the
-  solvation step skip to vacuum with a warning when COSMO data is missing; failed ESP steps are retried once.
-  Asked by: supervisor, with a correction from the campaign session (CdSe workflow agents planning).
 - **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
   (today the Thermodynamics tab needs detachment.json). Asked by: campaign session.
 - **2026-10-17 · Start date of the bep00157 yearly grant** (budget period assumed 2026-10-01 to 2027-09-30).
@@ -29,6 +12,13 @@ item to "Decided" with his words.
 
 ## Decided
 
+- 2026-10-18 · Hirshfeld monomer runs: Ivan asked whether the webapp needs Hirshfeld; supervisor checked (the webapp never
+  reads or shows it; only a GB fallback used it) and recommended dropping the runs; Ivan: "Yes". Done: Orchestr.AI
+  3960395 (field step without monomers; solvation without COSMO data = vacuum, with a warning and a model line; sites
+  and dashboard note likewise), qd-workflows e15c4bd (library and chain: ESP only; `monomers link --esp`),
+  QDSpaceWebApp e86c9c2d (a "vacuum" model is shown as vacuum). Deployed on NHR (code/COMMITS). AlSb is no longer a problem:
+  the library is 28 of 28 (ESP). The 27 old Hirshfeld run directories stay in the library, unused. The ESP step now matters
+  more: a dot whose ESP runs fail gets vacuum thermodynamics.
 - 2026-10-17 · AlSb monomer (Hirshfeld run stops at 200 SCF steps after 3 identical runs; its ESP run converged, in exactly 200):
   to change the monomer input for all monomers (CG + 2PNT): "No." (Ivan). Parked, no input changed.
 - 2026-10-17 · The 11 earlier InP dots whose DFT geometry carries extra organic atoms (C, N, H in 1:1:5, methylamine): "Yes strip"

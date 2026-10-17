@@ -1,0 +1,108 @@
+HYPERION CsPbX3 CLEANUP PROPOSAL, 2026-10-17 (proposal 1 of the day, hyperion-cspbx3)
+STATUS: PROPOSAL ONLY. Nothing was moved, copied, tarred or deleted. Approval by Ivan of this file by name is needed for each step (see section 5).
+Cluster: hyperion-login-02, user iinfante. Read-only checks on 2026-10-17; squeue -u iinfante was empty at that time.
+Sizes: du -sb (bytes). Files: non-directory entries (find ! -type d). Date: newest file mtime.
+
+0. QUOTAS BEFORE (getquota-home, getquota-scratch)
+   /dipc/iinfante (home):  20.11 GiB of 50.00 GiB; 282,572 of 300,000 files (94 %)
+   /scratch/iinfante:      1.38 TiB of 2.00 TiB;   739,081 of 10,000,000 files
+
+1. CsPbX3 FILES IN /dipc/iinfante (HOME)
+   None. Name search (cspb, cs-pb, cs_pb, perovsk, Cs4Pb) finds nothing in home; content search of home (outside the tool
+   trees .conda .cache .opencode .config .npm) finds CsPbX3 only in .bash_history, .viminfo and corrupted_files.txt, which
+   name paths under /scratch/iinfante. The CsPbX3 data is on /scratch/iinfante.
+   Effect of moving CsPbX3 off home: 0 files, 0 bytes.
+
+2. PROPOSED FOR ARCHIVE (all on /scratch/iinfante/)
+
+1. Main CP2K MO runs, whole directories (Ivan: CsPbX3 to archive). Reason: Ivan asked for CsPbX3 to the archive; runs finished or partly failed (section 4a)
+   /scratch/iinfante/CP2K/CsPbBr3                           1,018,415,364,686 B     948.47 GiB   29,688 files  2026-09-29
+   /scratch/iinfante/CP2K/CsPbCl3                             209,113,662,693 B     194.75 GiB    6,090 files  2026-09-29
+   /scratch/iinfante/CP2K/CsPbI3                              215,565,545,788 B     200.76 GiB    6,183 files  2026-10-10
+   subtotal group: 1,443,094,573,167 B = 1.312 TiB, 41,961 files
+
+2. Small CsPbX3 test runs (bulk bands, PBE bands, SOC, lattice scans, ortho, SOC bulk)
+   /scratch/iinfante/CP2K/bulk_bands/CsPbCl3_cubic                 35,636,893 B       0.03 GiB      521 files  2026-10-06
+   /scratch/iinfante/CP2K/bulk_bands/CsPbBr3_cubic                 31,780,124 B       0.03 GiB      437 files  2026-10-06
+   /scratch/iinfante/CP2K/bulk_bands/CsPbI3_cubic                  31,612,466 B       0.03 GiB      413 files  2026-10-06
+   /scratch/iinfante/CP2K/bulk_bands/ortho/CsPbBr3_ortho          177,439,055 B       0.17 GiB      263 files  2026-10-07
+   /scratch/iinfante/CP2K/pbe_bands/CsPbCl3_cubic                  35,619,892 B       0.03 GiB      521 files  2026-10-07
+   /scratch/iinfante/CP2K/pbe_bands/CsPbBr3_cubic                  31,686,978 B       0.03 GiB      437 files  2026-10-07
+   /scratch/iinfante/CP2K/pbe_bands/CsPbI3_cubic                   28,440,921 B       0.03 GiB      401 files  2026-10-07
+   /scratch/iinfante/CP2K/socval/CsPbBr3_cubic                     32,166,233 B       0.03 GiB      438 files  2026-10-07
+   /scratch/iinfante/CP2K/lattice_scan/CsPbBr3_cubic               50,486,679 B       0.05 GiB       36 files  2026-10-07
+   /scratch/iinfante/CP2K/lattice_scan/CsPbCl3_cubic               56,094,081 B       0.05 GiB       36 files  2026-10-07
+   /scratch/iinfante/CP2K/lattice_scan/CsPbI3_cubic                42,366,072 B       0.04 GiB       36 files  2026-10-07
+   /scratch/iinfante/SOC/CsPbBr3                                   52,580,891 B       0.05 GiB       39 files  2026-09-19
+   /scratch/iinfante/SOC/CsPbBr3_bulk                             150,626,547 B       0.14 GiB       16 files  2026-09-19
+   /scratch/iinfante/SOC/Cs4PbBr6                                     248,292 B       0.00 GiB       12 files  2026-09-19
+   subtotal group: 756,785,124 B = 0.001 TiB, 3,606 files
+
+3. CsPbX3 Fuzzy, ML, NAMD data (Ivan decides on ML/CsPbBr3 model files, see notes)
+   /scratch/iinfante/Fuzzy/CsPbBr3                              3,410,999,066 B       3.18 GiB       60 files  2026-09-19
+   /scratch/iinfante/ML/CsPbBr3                                 3,688,044,599 B       3.43 GiB      365 files  2025-03-17
+   /scratch/iinfante/namd_tests/CsPbBr3                           729,072,340 B       0.68 GiB      152 files  2026-10-07
+   /scratch/iinfante/namd_tests/CsPbCl3                           715,778,253 B       0.67 GiB      145 files  2026-10-07
+   /scratch/iinfante/namd_tests/pkg_out/CsPbBr3                     5,390,838 B       0.01 GiB       16 files  2026-10-07
+   /scratch/iinfante/namd_tests/test_pkg/CsPbBr3                           78 B       0.00 GiB        3 files  2026-10-07
+   subtotal group: 8,549,285,174 B = 0.008 TiB, 741 files
+
+4. ML training job directories of the CsPbBr3 model (job ids match ML/CsPbBr3; Dec 2024; Ivan to confirm)
+   /scratch/iinfante/wrktmp/1078923                                31,274,733 B       0.03 GiB       11 files  2024-12-17
+   /scratch/iinfante/wrktmp/1078927                                31,271,164 B       0.03 GiB       11 files  2024-12-17
+   /scratch/iinfante/wrktmp/1078928                                31,238,967 B       0.03 GiB       11 files  2024-12-17
+   /scratch/iinfante/wrktmp/1078930                                31,217,614 B       0.03 GiB       11 files  2024-12-17
+   /scratch/iinfante/wrktmp/1078934                                31,186,767 B       0.03 GiB       11 files  2024-12-17
+   /scratch/iinfante/wrktmp/1079185                                31,156,383 B       0.03 GiB       11 files  2024-12-17
+   /scratch/iinfante/wrktmp/1121204                                48,082,185 B       0.04 GiB       11 files  2024-12-28
+   subtotal group: 235,427,813 B = 0.000 TiB, 77 files
+
+TOTAL PROPOSED: 1,452,636,071,278 B = 1.321 TiB (1,352.9 GiB), 46,385 files, 30 paths
+   = 96 % of the 1.38 TiB now used on /scratch/iinfante
+
+3. NOT PROPOSED (listed so Ivan can decide)
+   /scratch/iinfante/CP2K/bulk_bands/exp_soc: 20,613 files, 922 MiB; mixed zinc-blende set, 1,434 CsPb-named files (0.10 GiB) inside.
+   /scratch/iinfante/CP2K/bulk_bands/rt2 (CdS, not CsPbX3); escience/qdw-test, escience/QD_Builder, escience/qdex_review (code and tests).
+   Home (not CsPbX3, options only): .conda/pkgs 104,047 files, 5.5 GB; .conda/envs 170,530 files, 13 GB (qdw-compute,
+   qdex, qd-builder, generic); .cache/pip 323 files, 1.1 GB; .opencode 3,680 and .config 3,690 paths; 55 broken symlinks.
+   .conda is 274,577 of the 282,052 non-directory entries in home (97 %): moving CsPbX3 does not reach the home limit.
+
+4. NOTES BEFORE ANY REMOVAL
+   a) Partial runs: CsPbBr3 MOs/production-results has 4,923 .mbse for 5,000 frames (block_001 and block_005 last status
+      frame_failed, block_004 last status ot_started). CsPbI3 MOs/results: block_000 and block_001 complete (500 .mbse each),
+      blocks 002 to 009 last status frame_failed (2026-10-03), no .mbse. CsPbCl3: not checked. Ivan to decide whether to archive as is.
+   b) Compression: a .mbse sample (205 MB) gives 3.7 % with gzip -1 and 4.2 % with zstd -1. Plain tar: it cuts files, not bytes.
+   c) Free space: /scratch/iinfante has 0.62 TiB free, the proposed set is 1.32 TiB. The tar cannot be written on scratch;
+      it must be written straight to the destination (step 5.2).
+   d) 'The archive' is not identified (see section 6). No README, no archive tool, no archive quota area was found on Hyperion.
+
+5. PROCEDURE (each step needs Ivan's approval of this file by name)
+   5.1 Before tar: re-check squeue -u iinfante is empty; newest mtime of each path unchanged since the dates above (else skip it and say so).
+   5.2 Archive: one tar per listed path, plain (no compression), written to the destination, e.g.
+       tar -cf <dest>/<name>.tar -C /scratch/iinfante/<parent> <dir>   (30 tar files in total)
+   5.3 Verify before any removal: (i) tar -tf | wc -l equals the file count above plus directories; (ii) tar -df (compare) against the
+       source reports no differences; (iii) sha256sum of each tar, recorded in this file.
+   5.4 Removal of the original directory: separate approval, only for paths that passed 5.3. Then append freed space and files here.
+
+6. DESTINATION (Ivan decides; not identified)
+   Candidates found on Hyperion:
+   - /data/iinfante (NFS 10.1.16.2:/data, 917 TiB, 325 TiB free). getquota-data: 0 used of 10 TiB soft / 10.5 TiB hard; 1 of 20 M / 20.5 M
+     inodes. The directory does not exist yet. Only candidate with its own quota tool; its role as archive is not documented.
+   - /scratch/iinfante itself: scratch, not an archive (this proposal moves data out of it).
+   - Not usable: /scratch/projects (absent on Hyperion; the NHR project space is elsewhere); group areas /hitz_data, /majorana, /molecules etc. belong to other groups.
+   Proposed default if Ivan agrees: /data/iinfante/cspbx3/ (to be created by Ivan or on approval).
+
+7. EXPECTED EFFECTS (after 5.2 and 5.4 for every path above)
+   /dipc/iinfante (home):    files 282,572 -> 282,572 (0);  bytes 20.11 GiB -> unchanged. Still 94 %.
+   /scratch/iinfante:       bytes 1.38 TiB -> about 0.06 TiB (-1.321 TiB);
+                            files 739,081 -> 692,726 (-46,385 files, +30 tar files).
+   destination (/data/iinfante): +1.321 TiB (+ about 0.02 GB of tar headers), +30 files; 13 % of the 10 TiB soft limit.
+
+8. DECISIONS NEEDED FROM IVAN
+   1. Which archive (section 6); the default above needs his go-ahead.
+   2. Confirm the scope is /scratch/iinfante (the CsPbX3 data is not in home), and whether to archive the partial runs of section 4a.
+   3. ML/CsPbBr3 model files and wrktmp ML job dirs (groups 3 and 4): keep or archive.
+   4. Whether any home cache of section 3 should be cleaned to reach the home file limit (not part of this proposal).
+
+9. APPROVAL LOG (appended by the storage agent)
+   (empty: no step approved yet)
