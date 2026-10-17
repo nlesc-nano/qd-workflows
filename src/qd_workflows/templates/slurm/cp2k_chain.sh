@@ -83,6 +83,7 @@ on_exit() {
     else plog event chain "ERROR chain stopped in $STEP (exit $rc): read $CHAIN_DIR/slurm-$SLURM_JOB_ID.out" --since $T0; fi
 }
 trap on_exit EXIT
+trap 'STEP="$STEP (job cancelled or out of time)"; exit 143' TERM
 plog event chain "start $P: $SLURM_NTASKS ranks on ${SLURM_NNODES:-1} node(s), ${SLURM_MEM_PER_NODE:-?} MB per node, limit {{TIME}}"
 
 # 1. geo_opt (from the MACE-relaxed structure)
@@ -130,7 +131,7 @@ if [ "{{FIELD}}" = "1" ]; then
     fi
     todo=$(orch_field status field)
     [ "$todo" = "all done" ] || { echo "[chain] field runs incomplete"; why field $todo; plog event chain "ERROR field runs incomplete: $todo (read field/<run>/srun.log)"; exit 1; }
-    [ -z "${t:-}" ] || plog event chain "field done: $(ls -d field/*/ | wc -l) runs" --since $t
+    [ -z "${t:-}" ] || plog event chain "field done: $(wc -w < field/runs.txt) runs" --since $t
 fi
 
 # 2b. Solvation: potential and density cubes of the intact dot (restart of the geo_opt .wfn), the
@@ -173,7 +174,7 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" = "all done" ]; then
         qdw cp2k esp collect esp -o solvation.json > /dev/null && echo "[chain] solvation.json"
-        plog event chain "esp done: solvation.json ($(ls -d esp/*/ | wc -l) runs)" ${t:+--since $t}
+        plog event chain "esp done: solvation.json ($(wc -w < esp/runs.txt) runs)" ${t:+--since $t}
     else
         echo "[chain] esp runs incomplete: solvation from the field step's charges"; why esp $todo
         plog event chain "WARN esp runs incomplete ($todo): solvation from the field charges (read esp/<run>/srun.log)"
