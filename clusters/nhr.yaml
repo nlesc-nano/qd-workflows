@@ -86,9 +86,9 @@ props:
 # the NHR portal (Slurm does not hold it): copy it here each period.
 budget:
   account: bep00157
-  period_start: 2026-10-01
-  period_end: 2026-12-31
-  allocation_core_h: null    # TODO: from the NHR portal
+  period_start: 2026-10-01   # TODO: the start of the yearly grant (portal)
+  period_end: 2027-09-30
+  allocation_core_h: 4500000 # ~4-5 M core-h a year (GPUs charged in core-h); more can be asked for
   charge:
     cpu-clx: {per_node_h: 96}
     cpu-genoa: {per_node_h: 192}
