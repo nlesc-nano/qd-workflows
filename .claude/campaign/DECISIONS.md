@@ -5,22 +5,6 @@ item to "Decided" with his words.
 
 ## Open
 
-- **2026-10-17 · AlSb Hirshfeld still at 200 SCF steps** after the first rerun (ESP converged in exactly 200). Second
-  identical rerun is job 9582082 (32 ranks). If it fails again: CG + 2PNT for all monomers (see the AlSb item above).
-- **2026-10-17 · Hyperion home files:** moving CsPbX3 frees none of the 282,572 home files (97 % are in `.conda`:
-  170,530 in envs, 104,047 in pkgs). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, safe: rebuilt on demand)
-  after your OK; envs stay. Asked by: campaign-storage.
-- **2026-10-17 · AlSb monomer does not converge (both runs of job 9582047; 27 of 28 monomers done).** OT DIIS,
-  EPS_SCF 1e-6, MAX_SCF 200: energy flat to ~1e-10 Ha (-7.42238626 Ha) after step 50, gradient 1.1-2.9e-6, just above
-  EPS_SCF; likely near-degenerate HOMO/LUMO. Options: OT MINIMIZER CG + LINESEARCH 2PNT, more MAX_SCF, or OUTER_SCF,
-  for the monomer inputs only. Any change goes into the shared monomer input code (Orchestr.AI `field.monomer_input`,
-  qd-workflows esp/monomers), or the chains' monomer runs stop matching the library. Recommendation: CG + 2PNT for all
-  monomers (same inputs everywhere), rerun AlSb first as a test. Asked by: campaign session (CdSe workflow agents planning).
-- **2026-10-17 · Spin state of the MA diatomics.** Group 13-15 diatomics (AlP, AlAs, AlSb, GaP, GaAs, InP, ...) likely
-  have triplet ground states, while every monomer run is closed-shell and the MACE references have no spin. Options:
-  keep closed-shell (consistent with the dots) or run MA as triplets (UKS, MULTIPLICITY 3). Affects the MA monomer
-  reference (Hirshfeld charges, ESP solvation), not the dots. Recommendation: keep closed-shell, and check the energy
-  gap singlet vs triplet for one case (InP) before deciding. Asked by: campaign session.
 - **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
   (today the Thermodynamics tab needs detachment.json). Asked by: campaign session.
 - **2026-10-17 · Start date of the bep00157 yearly grant** (budget period assumed 2026-10-01 to 2027-09-30).
@@ -28,6 +12,11 @@ item to "Decided" with his words.
 
 ## Decided
 
+- 2026-10-17 · AlSb monomer (Hirshfeld run stops at 200 SCF steps after 3 identical runs; its ESP run converged, in exactly 200):
+  to change the monomer input for all monomers (CG + 2PNT): "No." (Ivan), who asked whether Hirshfeld is needed at all.
+  Parked, no input changed. What uses it: the field step's zero-field monomer run (a dot's chain links it from the
+  library or runs it itself); the MACE side and the ESP/RESP charges do not. Matters only for AlSb dots in stage 2 bis.
+  Open question for Ivan: drop the Hirshfeld monomer runs from the pipeline?
 - 2026-10-17 · The 11 earlier InP dots whose DFT geometry carries extra organic atoms (C, N, H in 1:1:5, methylamine): "Yes strip"
   (Ivan). `qdw campaign legacy-records --strip-extra` (qd-workflows 9c445af) removed them, re-checked the In/P/Cl
   composition against each id (all 11 neutral, 92 to 1,012 atoms), recorded the stripped atoms in record.json
