@@ -46,6 +46,7 @@ job script hard-codes a path. Shipped profiles: `nhr` (NHR@ZIB, production) and 
 | Key | Meaning |
 |---|---|
 | `dft_chain` | the GPU job submits one CP2K chain per record and the CPU job waits for them |
+| `chain_time` | wall time of those chains (default: estimated from the basis-function count, capped by `cp2k.time.chain`) |
 | `partition`, `test_partition`, `gres`, `constraint` | the GPU request (hyperion: the GPU model goes in `--constraint`) |
 | `cpus`, `mem`, `time` | the GPU job's cores, memory and wall time |
 | `conda_init`, `conda_env` | how the `qdw-compute` environment is activated |

@@ -101,10 +101,12 @@ def test_props_jobs_log_and_follow(tmp_path, monkeypatch):
     (rec / "record.json").write_text("{}")
     (rec / "start.xyz").write_text("1\n\nCd 0 0 0\n")
     monkeypatch.setenv("QDW_LOG", "/scratch/run/pilot.log")
-    info = prepare([str(rec)], str(tmp_path / "batch"), load_cluster("nhr"))
+    cl = load_cluster("nhr")
+    cl["props"]["chain_time"] = "08:00:00"
+    info = prepare([str(rec)], str(tmp_path / "batch"), cl)
     gpu, cpu = Path(info["job"]).read_text(), Path(info["job_cpu"]).read_text()
     for job, stage in ((gpu, "gpu"), (cpu, "cpu")):
         assert "export QDW_LOG=${QDW_LOG:-/scratch/run/pilot.log}" in job
         assert f'qdwlog follow "$OUT" --stage {stage} --records {rec.resolve()}' in job
         assert job.index("trap on_exit EXIT") < job.index("python -m orchestr_ai.postprocessing")
-    assert 'qdwlog event gpu "submitted the CP2K chain(s)' in gpu
+    assert 'qdwlog event gpu "submitted the CP2K chain(s)' in gpu and "--submit --time 08:00:00 |" in gpu

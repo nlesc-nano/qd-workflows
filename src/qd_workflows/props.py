@@ -55,7 +55,7 @@ THEN_CPU = """cpu=$(cd "$SLURM_SUBMIT_DIR" && sbatch --parsable job_cpu.sh) || e
 qdwlog event gpu "submitted the CPU stage: ${{cpu:-FAILED (sbatch job_cpu.sh)}}"
 """
 # ... after the DFT chains of the batch, which the GPU job submits first.
-THEN_DFT_CPU = """ids=$({qdw} props chains --config "$SLURM_SUBMIT_DIR/config.yaml" --cluster {cluster} --submit | tail -1)
+THEN_DFT_CPU = """ids=$({qdw} props chains --config "$SLURM_SUBMIT_DIR/config.yaml" --cluster {cluster} --submit{time} | tail -1)
 echo "[props] DFT chains: ${{ids:-none}}"
 cpu=$(cd "$SLURM_SUBMIT_DIR" && sbatch --parsable ${{ids:+--dependency=afterany:${{ids// /:}}}} job_cpu.sh) || echo "[props] could not submit the CPU stage: sbatch job_cpu.sh"
 qdwlog event gpu "submitted the CP2K chain(s) ${{ids:-none}} and the CPU stage ${{cpu:-FAILED (sbatch job_cpu.sh)}} (after the chains)"
@@ -133,7 +133,9 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
             if pp.get("dft_chain") and cluster.get("cp2k"):
                 qdw = (f"env PYTHONPATH={cluster.get('qdw_pythonpath', '')} "
                        f"{cluster.get('qdw_python', 'python')} -m qd_workflows.cli")
-                then = THEN_DFT_CPU.format(qdw=qdw, cluster=cluster["name"])
+                # props.chain_time: the chains' wall time (default: estimated from the basis size)
+                then = THEN_DFT_CPU.format(qdw=qdw, cluster=cluster["name"],
+                                           time=f" --time {pp['chain_time']}" if pp.get("chain_time") else "")
         (out / "job.sh").write_text(_job(cluster, name, wall, qos, runner("config.yaml", "job.sh", wall, then), records=recs))
         result.update({"config": str(out / "config.yaml"), "job": str(out / "job.sh"), "gpu_steps": gpu_steps})
     if cpu_steps:
