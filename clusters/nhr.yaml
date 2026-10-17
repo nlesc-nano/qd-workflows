@@ -4,7 +4,7 @@
 name: nhr
 scheduler: slurm
 cores_per_node: 192          # cpu-genoa
-request: cores
+request: nodes              # every CP2K job on whole nodes, all cores as MPI ranks (Ivan's rule)
 min_cores: 48
 mem_per_cpu: 7g              # per core; CP2K jobs ask per node: #SBATCH --mem=<cores x 7 GB>
 node_memory_gb: 1400         # usable; the cap of --mem (-n 48 --mem-per-cpu=7g never starts on cpu-genoa)
@@ -29,6 +29,7 @@ cp2k:
   field_parallel: 1         # every SCF on all the job's cores (Ivan): field single points one after the other
   esp_parallel: 1           # ... and the ESP dots too
   omp_num_threads: 1
+  monomer_library: /scratch/usr/becivinf/qdw_campaign/monomers/cp2k   # CP2K monomer library (qdw monomers): MA, MX_q once per formula
   data_dir: /scratch/usr/becivinf/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH
   potential_file: POTENTIAL_UZH

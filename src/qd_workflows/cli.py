@@ -178,6 +178,29 @@ def _status(args) -> int:
         time.sleep(args.watch)
 
 
+def _monomers(args) -> int:
+    from . import monomers
+    lib = args.library if getattr(args, "library", None) else None
+    if not lib and getattr(args, "cluster", None):
+        lib = load_cluster(args.cluster)["cp2k"].get("monomer_library")
+    if args.action == "species":
+        print(json.dumps(monomers.species(args.materials), indent=1))
+    elif args.action == "prepare":
+        res = monomers.prepare_jobs(args.dir, load_cluster(args.cluster), args.cluster, args.materials.split(","),
+                                    qos=args.qos)
+        print(f"{len(res['species'])} monomers -> {res['library']}; submit with {args.dir}/submit.sh")
+    elif args.action == "write":
+        print("\n".join(monomers.write_cp2k(lib, args.xyz, load_cluster(args.cluster))))
+    elif args.action == "todo":
+        print("\n".join(monomers.todo(lib)))
+    elif args.action == "status":
+        print(json.dumps(monomers.status(lib), indent=1))
+    else:
+        rows = monomers.link(args.field, args.esp, args.monomers, lib)
+        print(json.dumps(rows, indent=1))
+    return 0
+
+
 def _campaign(args) -> int:
     from . import campaign
     if args.action == "status":
@@ -360,6 +383,30 @@ def main(argv=None) -> int:
     p.add_argument("--watch", type=float, help="refresh every this many seconds")
     p.add_argument("--lines", type=int, default=25, help="log lines to show")
 
+    mp = sub.add_parser("monomers", help="monomer library: MA and MX_q computed once per formula (stage 1)").add_subparsers(
+        dest="action", required=True)
+    p = mp.add_parser("species", help="the monomer names of these materials")
+    p.add_argument("materials", nargs="+", help="CdSe InP PbS ...")
+    p = mp.add_parser("prepare", help="gpu.sh (MACE), cpu.sh (CP2K, side by side) and submit.sh")
+    p.add_argument("dir", help="job directory")
+    p.add_argument("--cluster", required=True, help="cluster profile (needs cp2k.monomer_library)")
+    p.add_argument("--materials", required=True, help="comma-separated: CdSe,InP,PbS,...")
+    p.add_argument("--qos", help="Slurm QOS")
+    p = mp.add_parser("write", help="the library's CP2K inputs from the MACE geometries (inside cpu.sh)")
+    p.add_argument("xyz", help="monomers.xyz of the GPU job")
+    p.add_argument("--cluster", required=True)
+    p.add_argument("--library", help="default: the profile's cp2k.monomer_library")
+    for name, hlp in (("todo", "library runs still to do, one directory per line"), ("status", "finished and missing runs")):
+        p = mp.add_parser(name, help=hlp)
+        p.add_argument("--library")
+        p.add_argument("--cluster")
+    p = mp.add_parser("link", help="link a dot's monomer runs to the library entries (inside the chain)")
+    p.add_argument("--field", help="the chain's field directory")
+    p.add_argument("--esp", help="the chain's esp directory")
+    p.add_argument("--monomers", required=True, help="props/monomers.xyz of the dot")
+    p.add_argument("--library")
+    p.add_argument("--cluster")
+
     cp = sub.add_parser("campaign", help="the dots of the structure database: ledger, state, budget").add_subparsers(
         dest="action", required=True)
     p = cp.add_parser("status", help="state of every dot (from its files, the queue and the logs), the budget, what changed")
@@ -388,7 +435,8 @@ def main(argv=None) -> int:
 
     args = ap.parse_args(argv)
     return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "reaction": _reaction,
-            "compare": _compare, "log": _log, "status": _status, "campaign": _campaign}[args.group](args)
+            "compare": _compare, "log": _log, "status": _status, "campaign": _campaign,
+            "monomers": _monomers}[args.group](args)
 
 
 if __name__ == "__main__":

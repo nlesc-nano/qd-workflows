@@ -290,6 +290,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "ESP_PARALLEL": int(cp.get("esp_parallel", 3)),
         "GRID_MEM_GB": f"{grid_memory_gb(info['cell_A']):.0f}", "GRID_MEM_MB": int(1024 * grid_memory_gb(info["cell_A"])),
         "RECORD_DIR": str(Path(record).resolve().parent) if record else "",
+        "MONOMER_LIBRARY": cp.get("monomer_library", ""),
         "QDW_LOG": os.environ.get("QDW_LOG", ""),      # the run's progress log, if it has one (qdw log)
     }
     (out / "chain.sh").write_text(render((TEMPLATES / "slurm" / "cp2k_chain.sh").read_text(), job))

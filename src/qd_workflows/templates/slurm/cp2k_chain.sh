@@ -72,6 +72,7 @@ step_mem() {
 # The last lines srun and CP2K printed for the unfinished runs $2... of step directory $1.
 why() { local d=$1 r; shift; for r in "$@"; do echo "[chain] $d/$r: $(tail -n 2 "$d/$r/srun.log" 2>/dev/null | tr '\n' ' ')"; done; }
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
+MONOLIB="{{MONOMER_LIBRARY}}"   # CP2K monomer library (qdw monomers), empty: every chain runs its monomers
 # Progress log of the run (qdw log, $QDW_LOG): a line when each step starts and ends, with its key
 # result; on exit, how the job ended and the step it was in. Never stops the chain.
 export QDW_LOG=${QDW_LOG:-{{QDW_LOG}}}
@@ -112,6 +113,12 @@ if [ "{{FIELD}}" = "1" ]; then
     [ -s field/base/cp2k.inp ] || qdw cp2k prepare relaxed.xyz --step sample --project "$P-field" --wfn "../../geo_opt/$P-RESTART.wfn" --out field/base $EXTRA
     MONO="{{RECORD_DIR}}/props/monomers.xyz"
     [ -s field/runs.txt ] || orch_field prepare field/base/cp2k.inp field $( [ -s "$MONO" ] && echo --monomers "$MONO" )
+    # The monomers (MA, MX_q) from the monomer library, computed once per formula in stage 1, when its
+    # entry has the same input and geometry; otherwise they run here with the field runs.
+    if [ -n "$MONOLIB" ] && [ -s "$MONO" ]; then
+        qdw monomers link --field field --monomers "$MONO" --library "$MONOLIB" > field/monomers_link.json 2>&1 || true
+        plog event chain "field monomers: $(grep -c '"status": "linked"' field/monomers_link.json) of $(grep -c '"run":' field/monomers_link.json) from the monomer library"
+    fi
     todo=$(orch_field status field)
     if [ "$todo" != "all done" ]; then
         echo "[chain] field: $todo"
@@ -153,6 +160,10 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     [ -s esp/runs.txt ] || qdw cp2k esp prepare field/base/cp2k.inp esp $( [ -n "$STRIP" ] && echo --stripped "$STRIP" ) \
         $( [ -n "$ADD" ] && echo --added "$ADD" ) \
         $( [ -s "$PROPS/monomers.xyz" ] && echo --monomers "$PROPS/monomers.xyz" ) > /dev/null
+    if [ -n "$MONOLIB" ] && [ -s "$PROPS/monomers.xyz" ]; then
+        qdw monomers link --esp esp --monomers "$PROPS/monomers.xyz" --library "$MONOLIB" > esp/monomers_link.json 2>&1 || true
+        plog event chain "esp monomers: $(grep -c '"status": "linked"' esp/monomers_link.json) of $(grep -c '"run":' esp/monomers_link.json) from the monomer library"
+    fi
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" != "all done" ]; then
         echo "[chain] esp: $todo"

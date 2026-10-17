@@ -7,13 +7,13 @@ from qd_workflows.reaction import cp2k as rx
 
 
 def test_nhr_memory_per_node():
-    nhr = load_cluster("nhr")
-    small = cp2k_resources(nhr, 3000)                 # at least min_cores x mem_per_cpu
-    assert (small.cores, small.mem_per_cpu, small.mem_per_node) == (48, "7g", "336G")
-    full = cp2k_resources(nhr, 21000)                 # 184 cores on one node, under node_memory_gb
-    assert full.cores == 184 and full.mem_per_node == "1288G"
-    two = cp2k_resources(nhr, 24000)                  # 240 cores: 120 per node
-    assert two.cores == 240 and two.mem_per_node == "840G"
+    nhr = load_cluster("nhr")                         # request: nodes, every CP2K job on whole nodes
+    small = cp2k_resources(nhr, 3000)                 # a small dot: one whole node, all 192 cores as ranks
+    assert (small.cores, small.mem_per_cpu, small.mem_per_node) == (192, "7g", "1344G")
+    full = cp2k_resources(nhr, 21000)                 # 184 cores asked: rounded up to the node
+    assert full.cores == 192 and full.mem_per_node == "1344G"
+    two = cp2k_resources(nhr, 24000)                  # 240 cores asked: two whole nodes
+    assert two.cores == 384 and two.mem_per_node == "1344G"
     assert node_memory(nhr, 192, "8g") == "1400G"     # capped by what a node holds
 
 

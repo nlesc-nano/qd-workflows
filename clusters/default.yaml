@@ -5,7 +5,7 @@ scheduler: slurm
 cores_per_node: 48
 # "cores": nodes are shared, a job asks for a core count (-n); "nodes": a job
 # asks for whole nodes and cores are rounded up to cores_per_node.
-request: cores
+request: nodes              # every CP2K job on whole nodes, all cores as MPI ranks (Ivan's rule)
 min_cores: 48
 mem_per_cpu: 2g
 qos: regular
@@ -20,6 +20,7 @@ cp2k:
   module: CP2K/2026.2-foss-2025a
   executable: cp2k.popt
   omp_num_threads: 1
+  monomer_library: /scratch/iinfante/qdw_campaign/monomers/cp2k   # CP2K monomer library (qdw monomers): MA, MX_q once per formula
   data_dir: /scratch/iinfante/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH
   potential_file: POTENTIAL_UZH
