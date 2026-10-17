@@ -133,3 +133,10 @@ def test_test_queue_and_campaign_profile(tmp_path):
     cpu = (tmp_path / "t" / "cpu.sh").read_text()
     assert "#SBATCH -p cpu-clx:test" in cpu and "--ntasks-per-node=96" in cpu and "--mem=360G" in cpu
     assert "PYTHONPATH=/scratch/usr/becivinf/qdw_campaign/code/Orchestr.AI/src" in (tmp_path / "t" / "gpu.sh").read_text()
+
+
+def test_job_paths_are_absolute(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monomers.prepare_jobs("rel/job", load_cluster("nhr_campaign"), "nhr_campaign", ["InP"])
+    for f in ("gpu.sh", "cpu.sh"):
+        assert f"{tmp_path.resolve()}/rel/job/monomers.xyz" in (tmp_path / "rel" / "job" / f).read_text()

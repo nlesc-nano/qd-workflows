@@ -218,7 +218,7 @@ def prepare_jobs(out_dir: str, cluster: dict, cluster_ref: str, materials, *, ti
     from .cluster import sbatch_account
     from .cp2k.inputs import cp2k_launch, cp2k_partition, cp2k_setup
     from .props import _job
-    out = Path(out_dir)
+    out = Path(out_dir).resolve()            # the jobs run in out_dir: every path in them is absolute
     out.mkdir(parents=True, exist_ok=True)
     cp = cluster["cp2k"]
     lib = cp.get("monomer_library")
