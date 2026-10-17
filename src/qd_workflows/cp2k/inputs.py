@@ -108,10 +108,11 @@ def cp2k_launch(cp: dict, ranks: str = "${SLURM_NTASKS}", step_mem: bool = False
     """
     MPI launch prefix: srun (SLURM-native builds) or mpirun (default). step_mem: srun asks for
     $STEP_MEM per node when it is set (runs side by side: without it the first step of a job that
-    asks --mem per node takes all of it and the others wait).
+    asks --mem per node takes all of it and the others wait), on $STEP_NODES nodes when it is set
+    (a run that fits on one node stays there).
     """
     if cp.get("launcher") == "srun":
-        mem = " ${STEP_MEM:+--mem=$STEP_MEM}" if step_mem else ""
+        mem = " ${STEP_NODES:+-N $STEP_NODES} ${STEP_MEM:+--mem=$STEP_MEM}" if step_mem else ""
         return f"srun --exact -n {ranks}{mem} --cpu-bind=cores"
     return f"mpirun -np {ranks}"
 
@@ -286,6 +287,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "PROJECT": project, "QDW_PYTHON": py, "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
         "CLUSTER": cluster_ref, "QDEX": cluster.get("qdex", {}).get("command", "qdex"),
         "FIELD": "1" if field else "0", "FIELD_PARALLEL": int(cp.get("field_parallel", 13)),
+        "ESP_PARALLEL": int(cp.get("esp_parallel", 3)),
         "GRID_MEM_GB": f"{grid_memory_gb(info['cell_A']):.0f}", "GRID_MEM_MB": int(1024 * grid_memory_gb(info["cell_A"])),
         "RECORD_DIR": str(Path(record).resolve().parent) if record else "",
         "QDW_LOG": os.environ.get("QDW_LOG", ""),      # the run's progress log, if it has one (qdw log)

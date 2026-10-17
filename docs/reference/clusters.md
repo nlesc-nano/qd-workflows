@@ -30,7 +30,8 @@ job script hard-codes a path. Shipped profiles: `nhr` (NHR@ZIB, production) and 
 | `executable` | `cp2k.psmp` / `cp2k.popt` |
 | `partition`, `test_partition` | CPU partition; the 1 h partition for `--test-queue` |
 | `launcher` | `srun` or `mpirun` |
-| `field_parallel` | most finite-field single points side by side (13); the chain lowers it to what the memory holds |
+| `field_parallel` | most finite-field single points side by side (13); the chain lowers it to what the memory holds; 1: one after the other, each on all the job's ranks |
+| `esp_parallel` | most ESP dots side by side (3: intact, stripped, added); 1: one after the other on all ranks |
 | `omp_num_threads` | 1 (pure MPI; with threads every rank ended up on one core on NHR) |
 | `data_dir`, `basis_file`, `potential_file`, `basis`, `potential` | basis and pseudopotential files and families |
 | `t_c_g`, `dftd3` | truncated-Coulomb table (PBE0 in periodic cells), D3 parameters (`qdw reaction`) |

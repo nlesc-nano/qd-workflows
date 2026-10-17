@@ -53,7 +53,7 @@ def hms(seconds: float) -> str:
 _E = re.compile(r"ENERGY\|\s*Total FORCE_EVAL \( \w+ \) energy\s*\[(?:a\.u\.|hartree)\]:?\s*(-?\d+\.\d+)")
 _SCF = re.compile(r"SCF run converged in\s+(\d+) steps")
 _OPT = re.compile(r"OPTIMIZATION STEP:\s+(\d+)")
-_GRAD = re.compile(r"Max\. gradient\s+=\s+([\d.Ee+-]+)")
+_GRAD = re.compile(r"(?:Max\. gradient\s+=|OPT\| Maximum gradient)\s+([\d.Ee+-]+)")   # CP2K < 2025 / 2026
 _TIME = re.compile(r"^\s*CP2K\s+1\s+1\.0\s+\S+\s+\S+\s+\S+\s+([\d.]+)\s*$", re.M)
 _HOMO_LUMO = re.compile(r"HOMO - LUMO gap \[eV\] :\s+([\d.]+)")
 

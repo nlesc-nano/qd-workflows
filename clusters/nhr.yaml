@@ -26,7 +26,8 @@ cp2k:
   t_c_g: /scratch/usr/becivinf/sw/cp2k-2026.2/data/t_c_g.dat   # truncated Coulomb (PBE0 in periodic cells)
   dftd3: /scratch/usr/becivinf/sw/cp2k-2026.2/data/dftd3.dat  # Grimme D3 parameters
   launcher: srun            # SLURM-built OpenMPI: srun (no mpirun on the path)
-  field_parallel: 13        # finite-field single points run side by side in the chain
+  field_parallel: 1         # every SCF on all the job's cores (Ivan): field single points one after the other
+  esp_parallel: 1           # ... and the ESP dots too
   omp_num_threads: 1
   data_dir: /scratch/usr/becivinf/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH

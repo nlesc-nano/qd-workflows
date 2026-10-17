@@ -120,7 +120,7 @@ $$
 
 reads at run time the memory Slurm granted, and runs side by side at most
 $\lfloor 0.8\, M_\mathrm{job} / M_\mathrm{run}\rfloor$ field single points (at most 13) and esp dots
-(at most 2). Examples: 5 at a time in 96 GB, all 13 in 336 GB (NHR, 48 × 7 GB).
+(at most 3). Examples: 5 at a time in 96 GB, all 13 in 336 GB (NHR, 48 × 7 GB).
 
 The job asks for its memory per node, `#SBATCH --mem` = the ranks on a node × `mem_per_cpu`, at
 most `node_memory_gb`, with the ranks spread evenly over the nodes (`--ntasks-per-node`). It does
@@ -132,11 +132,15 @@ So every run side by side asks for its share,
 
 $$
 M_\mathrm{step} = \frac{0.9\, M_\mathrm{node}}{k},\qquad
-k = \begin{cases} n & \text{one node}\\ \lceil n / N \rceil + 1 & N \text{ nodes}\end{cases}
+k = \left\lceil \frac{n\, s}{N} \right\rceil,\qquad s = \left\lceil \frac{r}{p} \right\rceil
 $$
 
-per node for $n$ runs side by side (`srun --mem`; on several nodes one run more per node, for a run
-across two nodes, and the chain places one run less per node). The chain prints the runs, ranks and
+per node for $n$ runs of $r$ ranks side by side on $N$ nodes of $p$ ranks (`srun --mem`). A run that
+fits on one node ($s = 1$) stays on one (`srun -N 1`): spread over two it would hold its memory on
+both and talk across them. On the Cd176 pilot (2 CLX nodes of 96 cores) the 13 field runs of 14
+ranks each were spread over both nodes and only 8 fitted at once. Since then, on several nodes each
+run gets as many ranks as let $\lceil n/N \rceil$ runs share a node (13 runs on 2 × 96 cores: 7 per
+node, 13 ranks each), and all of them start together. The chain prints the runs, ranks and
 memory of each step (`[chain] field: 13 side by side, 3 ranks and 23819M each`); what `srun` and
 CP2K print goes to `srun.log` in each run's directory, and the chain prints its last lines for the
 runs that did not finish. The reaction job (`qdw reaction`) does the same for its species, with a
