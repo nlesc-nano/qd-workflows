@@ -74,13 +74,22 @@ qualitatively at a bounded cost:
   the best; the others keep their previous $\Delta E$;
 - at most 12 removals (`detach_max_levels`);
 - candidates relaxed to 0.05 eV/Å, no polishing (`detach_quick`);
-- one Hessian per path, for the last state (dots up to 300 atoms); the vibrational free energy of
-  the states in between is linear in $k$ from the intact dot;
-- a step with more than 16 symmetry-distinct candidates is first **screened** by unrelaxed single
-  points: the 12 lowest (up to 32 within 0.5 eV of the lowest) are relaxed, the others get an
-  optimistic estimate and are relaxed, in batches, only if they could beat the best relaxed one
-  (`detach_screen*`);
-- after a removal at most the 24 lowest estimates are re-relaxed (`detach_refresh_max`).
+- one Hessian per path, for the last state (dots up to 2,000 atoms, `detach_thermo_max_atoms`); the
+  vibrational free energy of the states in between is linear in $k$ from the intact dot (within
+  0.03 eV of every state's Hessian on Cd$_{68}$);
+- every candidate gets an unrelaxed single point at every step, and the estimates carried over from
+  the previous step follow its change (`detach_rigid_refresh`);
+- a step with more than 16 symmetry-distinct candidates is **screened** by those single points: the
+  12 lowest (up to 32 within 0.5 eV of the lowest) are relaxed; the others get an optimistic
+  estimate, and every estimate below the best relaxed candidate or within 0.1 eV above it is relaxed
+  before choosing, in batches (`detach_screen*`, `detach_lazy_margin`);
+- after a removal at most the 24 lowest estimates are re-relaxed (`detach_refresh_max`);
+- the same search runs **upward**: one $\mathrm{MX}_q$ added per step on a free surface anion, placed as
+  the builder's Z-type post-treatment places it, at most 12 additions (`detach_up`,
+  `detach_up_max_levels`); states `props/adsorb_<j>.xyz`;
+- every ladder state carries the configurational entropy $k_B\ln\binom{x}{y}$ of its ligand shell
+  ($y$ ligands on $x$ lattice sites next to the surface metals), and $\langle k\rangle(T,\mu)$ runs over
+  both ladders with and without it.
 
 The search, its theory and its approximations are explained step by step in
 [Desorption ladder](../theory/desorption.md).
@@ -140,8 +149,9 @@ them; MACE descriptors go to `embeddings.npz`. Files go to `props/ensemble/`.
 | `fmax` | 0.01 eV/Å | relaxation convergence |
 | `hessian` | `fd` | `fd`, `analytic` (autograd) or `auto` (analytic up to `analytic_max_atoms`) |
 | `hessian_max_atoms` | 2000 | larger dots: no Hessian or anything built on it |
-| `detach_max_atoms` | 600 | desorption search up to here |
-| `detach_thermo_max_atoms` | 300 | Hessians of the desorption products up to here |
+| `detach_max_atoms` | 600 | desorption search up to here (tested up to 2,000) |
+| `detach_thermo_max_atoms` | 2000 | Hessian of the last ladder state up to here |
+| `detach_up`, `detach_up_max_levels` | true, 12 | the adsorption ladder and its length |
 | `temperatures` | 50–800 K, step 25 | thermochemistry grid |
 | `wigner_temperatures`, `wigner_samples` | 300–600 K, 100 | ensembles |
 | `vibspec_source`, `solvation_charges` | `dft` | set by `qdw props prepare`: no xTB in the batch |
