@@ -29,7 +29,7 @@ cp2k:
   field_parallel: 1         # every SCF on all the job's cores (Ivan): field single points one after the other
   esp_parallel: 1           # ... and the ESP dots too
   omp_num_threads: 1
-  monomer_library: /scratch/usr/becivinf/qdw_campaign/monomers/cp2k   # CP2K monomer library (qdw monomers): MA, MX_q once per formula
+  monomer_library: /scratch/projects/bep00157/qdw_campaign/monomers/cp2k   # CP2K monomer library (qdw monomers): MA, MX_q once per formula
   data_dir: /scratch/usr/becivinf/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH
   potential_file: POTENTIAL_UZH
@@ -105,6 +105,6 @@ storage:
 # The structure-database campaign on this cluster (qdw campaign poll reaches it over ssh).
 campaign:
   host: nhr
-  path: /scratch/usr/becivinf/qdw_campaign
+  path: /scratch/projects/bep00157/qdw_campaign
   python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
-  pythonpath: /scratch/usr/becivinf/qdw_campaign/code/qd-workflows/src
+  pythonpath: /scratch/projects/bep00157/qdw_campaign/code/qd-workflows/src

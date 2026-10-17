@@ -18,7 +18,7 @@ overrides anything below.
 
 ## Propose (never delete on your own)
 
-Write a proposal to `/scratch/usr/becivinf/qdw_campaign/cleanup/<YYYY-MM-DD>-<n>.txt` (on Hyperion under
+Write a proposal to `/scratch/projects/bep00157/qdw_campaign/cleanup/<YYYY-MM-DD>-<n>.txt` (on Hyperion under
 `/scratch/iinfante/qdw_campaign/cleanup/`): one line per path with its size and file count, grouped by why it
 can go, and the total. Candidates, safest first:
 - CP2K backups and scratch: `*.bak-*`, `*-BFGS.Hessian` and `*-pos-*.xyz` of converged geo_opt runs (the

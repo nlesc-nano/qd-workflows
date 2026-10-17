@@ -1,6 +1,6 @@
 # NHR@ZIB for the structure-database campaign (qdw campaign): the pilot's tested CLX setup (Camilo's
 # CP2K 2026.2 CLX build, srun), whole nodes for every CP2K job, and the campaign's own code, MACE
-# references and monomer library under /scratch/usr/becivinf/qdw_campaign. No `campaign`/`budget`
+# references and monomer library under /scratch/projects/bep00157/qdw_campaign. No `campaign`/`budget`
 # blocks: those are in nhr.yaml (one poll of NHR).
 name: nhr_campaign
 scheduler: slurm
@@ -14,7 +14,7 @@ qos: normal
 account: bep00157
 setup: []
 qdw_python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
-qdw_pythonpath: /scratch/usr/becivinf/qdw_campaign/code/qd-workflows/src:/scratch/usr/becivinf/qdw_campaign/code/Orchestr.AI/src
+qdw_pythonpath: /scratch/projects/bep00157/qdw_campaign/code/qd-workflows/src:/scratch/projects/bep00157/qdw_campaign/code/Orchestr.AI/src
 
 cp2k:
   module: null
@@ -28,7 +28,7 @@ cp2k:
   field_parallel: 1
   esp_parallel: 1
   omp_num_threads: 1
-  monomer_library: /scratch/usr/becivinf/qdw_campaign/monomers/cp2k   # MA, MX_q once per formula
+  monomer_library: /scratch/projects/bep00157/qdw_campaign/monomers/cp2k   # MA, MX_q once per formula
   data_dir: /scratch/usr/becivinf/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH
   potential_file: POTENTIAL_UZH
@@ -64,14 +64,14 @@ props:
   conda_init: source /home/becivinf/miniforge3/etc/profile.d/conda.sh
   conda_env: qdw-compute
   env:
-    PYTHONPATH: /scratch/usr/becivinf/qdw_campaign/code/Orchestr.AI/src
+    PYTHONPATH: /scratch/projects/bep00157/qdw_campaign/code/Orchestr.AI/src
   model: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/models/macemh1model
   head: omat_pbe
   gxtb: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/xtb/xtb-6.7.1/bin/gxtb
   cif_dirs:
     - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/cifs
     - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/library/cifs
-  refs: /scratch/usr/becivinf/qdw_campaign/references   # MACE references and the MACE monomer library
+  refs: /scratch/projects/bep00157/qdw_campaign/references   # MACE references and the MACE monomer library
   cpu:
     partition: cpu-clx
     cpus: 96

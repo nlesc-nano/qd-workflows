@@ -2,7 +2,7 @@
 
 The structure database of quantum dots: the whole QD_builder library of II–VI, III–V and IV–VI dots up to
 2,000 atoms (~904 dots, 21 materials) plus 28 earlier CdSe/InP DFT dots. Owner: Ivan Infante.
-Code: this checkout (branch `feat/campaign`), deployed on NHR in `/scratch/usr/becivinf/qdw_campaign/code`.
+Code: this checkout (branch `feat/campaign`), deployed on NHR in `/scratch/projects/bep00157/qdw_campaign/code`.
 
 ## Stages
 
@@ -18,7 +18,7 @@ Code: this checkout (branch `feat/campaign`), deployed on NHR in `/scratch/usr/b
 ## Selection
 
 II–VI: clean, vacancy- and swap-reconstructed. III–V: clean and swap (vacancy only for the earlier InP dots).
-IV–VI: clean. The NHR ledger (`/scratch/usr/becivinf/qdw_campaign/campaign.yaml`, `selection`) is the reference.
+IV–VI: clean. The NHR ledger (`/scratch/projects/bep00157/qdw_campaign/campaign.yaml`, `selection`) is the reference.
 
 ## Where to look
 

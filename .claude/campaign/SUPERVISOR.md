@@ -36,7 +36,7 @@ the campaign unless Ivan raises it. Hyperion: fair share only; use it when NHR q
 DFT labelling of ML frames (Ivan decides after the GPU campaign); dots above 2,000 atoms; changes of
 settings, code or profiles without Ivan; anything in the pilot's or other users' directories; git pushes.
 Code changes, when Ivan asks for them, are done here on branch `feat/campaign` with tests, and deployed to
-`/scratch/usr/becivinf/qdw_campaign/code` with the commit recorded in `code/COMMITS`.
+`/scratch/projects/bep00157/qdw_campaign/code` with the commit recorded in `code/COMMITS`.
 
 ## State at hand-over (2026-10-17)
 
