@@ -156,7 +156,7 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" != "all done" ]; then
         echo "[chain] esp: $todo"
-        EP=$(side_by_side 3)                 # the dots (intact, stripped, added) side by side if they fit
+        EP=$(side_by_side {{ESP_PARALLEL}})   # the dots (intact, stripped, added) side by side if they fit
         NR=$(ranks_each $EP)
         STEP_MEM=$(step_mem $EP $NR); echo "[chain] esp: $EP side by side, $NR ranks${STEP_MEM:+ and $STEP_MEM} each"
         t=$(date +%s); plog event chain "esp: $(echo $todo | wc -w) cube runs, $EP dot(s) side by side, $NR ranks each"

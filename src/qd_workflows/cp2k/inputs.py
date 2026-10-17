@@ -287,6 +287,7 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
         "PROJECT": project, "QDW_PYTHON": py, "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
         "CLUSTER": cluster_ref, "QDEX": cluster.get("qdex", {}).get("command", "qdex"),
         "FIELD": "1" if field else "0", "FIELD_PARALLEL": int(cp.get("field_parallel", 13)),
+        "ESP_PARALLEL": int(cp.get("esp_parallel", 3)),
         "GRID_MEM_GB": f"{grid_memory_gb(info['cell_A']):.0f}", "GRID_MEM_MB": int(1024 * grid_memory_gb(info["cell_A"])),
         "RECORD_DIR": str(Path(record).resolve().parent) if record else "",
         "QDW_LOG": os.environ.get("QDW_LOG", ""),      # the run's progress log, if it has one (qdw log)
