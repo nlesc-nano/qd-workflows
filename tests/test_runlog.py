@@ -35,6 +35,12 @@ def test_line_has_time_stage_job_and_message(tmp_path, monkeypatch):
     assert len(parts[0]) == 19                                   # YYYY-mm-dd HH:MM:SS
 
 
+def test_cp2k_2026_gradient_line(tmp_path):
+    (tmp_path / "cp2k.out").write_text(GEO_OUT.replace("  Max. gradient              =         0.0003000000",
+                                                       " OPT| Maximum gradient                                              0.0001020479"))
+    assert "max gradient 1.0e-04" in runlog.cp2k_result(str(tmp_path))
+
+
 def test_cp2k_result(tmp_path):
     (tmp_path / "cp2k.out").write_text(GEO_OUT)
     r = runlog.cp2k_result(str(tmp_path))
