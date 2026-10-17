@@ -5,6 +5,16 @@ item to "Decided" with his words.
 
 ## Open
 
+- **2026-10-17 · AlSb Hirshfeld monomer (parked) and whether Hirshfeld is needed.** Ivan asked: "Do you need hirahfeld ? I thought
+  you didn't need that anymore". Checked in Orchestr.AI `qd/steps/solvation.py` (line 155, branch feat/monomer-library):
+  with solvation_charges "dft" the step uses the COSMO data of the ESP runs when present, else `_run_dft`: Generalized Born
+  on the CP2K Hirshfeld charges of the dot and of the monomers (the field step's mono_* runs); it raises "no DFT charges for
+  the MA monomer" without them. The chain falls back to it when the ESP runs are incomplete. RESP charges exist only in
+  `qdw reaction`, not in the chain. So the Hirshfeld monomer runs are the safety net for solvation. Options: (1) leave AlSb
+  parked until an AlSb dot reaches stage 2 bis (no change; recommended now); (2) fix AlSb by running the MA diatomics as
+  triplets (UKS, see the spin item) or, rejected by Ivan on 2026-10-17, CG + 2PNT for all monomers; (3) drop the Hirshfeld
+  monomer runs and make ESP mandatory, accepting no solvation fallback for a dot whose ESP step fails.
+  Asked by: supervisor, with a correction from the campaign session (CdSe workflow agents planning).
 - **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
   (today the Thermodynamics tab needs detachment.json). Asked by: campaign session.
 - **2026-10-17 · Start date of the bep00157 yearly grant** (budget period assumed 2026-10-01 to 2027-09-30).
@@ -13,10 +23,7 @@ item to "Decided" with his words.
 ## Decided
 
 - 2026-10-17 · AlSb monomer (Hirshfeld run stops at 200 SCF steps after 3 identical runs; its ESP run converged, in exactly 200):
-  to change the monomer input for all monomers (CG + 2PNT): "No." (Ivan), who asked whether Hirshfeld is needed at all.
-  Parked, no input changed. What uses it: the field step's zero-field monomer run (a dot's chain links it from the
-  library or runs it itself); the MACE side and the ESP/RESP charges do not. Matters only for AlSb dots in stage 2 bis.
-  Open question for Ivan: drop the Hirshfeld monomer runs from the pipeline?
+  to change the monomer input for all monomers (CG + 2PNT): "No." (Ivan). Parked, no input changed.
 - 2026-10-17 · The 11 earlier InP dots whose DFT geometry carries extra organic atoms (C, N, H in 1:1:5, methylamine): "Yes strip"
   (Ivan). `qdw campaign legacy-records --strip-extra` (qd-workflows 9c445af) removed them, re-checked the In/P/Cl
   composition against each id (all 11 neutral, 92 to 1,012 atoms), recorded the stripped atoms in record.json
