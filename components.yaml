@@ -4,19 +4,19 @@ components:
   QD_builder:
     repo: git@github.com:nlesc-nano/QD_Builder.git
     branch: docs
-    commit: 0bddd0f
+    commit: 60eec5a
   Orchestr.AI:
     repo: https://github.com/nlesc-nano/Orchestr.AI.git
     branch: feature/qd-properties   # from camilo (dba7514)
-    commit: 182a6f1
+    commit: 031ce51
   QDSpaceWebApp:
     repo: git@github.com:nlesc-nano/QDSpaceWebApp.git
-    branch: library-builder-series
-    commit: 833dff98
+    branch: feat/ligand-shell-tab
+    commit: b5da4792
   QDEX:                     # local checkout: miniBSE
     repo: git@github.com:nlesc-nano/QDEX.git
     branch: main
-    commit: f0ba28a
+    commit: 7c36c48
 external:
   CP2K: "2026.2"            # GAPW_ACCURATE_XCINT needs 2026.2 or newer
   g-xTB: https://github.com/grimme-lab/g-xtb   # static Linux binary, GPL-3.0
