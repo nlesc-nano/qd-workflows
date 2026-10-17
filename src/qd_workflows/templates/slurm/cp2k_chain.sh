@@ -123,7 +123,8 @@ if [ "{{FIELD}}" = "1" ]; then
 fi
 
 # 2b. Solvation: potential and density cubes of the intact dot (restart of the geo_opt .wfn), the
-#     fully stripped dot (last state of the MACE desorption ladder) and the MA and MX_q monomers ->
+#     fully stripped dot (last state of the MACE desorption ladder), the fully added dot (last state of
+#     the adsorption ladder, when there is one) and the MA and MX_q monomers ->
 #     COSMO on the DFT potential at the density isosurface + its area (solvation.json, read by
 #     Orchestr.AI's solvation step). Needs the field step's base input. Finished runs are skipped.
 if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here must not stop the chain
@@ -133,18 +134,26 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
         [ -s "$f" ] || continue; k=${f##*detach_}; k=${k%.xyz}
         if [ "$k" -gt "$kmax" ]; then kmax=$k; STRIP=$f; fi
     done
+    ADD=""; kmax=-1
+    for f in "$PROPS"/adsorb_*.xyz; do
+        [ -s "$f" ] || continue; k=${f##*adsorb_}; k=${k%.xyz}
+        if [ "$k" -gt "$kmax" ]; then kmax=$k; ADD=$f; fi
+    done
     [ -s esp/runs.txt ] || qdw cp2k esp prepare field/base/cp2k.inp esp $( [ -n "$STRIP" ] && echo --stripped "$STRIP" ) \
+        $( [ -n "$ADD" ] && echo --added "$ADD" ) \
         $( [ -s "$PROPS/monomers.xyz" ] && echo --monomers "$PROPS/monomers.xyz" ) > /dev/null
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" != "all done" ]; then
         echo "[chain] esp: $todo"
-        EP=$(side_by_side 2)                 # the two dots side by side if both fit
+        EP=$(side_by_side 3)                 # the dots (intact, stripped, added) side by side if they fit
         NR=$(( SLURM_NTASKS / EP > 0 ? SLURM_NTASKS / EP : 1 ))
         STEP_MEM=$(step_mem $EP); echo "[chain] esp: $EP side by side, $NR ranks${STEP_MEM:+ and $STEP_MEM} each"
         t=$(date +%s); plog event chain "esp: $(echo $todo | wc -w) cube runs, $EP dot(s) side by side, $NR ranks each"
+        k=0
         for r in $todo; do
             case $r in
-                dot_*) if [ "$EP" -ge 2 ]; then (cd "esp/$r" && cp2k_n $NR) & else (cd "esp/$r" && cp2k_n $NR); fi ;;
+                dot_*) (cd "esp/$r" && cp2k_n $NR) &
+                       k=$((k + 1)); if [ $k -ge $EP ]; then wait; k=0; fi ;;
                 *)     (cd "esp/$r" && cp2k_n $(( SLURM_NTASKS < 8 ? SLURM_NTASKS : 8 ))) ;;
             esac
         done

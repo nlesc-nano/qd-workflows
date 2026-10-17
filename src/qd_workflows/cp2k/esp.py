@@ -13,9 +13,13 @@ MULTIPOLE, OT/DIIS), printing the Hartree-potential and density cubes:
     dot_<K>    the fully stripped dot, the last state of the MACE desorption ladder
                (props/detach_<K>.xyz), from scratch: the stripped states in between are
                interpolated in k by Orchestr.AI
+    dot_add<K> the fully added dot, the last state of the MACE adsorption ladder
+               (props/adsorb_<K>.xyz), from scratch: the added states (ladder up) are
+               interpolated in k between dot_0 and it (the webapp's solution-phase ladder)
     MA, MX     the monomers of props/monomers.xyz, from scratch in a small cell
 
-    qdw cp2k esp prepare <field/base/cp2k.inp> <esp dir> [--stripped detach_K.xyz] [--monomers monomers.xyz]
+    qdw cp2k esp prepare <field/base/cp2k.inp> <esp dir> [--stripped detach_K.xyz] [--added adsorb_K.xyz]
+                         [--monomers monomers.xyz]
     qdw cp2k esp status <esp dir>          # "all done" or the runs still to do
     qdw cp2k esp collect <esp dir> -o solvation.json
 """
@@ -84,7 +88,8 @@ def _write(d: Path, inp: str, sym, pts, comment: str) -> None:
         f"{s} {x:.8f} {y:.8f} {z:.8f}\n" for s, (x, y, z) in zip(sym, np.asarray(pts, float))))
 
 
-def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: str | None = None) -> list[str]:
+def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: str | None = None,
+            added: str | None = None) -> list[str]:
     """<out_dir>/<run>/{cp2k.inp, geom.xyz} and runs.txt; returns the run names."""
     base_path = Path(base_inp)
     base = base_path.read_text()
@@ -100,6 +105,14 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
         name = f"dot_{k}"
         _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts)), sym, pts,
                f"fully stripped dot, {k} units removed (MACE ladder)")
+        names.append(name)
+    if added:
+        m = re.search(r"adsorb_(\d+)\.xyz$", str(added))
+        k = int(m.group(1)) if m else 0
+        sym, pts = read_xyz(added)
+        name = f"dot_add{k}"
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts)), sym, pts,
+               f"fully added dot, {k} units added (MACE adsorption ladder)")
         names.append(name)
     if monomers:
         for label, sym, pts in _frames(Path(monomers)):
@@ -148,6 +161,9 @@ def collect(out_dir: str, max_points: int = MAX_POINTS) -> dict:
         m = re.match(r"dot_(\d+)$", name)
         if m:
             res[name]["k"] = int(m.group(1))
+        m = re.match(r"dot_add(\d+)$", name)
+        if m:                                                # not "k": Orchestr.AI reads the removals only
+            res[name]["k_added"] = int(m.group(1))
     return {"model": "COSMO on the DFT electrostatic potential, cavity on the density isosurface "
                      f"{sv.RHO_ISO:.2e} e/bohr^3 (qd_workflows.reaction.solvation)",
             "rho0_e_bohr3": sv.RHO_ISO, "beta0_alpha_gamma_mN_m": [sv.BETA0_SLOPE, sv.BETA0_OFFSET],

@@ -39,7 +39,8 @@ def _cp2k(args) -> int:
     elif args.action == "esp":
         from .cp2k import esp
         if args.esp_action == "prepare":
-            print(" ".join(esp.prepare(args.base, args.out, stripped=args.stripped, monomers=args.monomers)))
+            print(" ".join(esp.prepare(args.base, args.out, stripped=args.stripped, monomers=args.monomers,
+                                       added=args.added)))
         elif args.esp_action == "status":
             print(esp.status(args.dir))
         else:
@@ -229,6 +230,7 @@ def main(argv=None) -> int:
     p.add_argument("base", help="the chain's single-point input (field/base/cp2k.inp)")
     p.add_argument("out", help='directory of the esp runs')
     p.add_argument("--stripped", help="fully stripped dot: props/detach_<K>.xyz")
+    p.add_argument("--added", help="fully added dot: props/adsorb_<K>.xyz (adsorption ladder)")
     p.add_argument("--monomers", help="props/monomers.xyz (frames MA, MX)")
     p = ep.add_parser("status", help='"all done" or the runs still to do')
     p.add_argument("dir", help='directory of the esp runs')

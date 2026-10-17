@@ -109,7 +109,8 @@ Solvation cubes: intact and fully stripped dot, monomers -> COSMO (solvation.jso
 **`qdw cp2k esp prepare`**: The runs, from the chain's single-point input (field/base/cp2k.inp).
 
 ```text
-qdw cp2k esp prepare [-h] [--stripped STRIPPED] [--monomers MONOMERS]
+qdw cp2k esp prepare [-h] [--stripped STRIPPED] [--added ADDED]
+                            [--monomers MONOMERS]
                             base out
 ```
 
@@ -118,6 +119,7 @@ qdw cp2k esp prepare [-h] [--stripped STRIPPED] [--monomers MONOMERS]
 | `base` | the chain's single-point input (field/base/cp2k.inp) |  |
 | `out` | directory of the esp runs |  |
 | `--stripped` | fully stripped dot: props/detach_<K>.xyz |  |
+| `--added` | fully added dot: props/adsorb_<K>.xyz (adsorption ladder) |  |
 | `--monomers` | props/monomers.xyz (frames MA, MX) |  |
 
 **`qdw cp2k esp status`**: "all done" or the runs still to do.

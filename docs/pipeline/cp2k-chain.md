@@ -58,14 +58,19 @@ ranks shared among them.
 
 ## 2b · esp (solvation cubes)
 
-Hartree-potential and electron-density cubes (stride 2) of four structures, with the field
+Hartree-potential and electron-density cubes (stride 2) of up to five structures, with the field
 step's single-point settings:
 
 | Run | Structure | Start |
 |---|---|---|
 | `dot_0` | the intact dot | restart from the geo_opt .wfn |
 | `dot_K` | the fully stripped dot, last state of the desorption ladder (`props/detach_K.xyz`) | atomic guess, own cell |
+| `dot_addK` | the fully added dot, last state of the adsorption ladder (`props/adsorb_K.xyz`), when there is one | atomic guess, own cell |
 | `MA`, `MX` | the monomers (`props/monomers.xyz`) | atomic guess, cell ≥ 15 Å |
+
+The dots run side by side when the memory holds them, the monomers after them. Orchestr.AI
+interpolates the stripped states between `dot_0` and `dot_K`; the webapp interpolates the added
+states (ladder up) between `dot_0` and `dot_addK` (`k_added` in `solvation.json`).
 
 `qdw cp2k esp collect` turns each pair of cubes into the COSMO conductor energy on the density
 isosurface and the isosurface area, written to `cp2k/solvation.json`

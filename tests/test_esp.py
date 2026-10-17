@@ -39,3 +39,18 @@ def test_esp_input_into_existing_print():
     base = BASE.replace("    &SCF\n", "    &PRINT\n      &MOMENTS\n      &END MOMENTS\n    &END PRINT\n    &SCF\n", 1)
     t = esp.esp_input(base, "dot_0")
     assert t.count("    &PRINT\n") == 1 and t.index("&V_HARTREE_CUBE") < t.index("&MOMENTS")
+
+
+def test_prepare_stripped_and_added_dots(tmp_path):
+    base = tmp_path / "field" / "base"
+    base.mkdir(parents=True)
+    (base / "cp2k.inp").write_text(BASE)
+    (base / "geom.xyz").write_text("2\nintact\nCd 0 0 0\nCl 2.4 0 0\n")
+    (tmp_path / "detach_12.xyz").write_text("1\nstripped\nCd 0 0 0\n")
+    (tmp_path / "adsorb_12.xyz").write_text("3\nadded\nCd 0 0 0\nCl 2.4 0 0\nCl -2.4 0 0\n")
+    names = esp.prepare(str(base / "cp2k.inp"), str(tmp_path / "esp"), stripped=str(tmp_path / "detach_12.xyz"),
+                        added=str(tmp_path / "adsorb_12.xyz"))
+    assert names == ["dot_0", "dot_12", "dot_add12"]
+    t = (tmp_path / "esp" / "dot_add12" / "cp2k.inp").read_text()
+    assert "PROJECT  dot_add12" in t and "SCF_GUESS  atomic" in t and "WFN_RESTART_FILE_NAME" not in t
+    assert (tmp_path / "esp" / "runs.txt").read_text().split() == names
