@@ -61,6 +61,18 @@ step_mem() {
 # The last lines srun and CP2K printed for the unfinished runs $2... of step directory $1.
 why() { local d=$1 r; shift; for r in "$@"; do echo "[chain] $d/$r: $(tail -n 2 "$d/$r/srun.log" 2>/dev/null | tr '\n' ' ')"; done; }
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
+# Progress log of the run (qdw log, $QDW_LOG): a line when each step starts and ends, with its key
+# result; on exit, how the job ended and the step it was in. Never stops the chain.
+export QDW_LOG=${QDW_LOG:-{{QDW_LOG}}}
+plog() { [ -z "$QDW_LOG" ] || qdw log "$@" > /dev/null 2>&1 || true; }
+T0=$(date +%s); STEP=start; CHAIN_DIR=$(pwd); t=
+on_exit() {
+    local rc=$?
+    if [ $rc -eq 0 ]; then plog event chain "chain done: $CHAIN_DIR" --since $T0
+    else plog event chain "ERROR chain stopped in $STEP (exit $rc): read $CHAIN_DIR/slurm-$SLURM_JOB_ID.out" --since $T0; fi
+}
+trap on_exit EXIT
+plog event chain "start $P: $SLURM_NTASKS ranks on ${SLURM_NNODES:-1} node(s), ${SLURM_MEM_PER_NODE:-?} MB per node, limit {{TIME}}"
 
 # 1. geo_opt (from the MACE-relaxed structure)
 cd geo_opt
@@ -74,9 +86,11 @@ if ! grep -q "GEOMETRY OPTIMIZATION COMPLETED" cp2k.out 2>/dev/null; then
     if [ -n "$last" ] && [ "$last" -nt geom.xyz ]; then   # continue from its last geometry
         qdw cp2k relaxed "$last" -o geom.xyz
     fi
-    echo "[chain] geo_opt"; cp2k
+    echo "[chain] geo_opt"; STEP=geo_opt
+    plog event chain "geo_opt started$([ -n "$last" ] && echo " (continuing from $last)")"; cp2k
+    plog cp2k chain geo_opt .
 fi
-grep -q "GEOMETRY OPTIMIZATION COMPLETED" cp2k.out || { echo "[chain] geo_opt did not converge"; exit 1; }
+grep -q "GEOMETRY OPTIMIZATION COMPLETED" cp2k.out || { echo "[chain] geo_opt did not converge"; plog event chain "ERROR geo_opt did not converge (read $CHAIN_DIR/geo_opt/cp2k.out)"; exit 1; }
 cd ..
 [ -s relaxed.xyz ] || qdw cp2k relaxed "geo_opt/$P-pos-1.xyz" -o relaxed.xyz
 
@@ -93,6 +107,8 @@ if [ "{{FIELD}}" = "1" ]; then
         FP=$(side_by_side {{FIELD_PARALLEL}})
         R=$(( SLURM_NTASKS / FP )); [ $R -ge 1 ] || R=1
         STEP_MEM=$(step_mem $FP); echo "[chain] field: $FP side by side, $R ranks${STEP_MEM:+ and $STEP_MEM} each"
+        STEP=field; t=$(date +%s)
+        plog event chain "field: $(echo $todo | wc -w) single points, $FP side by side, $R ranks${STEP_MEM:+, $STEP_MEM} each"
         k=0
         for r in $todo; do
             n=$R; case $r in mono_*) n=$(( R < 8 ? R : 8 ));; esac
@@ -102,7 +118,8 @@ if [ "{{FIELD}}" = "1" ]; then
         wait
     fi
     todo=$(orch_field status field)
-    [ "$todo" = "all done" ] || { echo "[chain] field runs incomplete"; why field $todo; exit 1; }
+    [ "$todo" = "all done" ] || { echo "[chain] field runs incomplete"; why field $todo; plog event chain "ERROR field runs incomplete: $todo (read field/<run>/srun.log)"; exit 1; }
+    [ -z "${t:-}" ] || plog event chain "field done: $(ls -d field/*/ | wc -l) runs" --since $t
 fi
 
 # 2b. Solvation: potential and density cubes of the intact dot (restart of the geo_opt .wfn), the
@@ -124,6 +141,7 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
         EP=$(side_by_side 2)                 # the two dots side by side if both fit
         NR=$(( SLURM_NTASKS / EP > 0 ? SLURM_NTASKS / EP : 1 ))
         STEP_MEM=$(step_mem $EP); echo "[chain] esp: $EP side by side, $NR ranks${STEP_MEM:+ and $STEP_MEM} each"
+        t=$(date +%s); plog event chain "esp: $(echo $todo | wc -w) cube runs, $EP dot(s) side by side, $NR ranks each"
         for r in $todo; do
             case $r in
                 dot_*) if [ "$EP" -ge 2 ]; then (cd "esp/$r" && cp2k_n $NR) & else (cd "esp/$r" && cp2k_n $NR); fi ;;
@@ -135,25 +153,27 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" = "all done" ]; then
         qdw cp2k esp collect esp -o solvation.json > /dev/null && echo "[chain] solvation.json"
+        plog event chain "esp done: solvation.json ($(ls -d esp/*/ | wc -l) runs)" ${t:+--since $t}
     else
         echo "[chain] esp runs incomplete: solvation from the field step's charges"; why esp $todo
+        plog event chain "WARN esp runs incomplete ($todo): solvation from the field charges (read esp/<run>/srun.log)"
     fi
 ) || echo "[chain] solvation step failed: solvation from the field step's charges"; fi
 
 # 3. PDOS single point (all MO energies)
 [ -d pdos ] || qdw cp2k prepare relaxed.xyz --step pdos --project "$P-pdos" --wfn "../geo_opt/$P-RESTART.wfn" --out pdos $EXTRA
-if ! ls pdos/*.pdos >/dev/null 2>&1; then echo "[chain] pdos"; (cd pdos && cp2k); fi
+if ! ls pdos/*.pdos >/dev/null 2>&1; then echo "[chain] pdos"; STEP=pdos; plog event chain "pdos started"; (cd pdos && cp2k); plog cp2k chain pdos pdos; fi
 
 # 4. MO window: 5 eV below the valence band edge to 5 eV above the conduction band edge
-[ -s window.json ] || qdw cp2k window pdos/*.pdos -o window.json
+[ -s window.json ] || { STEP=window; qdw cp2k window pdos/*.pdos -o window.json > /dev/null; plog window chain window.json; }
 
 # 5. TREXIO single point (one diagonalisation, ADDED_MOS = virtual MOs in the window)
 [ -d trexio ] || qdw cp2k prepare relaxed.xyz --step trexio --project "$P-trexio" --wfn "../geo_opt/$P-RESTART.wfn" --window window.json --out trexio $EXTRA
 T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio 2>/dev/null | head -1 || true)
-if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio 2>/dev/null | head -1); fi
+if [ -z "$T" ]; then echo "[chain] trexio"; STEP=trexio; plog event chain "trexio started"; (cd trexio && cp2k); plog cp2k chain trexio trexio; T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio 2>/dev/null | head -1); fi
 
 # 6. Keep only the window's MOs
-[ -s orbitals.h5 ] || qdw cp2k trim "$T" orbitals.h5 --window window.json
+[ -s orbitals.h5 ] || { STEP=trim; qdw cp2k trim "$T" orbitals.h5 --window window.json > /dev/null; plog event chain "trim done: orbitals.h5 $(du -h orbitals.h5 | cut -f1)"; }
 
 # 7. QDEX: QP gap, diagonal sBSE (Resta), SOC, fuzzy bands, PDOS and COOP -> qdex_electronic.h5,
 #    qdex_excitations.h5, HOMO-1..LUMO+1 cubes; webapp.json (summary, band-edge excitons, spectra);
@@ -163,12 +183,18 @@ if [ -z "$T" ]; then echo "[chain] trexio"; (cd trexio && cp2k); T=$(ls trexio/o
 if [ -s record.json ]; then
     NT=${SLURM_CPUS_ON_NODE:-8}
     for Q in qdex qdex_trap; do
+        t=
         [ -s $Q/config.yaml ] || qdw qdex prepare record.json --window window.json --out $Q --threads "$NT" --cluster {{CLUSTER}} $([ $Q = qdex_trap ] && echo --trap-filter)
-        if [ ! -s $Q/qdex_excitations.h5 ]; then echo "[chain] $Q"; (cd $Q && qdex_run "$NT" > qdex.out 2>&1); fi
+        if [ ! -s $Q/qdex_excitations.h5 ]; then
+            echo "[chain] $Q"; STEP=$Q; t=$(date +%s); plog event chain "$Q started ($NT threads)"
+            (cd $Q && qdex_run "$NT" > qdex.out 2>&1) || { plog event chain "ERROR $Q failed (read $(pwd)/$Q/qdex.out)"; exit 1; }
+        fi
         qdw qdex webapp $Q -o $Q/webapp.json > /dev/null
+        [ -z "${t:-}" ] || plog qdex chain $Q $Q
         if [ ! -s $Q/exciton_analysis_sf.html ]; then
             echo "[chain] $Q dashboards"
-            (cd $Q && qdex_env "$QDEX" dashboards . > dashboards.out 2>&1) || echo "[chain] $Q dashboards failed ($Q/dashboards.out)"
+            (cd $Q && qdex_env "$QDEX" dashboards . > dashboards.out 2>&1) && plog event chain "$Q dashboards done" \
+                || { echo "[chain] $Q dashboards failed ($Q/dashboards.out)"; plog event chain "WARN $Q dashboards failed (read $(pwd)/$Q/dashboards.out)"; }
         fi
     done
 fi

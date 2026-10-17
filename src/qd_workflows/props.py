@@ -51,12 +51,14 @@ fi
 {then}exit $rc"""
 # The GPU stage hands over to the CPU stage when its run ends (not at a piece's time limit).
 # Records whose GPU steps failed then fail in the CPU stage, which needs them cached.
-THEN_CPU = """(cd "$SLURM_SUBMIT_DIR" && sbatch job_cpu.sh) || echo "[props] could not submit the CPU stage: sbatch job_cpu.sh"
+THEN_CPU = """cpu=$(cd "$SLURM_SUBMIT_DIR" && sbatch --parsable job_cpu.sh) || echo "[props] could not submit the CPU stage: sbatch job_cpu.sh"
+qdwlog event gpu "submitted the CPU stage: ${{cpu:-FAILED (sbatch job_cpu.sh)}}"
 """
 # ... after the DFT chains of the batch, which the GPU job submits first.
 THEN_DFT_CPU = """ids=$({qdw} props chains --config "$SLURM_SUBMIT_DIR/config.yaml" --cluster {cluster} --submit | tail -1)
 echo "[props] DFT chains: ${{ids:-none}}"
-(cd "$SLURM_SUBMIT_DIR" && sbatch ${{ids:+--dependency=afterany:${{ids// /:}}}} job_cpu.sh) || echo "[props] could not submit the CPU stage: sbatch job_cpu.sh"
+cpu=$(cd "$SLURM_SUBMIT_DIR" && sbatch --parsable ${{ids:+--dependency=afterany:${{ids// /:}}}} job_cpu.sh) || echo "[props] could not submit the CPU stage: sbatch job_cpu.sh"
+qdwlog event gpu "submitted the CP2K chain(s) ${{ids:-none}} and the CPU stage ${{cpu:-FAILED (sbatch job_cpu.sh)}} (after the chains)"
 """
 
 
@@ -132,13 +134,13 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
                 qdw = (f"env PYTHONPATH={cluster.get('qdw_pythonpath', '')} "
                        f"{cluster.get('qdw_python', 'python')} -m qd_workflows.cli")
                 then = THEN_DFT_CPU.format(qdw=qdw, cluster=cluster["name"])
-        (out / "job.sh").write_text(_job(cluster, name, wall, qos, runner("config.yaml", "job.sh", wall, then)))
+        (out / "job.sh").write_text(_job(cluster, name, wall, qos, runner("config.yaml", "job.sh", wall, then), records=recs))
         result.update({"config": str(out / "config.yaml"), "job": str(out / "job.sh"), "gpu_steps": gpu_steps})
     if cpu_steps:
         wall = cpu_time or pp["cpu"].get("time", "01:00:00")
         (out / "config_cpu.yaml").write_text(yaml.safe_dump(config(cpu_steps, "cached"), sort_keys=False))
         (out / "job_cpu.sh").write_text(_job(cluster, f"{name}-cpu", wall, qos,
-                                             runner("config_cpu.yaml", "job_cpu.sh", wall), cpu=True))
+                                             runner("config_cpu.yaml", "job_cpu.sh", wall), cpu=True, records=recs))
         result.update({"config_cpu": str(out / "config_cpu.yaml"), "job_cpu": str(out / "job_cpu.sh"),
                        "cpu_steps": cpu_steps})
         if not gpu_steps:
@@ -186,7 +188,7 @@ def bench(out_dir: str, cluster: dict, *, sizes: str = "100,300,1000,2000,5000",
     return {"job": str(out / "job.sh"), "run": run}
 
 
-def _job(cluster: dict, name: str, wall: str, qos: str | None, run: str, cpu: bool = False) -> str:
+def _job(cluster: dict, name: str, wall: str, qos: str | None, run: str, cpu: bool = False, records=()) -> str:
     pp = cluster["props"]
     part = pp["cpu"] if cpu else pp
     job = {
@@ -198,6 +200,8 @@ def _job(cluster: dict, name: str, wall: str, qos: str | None, run: str, cpu: bo
         "CONDA_INIT": pp.get("conda_init", ""), "CONDA_ENV": pp["conda_env"], "MODEL": pp["model"],
         "GXTB": pp["gxtb"], "CIF_DIRS": os.pathsep.join(pp.get("cif_dirs", [])), "REFS": pp["refs"],
         "EXTRA_ENV": "\n".join(f"export {k}={v}" for k, v in (pp.get("env") or {}).items()),
+        "QDW_LOG": os.environ.get("QDW_LOG", ""), "QDW_PYTHONPATH": cluster.get("qdw_pythonpath", ""),
+        "RECORDS": " ".join(records),
     }
     template = "props_cpu.sh" if cpu else "props_gpu.sh"
     return render((TEMPLATES / "slurm" / template).read_text(), job)

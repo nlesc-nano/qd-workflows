@@ -144,6 +144,39 @@ def _compare(args) -> int:
     return 1 if res["failed"] else 0
 
 
+def _log(args) -> int:
+    from . import runlog
+    if args.action == "event":
+        msg = " ".join(args.message)
+        if args.since:
+            msg += f" ({runlog.hms(__import__('time').time() - float(args.since))})"
+        line = runlog.write(args.stage, msg)
+    elif args.action == "cp2k":
+        line = runlog.write(args.stage, f"{args.label} done: {runlog.cp2k_result(args.dir)}")
+    elif args.action == "window":
+        line = runlog.write(args.stage, f"window: {runlog.window_result(args.file)}")
+    elif args.action == "qdex":
+        line = runlog.write(args.stage, f"{args.label} done: {runlog.qdex_result(args.dir)}")
+    else:
+        runlog.follow(args.slurm_out, args.stage, args.records, args.stop, poll=args.poll)
+        return 0
+    if not runlog.log_path():
+        print(line)
+    return 0
+
+
+def _status(args) -> int:
+    import time
+    from . import runlog
+    while True:
+        text = runlog.status(args.run, n_log=args.lines)
+        if not args.watch:
+            print(text)
+            return 0
+        print("\033[2J\033[H" + text, flush=True)
+        time.sleep(args.watch)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="qdw", description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -276,6 +309,35 @@ def main(argv=None) -> int:
     p = rp.add_parser("analyse", help="results/: results.json, summary.json, plots, reaction.html")
     p.add_argument("run", help="run directory")
 
+    lp = sub.add_parser("log", help="progress log of a run ($QDW_LOG): one line per event").add_subparsers(
+        dest="action", required=True)
+    p = lp.add_parser("event", help="a line of free text")
+    p.add_argument("stage", help="gpu, chain, cpu, ...")
+    p.add_argument("message", nargs="+", help="what happened")
+    p.add_argument("--since", help="epoch seconds: append the time elapsed since then")
+    p = lp.add_parser("cp2k", help="a CP2K run's key numbers (energy, steps, wall time) from its cp2k.out")
+    p.add_argument("stage", help="stage name")
+    p.add_argument("label", help="step name in the log")
+    p.add_argument("dir", help="directory with cp2k.out")
+    p = lp.add_parser("window", help="the MO window (KS gap, MOs kept)")
+    p.add_argument("stage", help="stage name")
+    p.add_argument("file", help="window.json")
+    p = lp.add_parser("qdex", help="QDEX gaps and lowest excitons from webapp.json")
+    p.add_argument("stage", help="stage name")
+    p.add_argument("label", help="step name in the log")
+    p.add_argument("dir", help="QDEX run directory")
+    p = lp.add_parser("follow", help="log an Orchestr.AI PROPS job's steps as they end (runs until --stop exists)")
+    p.add_argument("slurm_out", help="the job's output file")
+    p.add_argument("--stage", required=True, help="stage name")
+    p.add_argument("--records", nargs="+", required=True, help="record directories of the job")
+    p.add_argument("--stop", required=True, help="file whose creation ends the follower")
+    p.add_argument("--poll", type=float, default=10.0, help="seconds between reads")
+
+    p = sub.add_parser("status", help="queue, progress of each record's steps and the end of the run's log")
+    p.add_argument("run", help="run directory (records in <run>/rec/*, log in $QDW_LOG or <run>/pilot.log)")
+    p.add_argument("--watch", type=float, help="refresh every this many seconds")
+    p.add_argument("--lines", type=int, default=25, help="log lines to show")
+
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref", help='reference properties.json')
     p.add_argument("new", help='properties.json to compare')
@@ -284,7 +346,7 @@ def main(argv=None) -> int:
 
     args = ap.parse_args(argv)
     return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "reaction": _reaction,
-            "compare": _compare}[args.group](args)
+            "compare": _compare, "log": _log, "status": _status}[args.group](args)
 
 
 if __name__ == "__main__":

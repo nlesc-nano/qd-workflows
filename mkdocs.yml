@@ -33,6 +33,7 @@ nav:
       - 2 · CP2K chain: pipeline/cp2k-chain.md
       - 3 · CPU stage (assembly): pipeline/cpu-stage.md
       - QDEX: pipeline/qdex.md
+      - Following a run: pipeline/progress-log.md
   - Theory:
       - Thermochemistry: theory/thermochemistry.md
       - Solvation: theory/solvation.md

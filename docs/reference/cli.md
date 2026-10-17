@@ -329,6 +329,97 @@ qdw reaction analyse [-h] run
 |---|---|---|
 | `run` | run directory |  |
 
+## qdw log
+
+Progress log of a run ($QDW_LOG): one line per event.
+
+### qdw log event
+
+A line of free text.
+
+```text
+qdw log event [-h] [--since SINCE] stage message [message ...]
+```
+
+| Argument | Meaning | Default |
+|---|---|---|
+| `stage` | gpu, chain, cpu, ... |  |
+| `message` | what happened |  |
+| `--since` | epoch seconds: append the time elapsed since then |  |
+
+### qdw log cp2k
+
+A CP2K run's key numbers (energy, steps, wall time) from its cp2k.out.
+
+```text
+qdw log cp2k [-h] stage label dir
+```
+
+| Argument | Meaning | Default |
+|---|---|---|
+| `stage` | stage name |  |
+| `label` | step name in the log |  |
+| `dir` | directory with cp2k.out |  |
+
+### qdw log window
+
+The MO window (KS gap, MOs kept).
+
+```text
+qdw log window [-h] stage file
+```
+
+| Argument | Meaning | Default |
+|---|---|---|
+| `stage` | stage name |  |
+| `file` | window.json |  |
+
+### qdw log qdex
+
+QDEX gaps and lowest excitons from webapp.json.
+
+```text
+qdw log qdex [-h] stage label dir
+```
+
+| Argument | Meaning | Default |
+|---|---|---|
+| `stage` | stage name |  |
+| `label` | step name in the log |  |
+| `dir` | QDEX run directory |  |
+
+### qdw log follow
+
+Log an Orchestr.AI PROPS job's steps as they end (runs until --stop exists).
+
+```text
+qdw log follow [-h] --stage STAGE --records RECORDS [RECORDS ...]
+                      --stop STOP [--poll POLL]
+                      slurm_out
+```
+
+| Argument | Meaning | Default |
+|---|---|---|
+| `slurm_out` | the job's output file |  |
+| `--stage` | stage name |  |
+| `--records` | record directories of the job |  |
+| `--stop` | file whose creation ends the follower |  |
+| `--poll` | seconds between reads | `10.0` |
+
+## qdw status
+
+Queue, progress of each record's steps and the end of the run's log.
+
+```text
+qdw status [-h] [--watch WATCH] [--lines LINES] run
+```
+
+| Argument | Meaning | Default |
+|---|---|---|
+| `run` | run directory (records in <run>/rec/*, log in $QDW_LOG or <run>/pilot.log) |  |
+| `--watch` | refresh every this many seconds |  |
+| `--lines` | log lines to show | `25` |
+
 ## qdw compare
 
 Compare two props/properties.json (Phase 0 gate).
