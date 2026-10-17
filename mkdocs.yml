@@ -37,6 +37,7 @@ nav:
       - Thermochemistry: theory/thermochemistry.md
       - Solvation: theory/solvation.md
       - Reactions and equilibria: theory/equilibria.md
+      - Desorption ladder: theory/desorption.md
       - IR and Raman: theory/spectra.md
   - Reaction free energies (qdw reaction): reactions.md
   - Reference:

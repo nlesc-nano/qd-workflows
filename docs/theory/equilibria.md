@@ -38,6 +38,7 @@ $$
 
 ### Desorption ladder
 
+(A step-by-step account of the search, its theory and its approximations: [Desorption ladder](desorption.md).)
 $\mathrm{dot}_{k-1} \to \mathrm{dot}_k + \mathrm{MX}_q$, for dots up to 600 atoms. Removing a unit $u$
 from the relaxed structure $R_k$ costs
 
@@ -45,10 +46,10 @@ $$
 \Delta E_k(u) = E[\mathrm{relax}(R_{k} - u)] + E(\mathrm{MX}_q) - E(R_k)
 $$
 
-The default search moves symmetry-equivalent units together (`detach_search: symmetric`); the
-alternative keeps the 2 best structures per level (beam search). Every candidate is a real MACE
-relaxation, and the units are redefined on the relaxed surface after each removal. Along the best
-path, in vacuum and in solution:
+The default search is greedy (the cheapest unit at each step, at most 12 removals, relaxed to
+0.05 eV/Å; see [GPU stage](../pipeline/gpu-stage.md#detachment)): a qualitative ladder. Every
+candidate is a real MACE relaxation, and the units are redefined on the relaxed surface after each
+removal. Along the path, in vacuum and in solution:
 
 $$
 \Delta G_k^{\mathrm{gas}}(T) = E_k - E_{k-1} + \Delta F_{\mathrm{vib},k}(T) + G^\circ_{\mathrm{MX}_q}(T)
@@ -56,6 +57,12 @@ $$
 
 $$
 \Delta G_k(T, \varepsilon, c) = G^{\mathrm{sol}}_{k} - G^{\mathrm{sol}}_{k-1} + \mu_{\mathrm{MX}_q}
+$$
+
+In quick mode only the last state $K$ gets a Hessian; in between
+
+$$
+F_{\mathrm{vib},k}(T) = F_{\mathrm{vib},0}(T) + \frac{k}{K}\left[F_{\mathrm{vib},K}(T) - F_{\mathrm{vib},0}(T)\right]
 $$
 
 ### Mean number of removed units

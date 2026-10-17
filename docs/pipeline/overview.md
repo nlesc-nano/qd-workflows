@@ -99,7 +99,7 @@ and solvation come only from the DFT chain. (Orchestr.AI keeps its xTB steps for
 | Atoms | What runs |
 |---|---|
 | ≤ 600 | everything, including the desorption ladder and its thermochemistry |
-| ≤ 2,000 | analytic Hessian, the CP2K chain and QDEX; no desorption ladder above 600 |
+| ≤ 2,000 | Hessian, the CP2K chain and QDEX; no desorption ladder above 600 |
 | > 2,000 | not in the batch: `qdw props prepare` leaves these records out (to be decided) |
 
 ## The fine-tuning loop
