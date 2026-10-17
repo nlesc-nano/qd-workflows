@@ -75,6 +75,11 @@ budget:
   allocation_core_h: null
   charge: {}
 
+# Storage (qdw campaign status): space and files of every quota area, warnings from 80 % of the limit.
+storage:
+  - {tool: beegfs, command: getquota-scratch, name: /scratch/iinfante}
+  - {tool: beegfs, command: getquota-home, name: /dipc/iinfante}
+
 # The structure-database campaign on this cluster (qdw campaign poll reaches it over ssh).
 campaign:
   label: hyperion

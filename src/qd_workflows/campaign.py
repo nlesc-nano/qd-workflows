@@ -37,6 +37,7 @@ import yaml
 import getpass
 
 from . import budget as budget_mod
+from . import storage as storage_mod
 from . import runlog
 from .cluster import load_cluster
 
@@ -258,8 +259,9 @@ def log_lines(path: Path, offset: int) -> tuple[list[str], int]:
 # ---------------- status ----------------
 def status(campaign: str | Path, update: bool = False, now: datetime | None = None,
            jobs: list[dict] | None = None, acct: list[dict] | None = None, use_slurm: bool = True,
-           cluster: dict | None = None) -> dict:
-    """The state of every dot, the campaign's jobs, the budget, what needs attention and what changed."""
+           cluster: dict | None = None, storage: dict | None = None) -> dict:
+    """The state of every dot, the campaign's jobs, the budget and storage, what needs attention and
+    what changed."""
     camp = Path(campaign)
     led = load(camp)
     now = now or datetime.now()
@@ -300,6 +302,9 @@ def status(campaign: str | Path, update: bool = False, now: datetime | None = No
             if not mine:
                 general.append(p)
     general += (bud or {}).get("problems", [])
+    if storage is None and use_slurm and cluster.get("storage"):
+        storage = storage_mod.storage(cluster)
+    general += (storage or {}).get("problems", [])
 
     snap_dir = camp / "status"
     last_file = snap_dir / "last.json"
@@ -326,6 +331,7 @@ def status(campaign: str | Path, update: bool = False, now: datetime | None = No
                    "pending_jobs": sum(j["state"] == "PENDING" for j in jobs),
                    "campaign_core_h": round(sum(j["core_h"] for j in acct))},
         "budget": bud,
+        "storage": storage,
         "attention": attention,
         "general": general,
         "jobs": jobs,
@@ -342,6 +348,7 @@ def status(campaign: str | Path, update: bool = False, now: datetime | None = No
         snap["log_offsets"] = offsets
         snap["ended_jobs"] = sorted({j["id"] for j in acct if j["end"]} | set((prev or {}).get("ended_jobs", [])))
         snap["budget"] = bud
+        snap["storage"] = storage
         last_file.write_text(json.dumps(snap, indent=1))
         if res.get("changes"):
             with open(snap_dir / "events.jsonl", "a") as f:
@@ -399,6 +406,10 @@ def text(res: dict) -> str:
                      + f" · last 24 h {b['last_24h_core_h']:,}"
                      + (f" · {b['days_left_at_24h_rate']} days at that rate" if b.get("days_left_at_24h_rate") else "")
                      + (f" · fair share {b['fairshare']:.3f}" if b.get("fairshare") is not None else ""))
+    for a in (res.get("storage") or {}).get("areas", []):
+        lines.append(f"storage {a['path']}: {a['bytes'] / 2 ** 40:.2f} TiB"
+                     + (f" ({a['bytes_frac']:.0%})" if a.get("bytes_frac") is not None else "")
+                     + f", {a['files']:,} files" + (f" ({a['files_frac']:.0%})" if a.get("files_frac") is not None else ""))
     lines.append("")
     if res["attention"]:
         lines.append("--- needs attention")
