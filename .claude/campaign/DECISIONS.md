@@ -14,6 +14,13 @@ item to "Decided" with his words.
   parked until an AlSb dot reaches stage 2 bis (no change; recommended now); (2) fix AlSb by running the MA diatomics as
   triplets (UKS, see the spin item) or, rejected by Ivan on 2026-10-17, CG + 2PNT for all monomers; (3) drop the Hirshfeld
   monomer runs and make ESP mandatory, accepting no solvation fallback for a dot whose ESP step fails.
+  Checked for the webapp (QDSpaceWebApp frontend, 2026-10-17): no Hirshfeld charge is read or shown (only stored in
+  props/properties.json `field.hirshfeld_by_element_e`). The Thermodynamics tab shows COSMO from the ESP runs
+  (solvation_cubes.json) or "vacuum only"; IR/Raman use the field step's Born charges and Raman tensors, not Hirshfeld.
+  The only consumer is the GB fallback, which the webapp would label "GFN2-xTB charges + GB" (wrong). Without monomer
+  Hirshfeld the solvation step raises instead of degrading to vacuum. Recommendation: option (3) with two code
+  changes, before the stage 2 bis chains start: drop the Hirshfeld monomer runs (field step + library) and let the
+  solvation step skip to vacuum with a warning when COSMO data is missing; failed ESP steps are retried once.
   Asked by: supervisor, with a correction from the campaign session (CdSe workflow agents planning).
 - **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
   (today the Thermodynamics tab needs detachment.json). Asked by: campaign session.
