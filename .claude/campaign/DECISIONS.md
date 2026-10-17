@@ -20,6 +20,14 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 (supervisor) · Stage 2 batch 1 (job 9582120, 163 core-h): structure and Hessian done for the 23 earlier dots
+  (6 with one small imaginary mode, -5.9 to -13.5 cm-1, noise); stability and everything after failed: the legacy records
+  had no bulk CIF. Bug of `legacy-records`, fixed (qd-workflows: origin.cif = <material>_zb.cif, tested), the 23 records
+  patched, the same batch resubmitted: job 9582140 (whole node, 6 h cap, <= 3,600 core-h, estimate ~3,000).
+- 2026-10-18 (supervisor) · 8 InP earlier dots show many bond changes in the MACE structure check (4-9 broken, 8-50 formed:
+  In407P336Cl201F12, In407P336Cl213, In415P324Cl273_swap, In149P108Cl123, P-In204P149Cl165_swap, P-In204P153Cl153,
+  P-In52P31Cl63, P-In40P23Cl51; mostly the ones whose methylamine was stripped). Not held: they go on through stages 2 and
+  2 bis like the others; flagged for Ivan to look at in the webapp.
 - 2026-10-18 (supervisor) · Stage 2 bis order and the six chains above 2,000 core-h: approved. Chain scripts exist for all 23
   relaxed earlier dots (<record>/cp2k/chain.sh). Estimates (pilot Cd176, 429 core-h, scaled n_bf^1.72): 17 chains of 96 to
   1,728 core-h, about 8,350 in all, first; then InP-In407P336Cl201F12 2,003, InP-In407P336Cl213 2,003, InP-In415P324Cl273_swap
