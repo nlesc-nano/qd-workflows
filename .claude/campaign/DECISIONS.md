@@ -19,9 +19,6 @@ item to "Decided" with his words.
   keep closed-shell (consistent with the dots) or run MA as triplets (UKS, MULTIPLICITY 3). Affects the MA monomer
   reference (Hirshfeld charges, ESP solvation), not the dots. Recommendation: keep closed-shell, and check the energy
   gap singlet vs triplet for one case (InP) before deciding. Asked by: campaign session.
-- **2026-10-17 · Extend the desorption/adsorption ladder to 2,000 atoms?** Estimate: ~760 GPU-h (~115k core-h)
-  for the 447 dots of 600–2,000 atoms with 12 steps; 3–5x more if the steps grow with the shell. Then every
-  dot has thermodynamics in the webapp. Asked by: campaign session.
 - **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
   (today the Thermodynamics tab needs detachment.json). Asked by: campaign session.
 - **2026-10-17 · Start date of the bep00157 yearly grant** (budget period assumed 2026-10-01 to 2027-09-30).
@@ -29,6 +26,11 @@ item to "Decided" with his words.
 
 ## Decided
 
+- 2026-10-17 · Desorption/adsorption ladder extended to dots up to 2,000 atoms: "The ladder do it up to 2000 atoms" (Ivan).
+  Estimate ~760 GPU-h (~115k core-h) for the 447 dots of 600-2,000 atoms at 12 steps. Order as proposed: ladders
+  of dots up to 600 atoms first; then a calibration batch of 4-6 CdSe/InP dots across 600-2,000 atoms; then the rest,
+  small dots first, in batches under 20,000 core-h a day. Come back to Ivan only if the measured cost is above ~2x the
+  estimate. Not started: stage 1 is not finished.
 - 2026-10-17 · Hyperion: CsPbX3 data (it is on /scratch/iinfante, not in home; 30 paths, 1.32 TiB, 46,385 files, list in
   `proposals/2026-10-17-hyperion-cspbx3.txt`) goes to the archive: "You should just move the files in /scratch/iinfante
   in the archive in hyperion as well where you have 10 TB available" (Ivan). Archive = /data/ivan.infante/cspbx3
