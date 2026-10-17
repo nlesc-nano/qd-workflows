@@ -259,6 +259,7 @@ def test_legacy_records(tmp_path, capsys):
     rec = json.loads((tmp_path / "rec" / "InP-In-In3P2Cl3" / "record.json").read_text())
     assert rec["n_atoms"] == 8 and rec["total_charge"] == 0 and rec["family"] == "III-V"
     assert rec["composition"] == {"In": 3, "P": 2, "Cl": 3} and rec["ligands"] == {"Cl": 3} and rec["reconstruction"] == "vacancy"
+    assert rec["origin"]["cif"] == "InP_zb.cif"                         # the bulk reference of stability/ladder
     assert (tmp_path / "rec" / "InP-In-In3P2Cl3" / "start.xyz").read_text().startswith("8\n")      # last frame, not the first
     dots = {d["id"]: d for d in campaign.load(camp)["dots"]}
     assert dots["InP-In-In3P2Cl3"]["record"] == str(tmp_path / "rec" / "InP-In-In3P2Cl3")

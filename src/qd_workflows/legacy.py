@@ -75,6 +75,7 @@ def record_of(d: dict, symbols: list, coords, geo: Path, stripped: dict | None =
            "size": _size(symbols, coords, set(core)),
            "stages": [{"stage": "start", "file": "start.xyz"}],
            "origin": {"generator": "qdw campaign legacy-records", "geometry": str(geo),
+                      "cif": f"{material}_zb.cif" if PHASE.get(FAMILY.get(material)) == "zinc-blende" else None,
                       "recipe": {"charges": {el: CHARGES[el] for el in comp},
                                  "passivation": {"ligand": "/".join(ligands) or None}}}}
     if d.get("reconstruction"):
