@@ -3,6 +3,12 @@
 Open items need Ivan's answer; the 2-hourly brief lists them under "Needs you". When he answers, move the
 item to "Decided" with his words.
 
+**Standing rule (2026-10-18, Ivan):** "After you do stage 1 , run stage 2 on gpu for mace and stage 2 bis on cpu for the dft
+runs . I will tell you when I am going to sleep but until tomorrow you have to take decisions . You are asking too much to
+me . Many things you can solve by yourself . I just want to be informed". The supervisor decides batches, retries, sizing
+and order within the plan and the 20,000 core-h/day guardrail (split: stage 1 4,000, stage 2 4,000, stage 2 bis 12,000),
+records each decision below as "(supervisor)", and informs Ivan. Deleting data still needs Ivan.
+
 ## Open
 
 - **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
