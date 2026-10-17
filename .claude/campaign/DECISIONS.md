@@ -11,13 +11,16 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
-- **2026-10-17 · Webapp for dots without a ladder:** show the stability section from stability.json alone
-  (today the Thermodynamics tab needs detachment.json). Asked by: campaign session.
-- **2026-10-17 · Start date of the bep00157 yearly grant** (budget period assumed 2026-10-01 to 2027-09-30).
-  Asked by: campaign session.
+- **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
+  104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
+  demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
 
 ## Decided
 
+- 2026-10-18 (supervisor) · Spin state of the MA diatomics: kept closed-shell, as every dot and the MACE references; the MA
+  monomers now only enter the ESP/COSMO reference. Revisit only if a III-V ladder looks wrong.
+- 2026-10-18 (supervisor) · Webapp for dots without a ladder: no longer needed, every dot up to 2,000 atoms gets the ladder.
+- 2026-10-18 (supervisor) · bep00157 budget period kept as 2026-10-01 to 2027-09-30 until the grant letter says otherwise.
 - 2026-10-18 · Library selection for the ledger: the 904 records of the scope (541 II-VI, 306 III-V, 57 IV-VI, reproduced by
   series) are 847 distinct structures: 57 records are the same structure in two series (54 III-V clean in builder and
   builder_100; 3 II-VI identical in a vacancy and a swap series), 14 ids carry two different structures (vacancy and swap).
