@@ -23,6 +23,10 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 (supervisor) · Stage 1 library relax moved atoms by more than 2 Å in 577 of 835 dots (mostly Cl: 7,505 atoms; Hg
+  1,240; largest 7.5 Å in InP-In-In165P139Cl78-clean; relaxation energies -56 to -267 meV/atom in batch 1). Expected for
+  unrelaxed builder geometries; not held. Stage 2's structure step (ligands detached, bonds broken) decides per dot; flagged
+  dots will be listed for Ivan. Snapshots: $C/stage1/status_before_relax.json, status_after_relax.json.
 - 2026-10-18 (supervisor) · Stage 1 complete: all 835 library dots relaxed and converged (fmax <= 0.05 eV/Å), 6 whole-node
   batches (jobs 9582129, 9582147-51, ~3.2 node-hours, ~1,900 core-h). With the 23 earlier dots: 858 relaxed of 862 in the ledger.
 - 2026-10-18 (supervisor) · Stage 2 batch 1 retry (job 9582140): 9 of 23 dots finished every GPU step (the 9 largest); 14 failed
