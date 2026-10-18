@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 18:00 (supervisor, no daily cap any more) · Released: the re-relax jobs 9582814/15 start now. Stage 2 for all 423
+  library dots up to 600 atoms (21 materials; CdSe/InP first; re-relax dots excluded): 10 whole-node jobs s2le600_01..10
+  (9583164-73), fresh configs with the ladder limit 2000, predicted ~4.5 h each (~27k core-h; time model 1.3 x 7.1 n^0.93
+  GPU-s per dot from today's runs). Stage 2 bis: chains of the 66 library dots whose ladder is done (new chain.sh with the
+  own-.wfn restart), 66 whole-node jobs. Ladders above 600 atoms wait for the calibration in 9582815.
 - 2026-10-18 · Budget: "Dont worry about that. Do not self-impose anything, just control it" (Ivan). The 20,000 core-h/day
   guardrail and the 2,000 core-h per-submission gate are removed (SUPERVISOR.md, RULES.md); the supervisor controls the used
   total and the projected year-end use against the 4.5 M core-h allocation and tells Ivan if it goes above.
