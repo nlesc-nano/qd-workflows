@@ -54,3 +54,9 @@ def test_prepare_stripped_and_added_dots(tmp_path):
     t = (tmp_path / "esp" / "dot_add12" / "cp2k.inp").read_text()
     assert "PROJECT  dot_add12" in t and "SCF_GUESS  atomic" in t and "WFN_RESTART_FILE_NAME" not in t
     assert (tmp_path / "esp" / "runs.txt").read_text().split() == names
+    # the stripped/added dots (atomic guess) get an OT outer loop with the same EPS_SCF; the intact dot does not
+    assert "&OUTER_SCF" in t and "&OUTER_SCF" in (tmp_path / "esp" / "dot_12" / "cp2k.inp").read_text()
+    assert "&OUTER_SCF" not in (tmp_path / "esp" / "dot_0" / "cp2k.inp").read_text()
+    o = t.split("&OUTER_SCF")[1]
+    assert "MAX_SCF 10" in o.split("&END OUTER_SCF")[0] and "EPS_SCF 1e-6" in o.split("&END OUTER_SCF")[0]
+    assert t.index("    &SCF") < t.index("&OUTER_SCF") and "MAX_SCF 50" in t

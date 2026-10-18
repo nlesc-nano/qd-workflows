@@ -54,9 +54,23 @@ def _sub(text: str, pattern: str, repl: str) -> str:
     return new
 
 
-def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | None = None) -> str:
+def outer_scf(t: str, inner: int = 50, outer: int = 10) -> str:
+    """OT with an outer loop (inner MAX_SCF `inner`, `outer` restarts of DIIS and the preconditioner, same
+    EPS_SCF): the stripped and added dots from an atomic guess stalled at MAX_SCF 200 without it."""
+    if re.search(r"^\s*&OUTER_SCF", t, flags=re.M):
+        return t
+    eps = re.search(r"^\s*EPS_SCF\s+(\S+)", t, flags=re.M).group(1)
+    t, n = re.subn(r"^(\s*MAX_SCF\s+)\d+", rf"\g<1>{inner}", t, count=1, flags=re.M)
+    if not n:
+        t = _sub(t, r"^(\s*)(EPS_SCF\s+\S+.*)$", rf"\g<1>\g<2>\n\g<1>MAX_SCF {inner}")
+    return _sub(t, r"^(\s*)&SCF\s*$", rf"\g<0>\n\g<1>  &OUTER_SCF\n\g<1>    EPS_SCF {eps}\n\g<1>    MAX_SCF {outer}\n"
+                rf"\g<1>  &END OUTER_SCF")
+
+
+def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | None = None, outer: bool = False) -> str:
     """The chain's single point as an energy run printing the potential and density cubes;
-    scratch: atomic guess instead of the geo_opt .wfn (another structure); cell: its own box."""
+    scratch: atomic guess instead of the geo_opt .wfn (another structure); cell: its own box;
+    outer: an OT outer loop (outer_scf; the stripped/added dots, not the monomers of the library)."""
     t = _sub(base, r"^(\s*PROJECT\s+)\S+", rf"\g<1>{project}")
     t = _sub(t, r"^(\s*RUN_TYPE\s+)\S+", r"\g<1>ENERGY")
     if re.search(r"^    &PRINT\s*$", t, flags=re.M):          # a &DFT &PRINT already there
@@ -68,7 +82,7 @@ def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | Non
         t = re.sub(r"^\s*WFN_RESTART_FILE_NAME.*\n", "", t, flags=re.M)
     if cell:
         t = _sub(t, r"^(\s*ABC\s+).*$", rf"\g<1>{cell}")
-    return t
+    return outer_scf(t) if outer else t
 
 
 def _frames(path: Path) -> list:
@@ -103,7 +117,7 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
         k = int(m.group(1)) if m else 0
         sym, pts = read_xyz(stripped)
         name = f"dot_{k}"
-        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts)), sym, pts,
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), outer=True), sym, pts,
                f"fully stripped dot, {k} units removed (MACE ladder)")
         names.append(name)
     if added:
@@ -111,7 +125,7 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
         k = int(m.group(1)) if m else 0
         sym, pts = read_xyz(added)
         name = f"dot_add{k}"
-        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts)), sym, pts,
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), outer=True), sym, pts,
                f"fully added dot, {k} units added (MACE adsorption ladder)")
         names.append(name)
     if monomers:
