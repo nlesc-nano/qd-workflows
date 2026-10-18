@@ -17,6 +17,10 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 21:50 (supervisor) · Watchdog findings: (1) the ladder of large dots is CPU-bound in phases (Python site search,
+  GPUs at 0 % for long stretches; 7-12 GB GPU memory per process): the 342 queued dots of 600-2,000 atoms replanned with 8
+  groups per node (2 processes per GPU), 21 jobs s2gt600b_01..21; the 7 running s2gt600 jobs (61 dots) continue. (2)
+  CdSe-Cd-Cd201Se128Cl146 geo_opt plateau under the old criteria (RMS gradient 3-5e-5): resubmitted with forces-only (9583695).
 - 2026-10-18 · DFT geo_opt plateaus: "when dft plateu and you think has converged you can accept the structure" (Ivan). Done:
   geo_opt converges on the forces only (MAX_FORCE 4.5e-4, RMS_FORCE 3.0e-4 Ha/bohr kept; MAX_DR, RMS_DR 1.0 bohr, i.e. off):
   new chains (qd-workflows inputs.geo_motion) and the 55 unfinished geo_opt inputs (old kept as cp2k.inp.before-forces-only);
