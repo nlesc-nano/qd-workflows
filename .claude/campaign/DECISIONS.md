@@ -11,12 +11,20 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
+- **2026-10-19 · Field run SCF stalls just above its threshold (CdSe-Cd-Cd183Se169Cl28-clean, field/fyzpp).** The field runs
+  use EPS_SCF 1e-7 (precise forces for the finite differences); this one creeps at 1.5e-7 with OT SD (energy -4e-8 Ha per
+  step) for 200 cycles; the restart from its own .wfn falls back into the same creep. Options: (a) accept a field run that
+  stalls below 2e-7 (precise enough for the finite differences, E = 0.002 a.u.); (b) leave the dot without DFT IR/Raman.
+  Recommendation: (a). Needs Ivan (SCF settings).
 - **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
   104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
   demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
 
 ## Decided
 
+- 2026-10-19 01:30 (supervisor) · My error: the 42 library chains resubmitted on 2026-10-18 got a forced 3 h wall time (and the
+  watchdog 4 h), overriding the cost law (4-8 h for 400-530 atoms): many timed out and were resubmitted. The watchdog now uses
+  each chain's own wall time (cost law), at least 3 h.
 - 2026-10-18 22:50 (supervisor) · Watchdog now fixes the routine cases itself (NHR script logs/watch_fix_remote.sh, run every
   30 min from the supervisor session): a chain that timed out or whose geo_opt stopped unconverged is resubmitted once (4 h;
   logs/watchdog_retries.txt); a running geo_opt with converged forces under the old criteria is restarted (forces-only);
