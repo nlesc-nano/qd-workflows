@@ -286,3 +286,17 @@ def test_legacy_records_strip_extra(tmp_path):
     assert rec["n_atoms"] == 8 and rec["total_charge"] == 0
     assert rec["origin"]["stripped_atoms"] == {"N": 1, "C": 1, "H": 3}
     assert (tmp_path / "rec" / "InP-In-In3P2Cl3" / "start.xyz").read_text().startswith("8\n")
+
+
+def test_props_prepare_takes_the_profile_settings(tmp_path):
+    from qd_workflows import props
+    from qd_workflows.cluster import load_cluster
+    rec = tmp_path / "rec" / "CdSe-Se-Cd2Se2Cl0-clean"
+    rec.mkdir(parents=True)
+    (rec / "record.json").write_text(json.dumps({"id": rec.name, "n_atoms": 4}))
+    (rec / "start.xyz").write_text("4\nx\nCd 0 0 0\nSe 2.6 0 0\nCd 0 2.6 0\nSe 2.6 2.6 0\n")
+    cl = load_cluster("nhr_campaign")
+    assert cl["props"]["settings"]["detach_max_atoms"] == 2000
+    props.prepare([str(rec)], str(tmp_path / "job"), cl, steps=["detachment"])
+    cfg = yaml.safe_load((tmp_path / "job" / "config.yaml").read_text())
+    assert cfg["props"]["settings"]["detach_max_atoms"] == 2000 and cfg["props"]["settings"]["solvation_charges"] == "dft"

@@ -72,6 +72,8 @@ props:
     - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/cifs
     - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/library/cifs
   refs: /scratch/projects/bep00157/qdw_campaign/references   # MACE references and the MACE monomer library
+  settings:                    # Orchestr.AI settings of every campaign props job
+    detach_max_atoms: 2000     # desorption/adsorption ladder up to 2,000 atoms (Ivan, 2026-10-17)
   cpu:
     partition: cpu-clx
     cpus: 96

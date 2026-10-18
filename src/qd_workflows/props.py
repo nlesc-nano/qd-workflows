@@ -111,7 +111,8 @@ def prepare(records, out_dir: str, cluster: dict, *, steps=None, time: str | Non
              "mace_head": pp.get("head", "omat_pbe"),
              "props": {"records": recs, "steps": stage_steps, "force": False,
                        # md runs only for the MD subset (wigner always)
-                       "settings": {"device": "auto", "dtype": "float64", "md_enabled": bool(md), **DFT_SETTINGS}}}
+                       "settings": {"device": "auto", "dtype": "float64", "md_enabled": bool(md), **DFT_SETTINGS,
+                                    **(pp.get("settings") or {})}}}   # the profile's Orchestr.AI settings win
         if upstream:
             c["props"]["upstream"] = upstream
         c["props"]["max_atoms"] = limit
