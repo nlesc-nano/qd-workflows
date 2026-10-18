@@ -17,6 +17,14 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 · SCF that stops at MAX_SCF 200 (field and ESP runs): "dont use outer OT as it is not very good. If it hits 200
+  cycles just restart it from that .wfn and then it will converge in few cycles" and "Do not change preconditioner, no looser
+  and tighter thresholds, etc. Just as I told you . After hitting 200 cycles, the you restart it." (Ivan). Done: outer loop
+  removed; the field runs (Orchestr.AI 7db1fa8) and the dot ESP runs (qd-workflows 86f7c9c) write their own .wfn every 50
+  cycles; the chain restarts a run that ended "SCF run NOT converged" once from it (`qdw cp2k scf-restart`: SCF_GUESS restart
+  + its own WFN_RESTART_FILE_NAME, nothing else), then removes the .wfn of converged runs. Monomer inputs unchanged. The 3 ESP
+  runs that had already converged with the outer loop (Cd55 dot_12, Cd95 dot_add12, In31 dot_12: 106, 115, 87 steps) are
+  kept; Cd333 field/fxzpp is running with it. Chains generated from now on use the new chain.sh.
 - 2026-10-18 ~14:00 (supervisor) · DFT problems decided:
   - Cd373 (815 atoms): out of memory in the TREXIO single point (288 GB/node). Truncated trexio/orbitals.h5 moved aside
     (orbitals.h5.truncated-oom-9582423), resubmit on cpu-clx:large --mem=740G, 4 h. Large dots will need the large-memory
