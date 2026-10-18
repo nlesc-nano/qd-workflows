@@ -17,6 +17,17 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 ~14:00 (supervisor) · DFT problems decided:
+  - Cd373 (815 atoms): out of memory in the TREXIO single point (288 GB/node). Truncated trexio/orbitals.h5 moved aside
+    (orbitals.h5.truncated-oom-9582423), resubmit on cpu-clx:large --mem=740G, 4 h. Large dots will need the large-memory
+    partition for TREXIO: to build into the chain generator (memory by atom count) before the library chains above ~800 atoms.
+  - In365: heap corruption at CP2K exit after a converged geo_opt: one identical resubmit.
+  - InP-P-In204P153Cl153: a second resubmit allowed if it times out while geo_opt still converges.
+  - SCF stalls at MAX_SCF 200 (Cd333 field fxzpp; ESP of the stripped/added dots of Cd55, Cd95, In31): OT outer loop
+    (inner 50 x outer 10, same EPS_SCF) added to the field runs (Orchestr.AI e41634e) and to the stripped/added-dot ESP runs
+    (qd-workflows 6cb662c); monomer inputs unchanged (the library still links). The 4 run inputs rewritten, chains resubmitted.
+  - Stage 3 batch_01 failed "detachment is not cached": the ladder-limit change (600 -> 2000) changes the detachment key for
+    every dot. Detachment reruns on the GPU (identical results) for the 10 dots ready for stage 3 first, then the others.
 - 2026-10-18 13:20 (supervisor) · The ladder had been skipped above 600 atoms (Orchestr.AI default detach_max_atoms 600; the
   campaign never raised it), against Ivan's decision of 2026-10-17. Fixed: qd-workflows 0f99e8d (profile props.settings go into
   every job; nhr_campaign sets detach_max_atoms 2000), tested, deployed. Dots above 600 atoms already through stage 2
