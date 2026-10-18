@@ -22,7 +22,9 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
   and tighter thresholds, etc. Just as I told you . After hitting 200 cycles, the you restart it." (Ivan). Done: outer loop
   removed; the field runs (Orchestr.AI 7db1fa8) and the dot ESP runs (qd-workflows 86f7c9c) write their own .wfn every 50
   cycles; the chain restarts a run that ended "SCF run NOT converged" once from it (`qdw cp2k scf-restart`: SCF_GUESS restart
-  + its own WFN_RESTART_FILE_NAME, nothing else), then removes the .wfn of converged runs. Monomer inputs unchanged. The 3 ESP
+  + its own WFN_RESTART_FILE_NAME, nothing else). The .wfn are kept: "I would keep the .wfn and remove the wfn backups only.
+  We check how much disk is taken afterwards and decide what to do" (Ivan); no backups are written (BACKUP_COPIES 0),
+  qd-workflows 50f2f21. Monomer inputs unchanged. The 3 ESP
   runs that had already converged with the outer loop (Cd55 dot_12, Cd95 dot_add12, In31 dot_12: 106, 115, 87 steps) are
   kept; Cd333 field/fxzpp is running with it. Chains generated from now on use the new chain.sh.
 - 2026-10-18 ~14:00 (supervisor) · DFT problems decided:
