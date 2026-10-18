@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 19:00 (supervisor) · NHR QOS normal allows 32 running jobs per user (the bottleneck now, not nodes; scontrol top is
+  not allowed): QDEX reruns kept at normal priority, pending library chains niced (Nice=500) so the reruns start first.
+  In365 completed on the large node (TREXIO OK) but before the CIF fix: QDEX rerun 9583360. In149P108 geo_opt still converging
+  after 5.4 h: continues (9583361). 6 library chains that hit the old 1 h limit resubmitted with 3 h. To consider: several
+  small-dot chains per job (each on its own whole node, or one after another) to use fewer of the 32 job slots.
 - 2026-10-18 18:30 (supervisor) · No fuzzy dashboards for the earlier dots: each chain copies record.json when it is created,
   and the 23 earlier chains were created before the legacy records got origin.cif, so QDEX ran with run_fuzzy false. Fixed:
   CIF added to the 23 chain records (running chains pick it up at their QDEX step); the 13 finished chains rerun only QDEX
