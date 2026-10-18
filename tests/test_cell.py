@@ -52,3 +52,15 @@ def test_cell_abc_of_a_dot_and_of_a_monomer():
     assert all(grid_points(x) * grid_spacing() == pytest.approx(x, abs=1e-6) for x in abc)
     raw = [float(x) for x in cell_abc(pts, cutoff_ry=None).split()]
     assert raw == [36.5, 36.4, 36.4] and all(a >= r for a, r in zip(abc, raw))
+
+
+def test_geo_opt_converges_on_the_forces_only():
+    from qd_workflows.cp2k import inputs
+    m = inputs.geo_motion(False)
+    assert "MAX_FORCE 4.5E-4" in m and "RMS_FORCE 3.0E-4" in m and "MAX_DR 1.0" in m and "OPTIMIZER" not in m
+    assert "OPTIMIZER LBFGS" in inputs.geo_motion(True)
+    old = "&FORCE_EVAL\n&END\n\n&GLOBAL\n  RUN_TYPE GEO_OPT\n&END\n"            # chains made before: no &MOTION
+    new = inputs.forces_only(old)
+    assert new.index("&MOTION") < new.index("&GLOBAL") and "RMS_DR 1.0" in new and inputs.forces_only(new) == new
+    lb = inputs.forces_only("&MOTION\n  &GEO_OPT\n    OPTIMIZER LBFGS\n  &END\n&END\n&GLOBAL\n&END\n")
+    assert lb.count("&GEO_OPT") == 1 and "MAX_DR 1.0" in lb and "OPTIMIZER LBFGS" in lb

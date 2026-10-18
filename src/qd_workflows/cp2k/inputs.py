@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -71,12 +72,30 @@ XC = {
       &END
     &END""",
 }
-LBFGS_MOTION = """&MOTION
-  &GEO_OPT
-    OPTIMIZER LBFGS
-  &END
-&END
+# Converged on the forces only (CP2K's force limits; the step limits loose): on the flat energy surface of
+# Cl-rich dots BFGS kept stepping 0.04 bohr for 20+ steps with the forces 4x below the limit, then lost
+# them again (campaign 2026-10-18, Ivan: a plateau with converged forces is accepted).
+GEO_CONVERGENCE = """    MAX_FORCE 4.5E-4
+    RMS_FORCE 3.0E-4
+    MAX_DR 1.0
+    RMS_DR 1.0
 """
+
+
+def geo_motion(lbfgs: bool) -> str:
+    return "&MOTION\n  &GEO_OPT\n" + ("    OPTIMIZER LBFGS\n" if lbfgs else "") + GEO_CONVERGENCE + "  &END\n&END\n"
+
+
+def forces_only(inp: str) -> str:
+    """An existing geo_opt input converged on the forces only (GEO_CONVERGENCE), for chains made before."""
+    if "MAX_DR" in inp:
+        return inp
+    if re.search(r"^\s*&GEO_OPT\s*$", inp, flags=re.M):
+        return re.sub(r"^(\s*&GEO_OPT\s*\n)", lambda m: m.group(1) + GEO_CONVERGENCE, inp, count=1, flags=re.M)
+    return re.sub(r"^(&GLOBAL\s*)$", geo_motion(False).replace("\\", "\\\\") + r"\n\g<1>", inp, count=1, flags=re.M)
+
+
+LBFGS_MOTION = geo_motion(True)
 
 
 # One GAPW single point (CUTOFF 400 Ry, 4 grids, non-periodic MULTIPOLE cell) holds the cell's
@@ -233,7 +252,7 @@ def prepare(
     if step == "geo_opt":
         template = "geo_opt.inp"
         use_lbfgs = optimizer.upper() == "LBFGS" or (optimizer == "auto" and len(symbols) > LBFGS_ABOVE_ATOMS)
-        values["MOTION"] = LBFGS_MOTION if use_lbfgs else ""
+        values["MOTION"] = geo_motion(use_lbfgs)
     elif step == "charges":
         template = "single_point_ot.inp"
         values.update({"DFT_PRINT": CHARGES_PRINT, "SCF_PRINT": IGNORE_SCF_FAILURE, "FORCE_EVAL_PRINT": "",
