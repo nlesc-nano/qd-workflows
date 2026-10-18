@@ -135,7 +135,6 @@ if [ "{{FIELD}}" = "1" ]; then
         done
     fi
     todo=$(orch_field status field)
-    [ "$todo" != "all done" ] || rm -f field/*/*-RESTART.wfn       # converged: the .wfn are not needed any more
     [ "$todo" = "all done" ] || { echo "[chain] field runs incomplete"; why field $todo; plog event chain "ERROR field runs incomplete: $todo (read field/<run>/srun.log)"; exit 1; }
     [ -z "${t:-}" ] || plog event chain "field done: $(ls -d field/*/ | wc -l) runs" --since $t
 fi
@@ -191,7 +190,6 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
     fi
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" = "all done" ]; then
-        rm -f esp/dot_*/*-RESTART.wfn                                # converged: the .wfn are not needed any more
         qdw cp2k esp collect esp -o solvation.json > /dev/null && echo "[chain] solvation.json"
         plog event chain "esp done: solvation.json ($(ls -d esp/*/ | wc -l) runs)" ${t:+--since $t}
     else
