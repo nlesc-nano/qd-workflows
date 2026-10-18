@@ -295,12 +295,13 @@ def chain_time(n_bf: int, cores: int, cap: str = "12:00:00") -> str:
     hyperion runs: 1.3 core-h at 5.9k basis functions, 3.6-4.8 at 20k, 9-11 at 31k, 22-38 at
     34-43k, i.e. ~4.1e-7 n_bf^1.72, conservative in the middle): ~160 step-equivalents
     (60 geo_opt steps, the field runs at ~5 steps each sharing the cores, PDOS, TREXIO),
-    1.5 x for safety, at least one hour, at most `cap`. A flat 12 h kept a 35-atom chain
-    waiting for hours for a backfill slot.
+    1.5 x for safety, at least three hours, at most `cap`. A flat 12 h kept a 35-atom chain
+    waiting for hours for a backfill slot; one hour was too short for the whole chain with ESP and
+    QDEX (campaign 2026-10-18: 92-357 atoms took 45 min to 1 h 52 min, 5 of 6 small chains timed out).
     """
     hours = 1.5 * 160 * 4.1e-7 * max(n_bf, 1) ** 1.72 / max(cores, 1)
     h, m, s = (int(x) for x in cap.split(":"))
-    hours = min(max(hours, 1.0), h + m / 60 + s / 3600)
+    hours = min(max(hours, 3.0), h + m / 60 + s / 3600)
     total = int(round(hours * 60))
     return f"{total // 60:02d}:{total % 60:02d}:00"
 
