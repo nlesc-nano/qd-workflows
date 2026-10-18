@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 22:50 (supervisor) · Watchdog now fixes the routine cases itself (NHR script logs/watch_fix_remote.sh, run every
+  30 min from the supervisor session): a chain that timed out or whose geo_opt stopped unconverged is resubmitted once (4 h;
+  logs/watchdog_retries.txt); a running geo_opt with converged forces under the old criteria is restarted (forces-only);
+  every fix is a campaign-log line. It wakes the supervisor for anything else: other failures, a second failure of a chain,
+  overloaded GPU nodes, idle GPUs (except the known CPU phases of the 4-group ladder jobs), geo_opt > 250 steps unconverged.
 - 2026-10-18 21:50 (supervisor) · Watchdog findings: (1) the ladder of large dots is CPU-bound in phases (Python site search,
   GPUs at 0 % for long stretches; 7-12 GB GPU memory per process): the 342 queued dots of 600-2,000 atoms replanned with 8
   groups per node (2 processes per GPU), 21 jobs s2gt600b_01..21; the 7 running s2gt600 jobs (61 dots) continue. (2)
