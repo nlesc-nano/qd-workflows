@@ -17,6 +17,9 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 19:30 (supervisor) · QDEX reruns with fuzzy: the 10 published earlier dots done in 1-3 min each (2 fuzzy dashboards
+  each); republished in the local webapp (dft/ re-imported, index rebuilt, still 1,785 structures); Electronic structure tab
+  checked (fuzzy bands with bulk-band overlay). Cd333, Cd373, In149P104_swap (and In365, In204P153 when their jobs end) follow.
 - 2026-10-18 19:00 (supervisor) · NHR QOS normal allows 32 running jobs per user (the bottleneck now, not nodes; scontrol top is
   not allowed): QDEX reruns kept at normal priority, pending library chains niced (Nice=500) so the reruns start first.
   In365 completed on the large node (TREXIO OK) but before the CIF fix: QDEX rerun 9583360. In149P108 geo_opt still converging
