@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 18:30 (supervisor) · No fuzzy dashboards for the earlier dots: each chain copies record.json when it is created,
+  and the 23 earlier chains were created before the legacy records got origin.cif, so QDEX ran with run_fuzzy false. Fixed:
+  CIF added to the 23 chain records (running chains pick it up at their QDEX step); the 13 finished chains rerun only QDEX
+  (old qdex/ and qdex_trap/ kept as *.nofuzzy-20261018, .done as .done.nofuzzy-20261018): jobs 9583286-98, 2 h. The webapp
+  pages are republished when they finish. Library chains carry the builder CIF (not affected).
 - 2026-10-18 18:00 (supervisor, no daily cap any more) · Released: the re-relax jobs 9582814/15 start now. Stage 2 for all 423
   library dots up to 600 atoms (21 materials; CdSe/InP first; re-relax dots excluded): 10 whole-node jobs s2le600_01..10
   (9583164-73), fresh configs with the ladder limit 2000, predicted ~4.5 h each (~27k core-h; time model 1.3 x 7.1 n^0.93
