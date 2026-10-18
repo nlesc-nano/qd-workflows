@@ -17,6 +17,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 · Webapp: "yes, in the webapp locally" (Ivan). The 10 finished earlier dots are in the local QDSpaceWebApp
+  (not committed, not pushed): the 6 CdSe in public/II-VI/CdSe/builder/<id>/ (props/ + dft/ next to the builder record; their
+  MACE relax started from the earlier DFT geometry), the 4 InP in a new series public/III-V/InP/builder_legacy/<id>/ (legacy
+  record + fingerprint); props/solvation_cubes.json = the chain's solvation.json; dft/ by import_dft_results.py;
+  library_index.json rebuilt by ingest_library.py (1,781 -> 1,785 structures: 4 new, 6 updated, nothing else). Pages checked in
+  the dev server (CdSe Cd156, InP P-In52: MACE + DFT PBE + QDEX, excitons, stability with DFT COSMO). Cd55 and Cd95 will be
+  republished after their re-relax.
 - 2026-10-18 · Imaginary modes: "Those with imaginary freqs I would try to relax again from the last relaxed point and tighten a
   bit more the force threshold" (Ivan). Done: Orchestr.AI setting relax_continue (relax from props/relaxed.xyz; in run.py, so
   steps/relax.py and every other dot's cache are unchanged), deployed. The 21 dots with imaginary modes (of 125 with a Hessian,
