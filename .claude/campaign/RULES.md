@@ -60,7 +60,8 @@ IV–VI: clean. The NHR ledger (`/scratch/projects/bep00157/qdw_campaign/campaig
 ## What needs Ivan's approval (return it to the supervisor as a question)
 
 - Any change of settings, inputs, cutoffs, cells, code or profiles.
-- A submission estimated above **2,000 core-h**, or more than **20,000 core-h** in one day for the campaign.
+- A projected year-end use above the bep00157 allocation (4.5 M core-h). There is no daily or per-submission cap; estimate
+  each batch and log it.
 - Cancelling a job; deleting or moving any file; anything in another user's or the pilot's directories.
 - git push, merges, pull requests.
 

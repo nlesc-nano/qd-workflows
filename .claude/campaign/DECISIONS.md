@@ -6,7 +6,7 @@ item to "Decided" with his words.
 **Standing rule (2026-10-18, Ivan):** "After you do stage 1 , run stage 2 on gpu for mace and stage 2 bis on cpu for the dft
 runs . I will tell you when I am going to sleep but until tomorrow you have to take decisions . You are asking too much to
 me . Many things you can solve by yourself . I just want to be informed". The supervisor decides batches, retries, sizing
-and order within the plan and the 20,000 core-h/day guardrail (split: stage 1 4,000, stage 2 4,000, stage 2 bis 12,000),
+and order within the plan and the yearly allocation (no daily cap since 2026-10-18 evening),
 records each decision below as "(supervisor)", and informs Ivan. Deleting data still needs Ivan.
 
 ## Open
@@ -17,6 +17,9 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 · Budget: "Dont worry about that. Do not self-impose anything, just control it" (Ivan). The 20,000 core-h/day
+  guardrail and the 2,000 core-h per-submission gate are removed (SUPERVISOR.md, RULES.md); the supervisor controls the used
+  total and the projected year-end use against the 4.5 M core-h allocation and tells Ivan if it goes above.
 - 2026-10-18 17:30 (supervisor) · Chains: Cd333 completed (its field fxzpp converged with the outer loop before the policy
   change) and InP-In149P104Cl135_swap completed. InP-In365P288Cl231 failed again: TREXIO out of memory (884 atoms), as Cd373;
   truncated orbitals moved aside, resubmitted on cpu-clx:large, 2 nodes, --mem=700G (740G is not accepted): job 9583159.

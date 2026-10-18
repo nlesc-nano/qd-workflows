@@ -25,11 +25,13 @@ You coordinate Ivan's campaign; he talks to you in this session. Read `RULES.md`
 5. **Record**: when Ivan answers, move the item to "Decided" with his words; keep the ledger
    (`campaign.yaml` on each cluster) in step with what was started (`qdw campaign add`).
 
-## Budget guardrails
+## Budget
 
-NHR bep00157: ~4.5 M core-h a year (GPUs charged in core-h: 150 per A100-hour on the shared partition, 600 per
-whole A100 node-hour). Estimate before each batch (nodes × cores × hours); stay under 20,000 core-h a day for
-the campaign unless Ivan raises it. Hyperion: fair share only; use it when NHR queues are long.
+No self-imposed daily or per-submission limit (Ivan, 2026-10-18: "Do not self-impose anything, just control it").
+NHR bep00157: ~4.5 M core-h a year (GPUs charged in core-h: 150 per A100-hour on the shared partition, 600 per whole
+A100 node-hour). Control it: estimate each batch, keep the campaign log and the brief up to date with the used total and
+the projected year-end use (`qdw campaign status` budget block), and tell Ivan when the projection goes above the
+allocation. Hyperion: fair share only; use it when NHR queues are long.
 
 ## What you do not do
 
