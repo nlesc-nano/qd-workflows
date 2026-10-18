@@ -17,6 +17,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 (supervisor) · Stage 2 batch 1, second retry (job 9582407) failed again for the same 14 dots: the structure step
+  had been cached before the CIF was added (its cache key ignored the CIF), so bulk_bond was None and the detachment step
+  failed on float(None). Fixed: Orchestr.AI 345cfcc (the bulk CIF enters the cache key of structure, vibspec, stability,
+  detachment, solvation, sites, report; relax unaffected, so stage 1 stays cached), tested and deployed. Resubmitted batch 1:
+  job 9582434 (all 23 redo structure and the following steps). First library batch of stage 2: job 9582435, the 40 smallest
+  CdSe/InP dots (35-217 atoms), whole node, 3 h cap (<= 1,800 core-h). Today so far: stage 1 ~1,930, stage 2 ~750 + up to
+  5,400 (two jobs), DFT ~8,350 (17 chains): under 20,000.
 - 2026-10-18 · NHR submissions: "Submit to nhr and also grant permission to the agents to submit too" (Ivan). Submitted by the
   supervisor: stage 2 batch 1 retry, job 9582407 (14 dots left, with the reference lock fix); the 17 smaller DFT chains, jobs
   9582408-9582424 (~8,350 core-h estimated). The supervisor cannot change permission settings itself (blocked as
