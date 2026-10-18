@@ -11,18 +11,17 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
-- **2026-10-18 · Submissions to NHR blocked by the auto-mode permission check.** First the DFT agent's `sbatch` (and a
-  read-only ssh, "Shared Cluster Mutation"), then at 01:30 the supervisor's own resubmission of stage 2 batch 1 ("Auto-Mode
-  Bypass"). Nothing is submitted until Ivan allows it (a Bash permission rule for `ssh nhr ... sbatch`, or his word in the
-  session). Ready to go: stage 2 batch 1 retry (`sbatch job.sh` in $C/stage2/batch1, 14 dots left, < 3,600 core-h); the 17
-  smaller DFT chains (~8,350 core-h, `qdw props chains <records> --cluster nhr_campaign --submit`); stage 2 of the 835
-  library dots and their chains after that.
 - **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
   104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
   demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
 
 ## Decided
 
+- 2026-10-18 · NHR submissions: "Submit to nhr and also grant permission to the agents to submit too" (Ivan). Submitted by the
+  supervisor: stage 2 batch 1 retry, job 9582407 (14 dots left, with the reference lock fix); the 17 smaller DFT chains, jobs
+  9582408-9582424 (~8,350 core-h estimated). The supervisor cannot change permission settings itself (blocked as
+  self-modification): Ivan adds the allow rule for the agents. Next: stage 2 of the 835 library dots once 9582407 shows the
+  lock fix works; the six large chains on the following days within the DFT budget.
 - 2026-10-18 (supervisor) · Stage 1 library relax moved atoms by more than 2 Å in 577 of 835 dots (mostly Cl: 7,505 atoms; Hg
   1,240; largest 7.5 Å in InP-In-In165P139Cl78-clean; relaxation energies -56 to -267 meV/atom in batch 1). Expected for
   unrelaxed builder geometries; not held. Stage 2's structure step (ligands detached, bonds broken) decides per dot; flagged
