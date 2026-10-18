@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 · DFT geo_opt plateaus: "when dft plateu and you think has converged you can accept the structure" (Ivan). Done:
+  geo_opt converges on the forces only (MAX_FORCE 4.5e-4, RMS_FORCE 3.0e-4 Ha/bohr kept; MAX_DR, RMS_DR 1.0 bohr, i.e. off):
+  new chains (qd-workflows inputs.geo_motion) and the 55 unfinished geo_opt inputs (old kept as cp2k.inp.before-forces-only);
+  a resubmitted chain continues from its last geometry with it. InP-P-In40P23Cl51-reconstructed (forces converged for 20
+  steps, still stepping) resubmitted (9583602); InP-In149P108Cl123 picks it up when its queued job starts.
 - 2026-10-18 20:40 (supervisor) · Efficiency problem found after Ivan asked why a re-relax took hours: the stage 2 job.sh (copied
   from library_01) set OMP_NUM_THREADS=144 for each of the 4 GPU processes of a node: load 61-341 on 144 cores, GPUs 0-76 %;
   BFGS (used up to 500 atoms) at 47 s per step for Cd181 (131 steps, no oscillation). Fixed: 8 threads per GPU process
