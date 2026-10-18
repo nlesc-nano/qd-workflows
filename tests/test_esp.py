@@ -54,9 +54,28 @@ def test_prepare_stripped_and_added_dots(tmp_path):
     t = (tmp_path / "esp" / "dot_add12" / "cp2k.inp").read_text()
     assert "PROJECT  dot_add12" in t and "SCF_GUESS  atomic" in t and "WFN_RESTART_FILE_NAME" not in t
     assert (tmp_path / "esp" / "runs.txt").read_text().split() == names
-    # the stripped/added dots (atomic guess) get an OT outer loop with the same EPS_SCF; the intact dot does not
-    assert "&OUTER_SCF" in t and "&OUTER_SCF" in (tmp_path / "esp" / "dot_12" / "cp2k.inp").read_text()
-    assert "&OUTER_SCF" not in (tmp_path / "esp" / "dot_0" / "cp2k.inp").read_text()
-    o = t.split("&OUTER_SCF")[1]
-    assert "MAX_SCF 10" in o.split("&END OUTER_SCF")[0] and "EPS_SCF 1e-6" in o.split("&END OUTER_SCF")[0]
-    assert t.index("    &SCF") < t.index("&OUTER_SCF") and "MAX_SCF 50" in t
+    # the dots write their own .wfn every 50 cycles (to restart at MAX_SCF); no outer loop
+    for n in names:
+        tn = (tmp_path / "esp" / n / "cp2k.inp").read_text()
+        assert "QS_SCF 50" in tn and "BACKUP_COPIES 0" in tn and "&OUTER_SCF" not in tn
+
+
+
+def test_scf_restart_goes_on_from_the_runs_own_wfn(tmp_path):
+    d = tmp_path / "dot_12"
+    d.mkdir()
+    inp = esp.esp_input(BASE, "dot_12", scratch=True, restartable=True)
+    (d / "cp2k.inp").write_text(inp)
+    (d / "cp2k.out").write_text(" *** SCF run converged in 9 steps ***\n")
+    assert esp.scf_restart(d) == "not an SCF failure"
+    (d / "cp2k.out").write_text(" SCF run NOT converged. To continue the calculation regardless\n")
+    assert esp.scf_restart(d) == "no dot_12-RESTART.wfn"
+    (d / "dot_12-RESTART.wfn").write_text("x")
+    assert esp.scf_restart(d) == "restarted"
+    t = (d / "cp2k.inp").read_text()
+    assert "SCF_GUESS  restart" in t and "WFN_RESTART_FILE_NAME dot_12-RESTART.wfn" in t
+    rest = "\n".join(ln for ln in t.splitlines() if "WFN_RESTART_FILE_NAME" not in ln) + "\n"
+    assert rest.replace("SCF_GUESS  restart", "SCF_GUESS  atomic") == inp                    # nothing else changed
+    assert (d / "cp2k.out.unconverged").is_file() and not (d / "cp2k.out").exists()
+    (d / "cp2k.out").write_text(" SCF run NOT converged.\n")
+    assert esp.scf_restart(d) == "already restarted once"

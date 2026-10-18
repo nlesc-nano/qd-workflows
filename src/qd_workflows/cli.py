@@ -47,6 +47,10 @@ def _cp2k(args) -> int:
             data = esp.write(args.dir, args.output)
             print(json.dumps({n: {k: round(v, 4) if isinstance(v, float) else v for k, v in s.items()}
                               for n, s in data["species"].items()}, indent=1))
+    elif args.action == "scf-restart":
+        from .cp2k import esp
+        for d in args.dirs:
+            print(f"{d}: {esp.scf_restart(d)}")
     elif args.action == "label":
         from .xyz import read_xyz
         symbols, _ = read_xyz(args.xyz)
@@ -285,6 +289,9 @@ def main(argv=None) -> int:
     p = ep.add_parser("collect", help="COSMO energy and isosurface area of every run")
     p.add_argument("dir", help='directory of the esp runs')
     p.add_argument("-o", "--output", required=True, help='solvation.json to write')
+
+    p = cp.add_parser("scf-restart", help="runs stopped with 'SCF run NOT converged': restart once from their own .wfn")
+    p.add_argument("dirs", nargs="+", help="run directories")
 
     p = cp.add_parser("label", help="energy and forces of a sample single point")
     p.add_argument("xyz", help='structure of the single point')

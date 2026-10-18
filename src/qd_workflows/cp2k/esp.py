@@ -54,23 +54,51 @@ def _sub(text: str, pattern: str, repl: str) -> str:
     return new
 
 
-def outer_scf(t: str, inner: int = 50, outer: int = 10) -> str:
-    """OT with an outer loop (inner MAX_SCF `inner`, `outer` restarts of DIIS and the preconditioner, same
-    EPS_SCF): the stripped and added dots from an atomic guess stalled at MAX_SCF 200 without it."""
-    if re.search(r"^\s*&OUTER_SCF", t, flags=re.M):
+RESTART_EACH = 50      # SCF cycles between .wfn writes of the field and dot ESP runs
+
+
+def restart_print(t: str) -> str:
+    """Write the run's own .wfn every RESTART_EACH SCF cycles (no backups), so a run stopped at MAX_SCF
+    can go on from where it stopped (scf_restart) instead of from the start."""
+    block = (r"\g<1>&RESTART\n\g<1>  BACKUP_COPIES 0\n\g<1>  &EACH\n"
+             rf"\g<1>    QS_SCF {RESTART_EACH}\n\g<1>  &END EACH")
+    t, n = re.subn(r"^(\s*)&RESTART OFF\s*$", block, t, count=1, flags=re.M)
+    if n:
         return t
-    eps = re.search(r"^\s*EPS_SCF\s+(\S+)", t, flags=re.M).group(1)
-    t, n = re.subn(r"^(\s*MAX_SCF\s+)\d+", rf"\g<1>{inner}", t, count=1, flags=re.M)
+    return _sub(t, r"^(\s*)&SCF\s*$", r"\g<0>\n\g<1>  &PRINT\n" + block.replace(r"\g<1>", r"\g<1>    ")
+                + r"\n\g<1>    &END RESTART\n\g<1>  &END PRINT")
+
+
+def scf_restart(run_dir) -> str:
+    """A run that stopped with "SCF run NOT converged": restart it once from its own .wfn (SCF_GUESS restart);
+    its output is kept as cp2k.out.unconverged. Returns "restarted" or why not."""
+    d = Path(run_dir)
+    out = d / "cp2k.out"
+    if not out.is_file() or "SCF run NOT converged" not in out.read_text(errors="ignore"):
+        return "not an SCF failure"
+    if (d / "cp2k.out.unconverged").exists():
+        return "already restarted once"
+    t = (d / "cp2k.inp").read_text()
+    project = re.search(r"^\s*PROJECT\s+(\S+)", t, flags=re.M).group(1)
+    wfn = f"{project}-RESTART.wfn"
+    if not (d / wfn).is_file():
+        return f"no {wfn}"
+    t = _sub(t, r"^(\s*SCF_GUESS\s+)\S+", r"\g<1>restart")
+    t, n = re.subn(r"^(\s*WFN_RESTART_FILE_NAME\s+).*$", rf"\g<1>{wfn}", t, count=1, flags=re.M)
     if not n:
-        t = _sub(t, r"^(\s*)(EPS_SCF\s+\S+.*)$", rf"\g<1>\g<2>\n\g<1>MAX_SCF {inner}")
-    return _sub(t, r"^(\s*)&SCF\s*$", rf"\g<0>\n\g<1>  &OUTER_SCF\n\g<1>    EPS_SCF {eps}\n\g<1>    MAX_SCF {outer}\n"
-                rf"\g<1>  &END OUTER_SCF")
+        t = _sub(t, r"^(\s*)&DFT\s*$", rf"\g<0>\n\g<1>  WFN_RESTART_FILE_NAME {wfn}")
+    (d / "cp2k.inp").write_text(t)
+    out.rename(d / "cp2k.out.unconverged")
+    if (d / "srun.log").is_file():
+        (d / "srun.log").rename(d / "srun.log.unconverged")
+    return "restarted"
 
 
-def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | None = None, outer: bool = False) -> str:
+def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | None = None,
+              restartable: bool = False) -> str:
     """The chain's single point as an energy run printing the potential and density cubes;
     scratch: atomic guess instead of the geo_opt .wfn (another structure); cell: its own box;
-    outer: an OT outer loop (outer_scf; the stripped/added dots, not the monomers of the library)."""
+    restartable: write its own .wfn (restart_print; the dots, not the monomers of the library)."""
     t = _sub(base, r"^(\s*PROJECT\s+)\S+", rf"\g<1>{project}")
     t = _sub(t, r"^(\s*RUN_TYPE\s+)\S+", r"\g<1>ENERGY")
     if re.search(r"^    &PRINT\s*$", t, flags=re.M):          # a &DFT &PRINT already there
@@ -82,7 +110,7 @@ def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | Non
         t = re.sub(r"^\s*WFN_RESTART_FILE_NAME.*\n", "", t, flags=re.M)
     if cell:
         t = _sub(t, r"^(\s*ABC\s+).*$", rf"\g<1>{cell}")
-    return outer_scf(t) if outer else t
+    return restart_print(t) if restartable else t
 
 
 def _frames(path: Path) -> list:
@@ -110,14 +138,14 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
     out = Path(out_dir)
     names = []
     sym, pts = read_xyz(base_path.parent / "geom.xyz")
-    _write(out / "dot_0", esp_input(base, "dot_0"), sym, pts, "intact dot (geo_opt)")
+    _write(out / "dot_0", esp_input(base, "dot_0", restartable=True), sym, pts, "intact dot (geo_opt)")
     names.append("dot_0")
     if stripped:
         m = re.search(r"detach_(\d+)\.xyz$", str(stripped))
         k = int(m.group(1)) if m else 0
         sym, pts = read_xyz(stripped)
         name = f"dot_{k}"
-        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), outer=True), sym, pts,
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), restartable=True), sym, pts,
                f"fully stripped dot, {k} units removed (MACE ladder)")
         names.append(name)
     if added:
@@ -125,7 +153,7 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
         k = int(m.group(1)) if m else 0
         sym, pts = read_xyz(added)
         name = f"dot_add{k}"
-        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), outer=True), sym, pts,
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), restartable=True), sym, pts,
                f"fully added dot, {k} units added (MACE adsorption ladder)")
         names.append(name)
     if monomers:

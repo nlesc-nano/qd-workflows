@@ -126,8 +126,16 @@ if [ "{{FIELD}}" = "1" ]; then
             k=$((k + 1)); if [ $k -ge $FP ]; then wait; k=0; fi
         done
         wait
+        # a run that stopped at MAX_SCF goes on once from its own .wfn (written every 50 cycles)
+        for r in $(orch_field status field); do
+            if [ "$(qdw cp2k scf-restart "field/$r" | sed 's/.*: //')" = "restarted" ]; then
+                plog event chain "field/$r: SCF not converged at MAX_SCF, restarted from its own .wfn"
+                (cd "field/$r" && cp2k_n $R)
+            fi
+        done
     fi
     todo=$(orch_field status field)
+    [ "$todo" != "all done" ] || rm -f field/*/*-RESTART.wfn       # converged: the .wfn are not needed any more
     [ "$todo" = "all done" ] || { echo "[chain] field runs incomplete"; why field $todo; plog event chain "ERROR field runs incomplete: $todo (read field/<run>/srun.log)"; exit 1; }
     [ -z "${t:-}" ] || plog event chain "field done: $(ls -d field/*/ | wc -l) runs" --since $t
 fi
@@ -172,14 +180,23 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
             esac
         done
         wait
+        for r in $(qdw cp2k esp status esp); do                  # stopped at MAX_SCF: once more from its own .wfn
+            case $r in dot_*)
+                if [ "$(qdw cp2k scf-restart "esp/$r" | sed 's/.*: //')" = "restarted" ]; then
+                    plog event chain "esp/$r: SCF not converged at MAX_SCF, restarted from its own .wfn"
+                    (cd "esp/$r" && cp2k_n $NR)
+                fi ;;
+            esac
+        done
     fi
     todo=$(qdw cp2k esp status esp)
     if [ "$todo" = "all done" ]; then
+        rm -f esp/dot_*/*-RESTART.wfn                                # converged: the .wfn are not needed any more
         qdw cp2k esp collect esp -o solvation.json > /dev/null && echo "[chain] solvation.json"
         plog event chain "esp done: solvation.json ($(ls -d esp/*/ | wc -l) runs)" ${t:+--since $t}
     else
-        echo "[chain] esp runs incomplete: solvation from the field step's charges"; why esp $todo
-        plog event chain "WARN esp runs incomplete ($todo): solvation from the field charges (read esp/<run>/srun.log)"
+        echo "[chain] esp runs incomplete: no DFT solvation (vacuum)"; why esp $todo
+        plog event chain "WARN esp runs incomplete ($todo): no DFT solvation, vacuum (read esp/<run>/srun.log)"
     fi
 ) || echo "[chain] solvation step failed: solvation from the field step's charges"; fi
 
