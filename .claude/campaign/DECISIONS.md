@@ -17,6 +17,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 20:15 (supervisor) · Ladder calibration above 600 atoms (re-relax job 9582815): 1,420-5,860 GPU-s per dot for
+  1,087-1,715 atoms (0.4-1.6 GPU-h), below the ~1.7 GPU-h/dot of the estimate Ivan approved; so no need to come back to him.
+  Stage 2 with the ladder for all 403 remaining dots of 600-2,000 atoms (library + earlier): 50 whole-node jobs s2gt600_01..50
+  (9583457-9583506), 12 h caps (partition max 24 h), upper bound ~190k core-h. Re-relax with fmax 0.005 removed the imaginary
+  modes of Cd815, Cd640Se477, Cd605, Cd534, Cd181; Cd477 (-34.8 cm-1) and Cd640Se561-clean (8 modes, -13.9) keep them; the
+  re-relax of the smaller dots is slow (Cd181, 393 atoms: 1.7 h of BFGS).
 - 2026-10-18 19:30 (supervisor) · QDEX reruns with fuzzy: the 10 published earlier dots done in 1-3 min each (2 fuzzy dashboards
   each); republished in the local webapp (dft/ re-imported, index rebuilt, still 1,785 structures); Electronic structure tab
   checked (fuzzy bands with bulk-band overlay). Cd333, Cd373, In149P104_swap (and In365, In204P153 when their jobs end) follow.
