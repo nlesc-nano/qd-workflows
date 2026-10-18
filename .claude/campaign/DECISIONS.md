@@ -17,6 +17,18 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 14:45 (supervisor) · Stage 2 so far: library_02 (job 9582506) TIMEOUT at 4 h, 26 of 68 dots done, 0 failed (rest
+  resumes from caches); library_03 (9582507) 32 of 32 done but without the ladder (built with the old 600 limit); ladder rerun
+  of the 10 earlier dots ready for stage 3: job 9582803 (running, ~0.6 h). Ladder cost measured: 1,300-3,700 GPU-s per dot for
+  CdSe of 500-560 atoms (~1 h), far above the 390 s of the small dots; the 600-2,000-atom ladder is not measured yet and may
+  exceed the 2026-10-17 estimate (~115k core-h). Decided: a calibration batch of 4 dots across 600-2,000 atoms (one per GPU)
+  first, tomorrow inside the 8,000 core-h stage 2 budget; if the measured cost is above ~2x the estimate, report to Ivan (as he
+  decided). No new GPU submissions today: the rolling 24 h use is above 20,000 core-h.
+  Agents were again blocked by the auto-mode check (a read-only squeue/tail of the GPU agent) although Ivan's allow rule for
+  `ssh -x nhr` is in ~/.claude/settings.json; the supervisor submits and checks on NHR itself from now on, agents analyse only.
+  Structure flags (for Ivan, no action): ligands detached in 8 library dots (CdSe-Se-Cd256Se213Cl86, -Cd247Se209Cl76,
+  -Se-Cd615Se545Cl140, -Cd813Se730Cl166, -Cd-Cd815Se730Cl170, -Cd605Se535Cl140, -Se-Cd534Se472Cl124, -Cd-Cd533Se471Cl124);
+  many bonds broken (>= 10) in 24; Hessian below -20 cm-1 in CdSe-Cd-Cd477Se344Cl266 (-36.0) and CdSe-Cd-Cd815Se730Cl170 (-28.6).
 - 2026-10-18 · SCF that stops at MAX_SCF 200 (field and ESP runs): "dont use outer OT as it is not very good. If it hits 200
   cycles just restart it from that .wfn and then it will converge in few cycles" and "Do not change preconditioner, no looser
   and tighter thresholds, etc. Just as I told you . After hitting 200 cycles, the you restart it." (Ivan). Done: outer loop
