@@ -17,6 +17,16 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 · Imaginary modes: "Those with imaginary freqs I would try to relax again from the last relaxed point and tighten a
+  bit more the force threshold" (Ivan). Done: Orchestr.AI setting relax_continue (relax from props/relaxed.xyz; in run.py, so
+  steps/relax.py and every other dot's cache are unchanged), deployed. The 21 dots with imaginary modes (of 125 with a Hessian,
+  -10 to -36 cm-1; list $C/stage2/imaginary_dots.txt) re-relax with fmax 0.005 eV/Å (was 0.01), then Hessian and stage 2 again:
+  jobs 9582814 (15 dots <= 600 atoms) and 9582815 (6 dots of 1,087-1,715 atoms, which also calibrate the ladder above 600
+  atoms), whole nodes, 6 h caps, held by Slurm until 2026-10-19 00:05 (today's budget hold).
+- 2026-10-18 15:00 (supervisor) · Stage 3 batch_01 (job 9582805, 9 min, 0 failed): the 10 earlier dots CdSe Cd156, Cd139, Cd95,
+  Cd92, Cd55, Cd60 and InP In31, In31_bare, P-In40, P-In52 are complete (report.json; solvation COSMO on the DFT potential).
+  With the pilot: 11 finished dots. Webapp copy waits for Ivan (SUPERVISOR: copies only as Ivan approves). Note: Cd55 and Cd95
+  are in the re-relax list and their stage 2/3 will be redone.
 - 2026-10-18 14:45 (supervisor) · Stage 2 so far: library_02 (job 9582506) TIMEOUT at 4 h, 26 of 68 dots done, 0 failed (rest
   resumes from caches); library_03 (9582507) 32 of 32 done but without the ladder (built with the old 600 limit); ladder rerun
   of the 10 earlier dots ready for stage 3: job 9582803 (running, ~0.6 h). Ladder cost measured: 1,300-3,700 GPU-s per dot for
