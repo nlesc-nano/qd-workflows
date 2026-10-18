@@ -17,6 +17,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 13:20 (supervisor) · The ladder had been skipped above 600 atoms (Orchestr.AI default detach_max_atoms 600; the
+  campaign never raised it), against Ivan's decision of 2026-10-17. Fixed: qd-workflows 0f99e8d (profile props.settings go into
+  every job; nhr_campaign sets detach_max_atoms 2000), tested, deployed. Dots above 600 atoms already through stage 2
+  (library_02/03, 9 earlier dots) get the ladder in follow-up runs (other steps stay cached). Budget: last 24 h 22,621 core-h,
+  above the 20,000 guardrail (stage 1 + chain timeouts + stage 2 together); held back for the rest of today: stage 2 within its
+  5,000, DFT/CPU <= 4,000 more. DFT failures (2 TIMEOUT at 4 h, 2 FAILED with ESP/field aborts) and stage 3 for the 10 dots in
+  phase cpu delegated to the DFT agent.
 - 2026-10-18 (supervisor) · Stage 2 validated: batch1 (job 9582434) 23 earlier dots, 0 failed, 58 min; library_01 (job 9582435)
   40 CdSe/InP 35-217 atoms, 0 failed, 1 h 59 min (~680 GPU-s per dot: detachment 390, md 210, detach_ensemble 70; ~30 core-h per
   small dot). Library stage 2 continues through the GPU agent, CdSe/InP first, small first; budget split changed: stage 2 <=
