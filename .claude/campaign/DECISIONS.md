@@ -17,6 +17,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 (supervisor) · Stage 2 validated: batch1 (job 9582434) 23 earlier dots, 0 failed, 58 min; library_01 (job 9582435)
+  40 CdSe/InP 35-217 atoms, 0 failed, 1 h 59 min (~680 GPU-s per dot: detachment 390, md 210, detach_ensemble 70; ~30 core-h per
+  small dot). Library stage 2 continues through the GPU agent, CdSe/InP first, small first; budget split changed: stage 2 <=
+  5,000 core-h for the rest of 2026-10-18, <= 8,000 core-h/day from 2026-10-19 (stage 1 is finished); DFT keeps 12,000.
+  DFT chains: 5 of 17 completed, 5 hit the 1 h limit (2 still in geo_opt) and were resubmitted once with 4 h (jobs
+  9582488-92, <= 1,920 core-h). Campaign log $C/logs/campaign.log for every new job (RULES.md).
 - 2026-10-18 (supervisor) · Stage 2 batch 1, second retry (job 9582407) failed again for the same 14 dots: the structure step
   had been cached before the CIF was added (its cache key ignored the CIF), so bulk_bond was None and the detachment step
   failed on float(None). Fixed: Orchestr.AI 345cfcc (the bulk CIF enters the cache key of structure, vibspec, stability,
