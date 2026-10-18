@@ -17,6 +17,14 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 20:40 (supervisor) · Efficiency problem found after Ivan asked why a re-relax took hours: the stage 2 job.sh (copied
+  from library_01) set OMP_NUM_THREADS=144 for each of the 4 GPU processes of a node: load 61-341 on 144 cores, GPUs 0-76 %;
+  BFGS (used up to 500 atoms) at 47 s per step for Cd181 (131 steps, no oscillation). Fixed: 8 threads per GPU process
+  (OMP/MKL/OpenBLAS) in every new stage 2 job; the re-relax of the small dots with L-BFGS for every size, resubmitted (9583568);
+  the 44 queued s2gt600 jobs resubmitted with the fixed script; the 8 running s2le600 jobs finish as they are. A watchdog in
+  the supervisor session checks every 30 min (idle GPUs, overloaded nodes, failed/timed-out jobs, geo_opt > 150 steps) and
+  wakes the supervisor to fix what it finds. Ivan: "what are the agents doing ? they should check this stuff and weird
+  behavior and fix it".
 - 2026-10-18 20:15 (supervisor) · Ladder calibration above 600 atoms (re-relax job 9582815): 1,420-5,860 GPU-s per dot for
   1,087-1,715 atoms (0.4-1.6 GPU-h), below the ~1.7 GPU-h/dot of the estimate Ivan approved; so no need to come back to him.
   Stage 2 with the ladder for all 403 remaining dots of 600-2,000 atoms (library + earlier): 50 whole-node jobs s2gt600_01..50
