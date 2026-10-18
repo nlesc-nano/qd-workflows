@@ -24,7 +24,11 @@ IV–VI: clean. The NHR ledger (`/scratch/projects/bep00157/qdw_campaign/campaig
 
 - State of everything: `qdw campaign poll --json` from the Mac (all clusters), or on a cluster
   `qdw campaign status <dir> --json`. Read its JSON; do not grep CP2K outputs unless a problem points to a file.
-- Run logs (`pilot.log`-style): one line per step, ERROR/WARN lines name the file to read.
+- Run logs (`pilot.log`-style): one line per step, ERROR/WARN lines name the file to read. The campaign log is
+  `/scratch/projects/bep00157/qdw_campaign/logs/campaign.log`: **every submission exports
+  `QDW_LOG=/scratch/projects/bep00157/qdw_campaign/logs/campaign.log` before `sbatch`** (chain.sh and the props
+  job.sh pick it up), and every agent adds a `qdw log event <stage> "<what>"` line for what it submits or decides.
+  Per job: GPU batches `<batch>/gpuN/run.log`, chains `<record>/cp2k/slurm-<job>.out`.
 - Monomer library: `qdw monomers status --cluster nhr_campaign`.
 
 ## Cluster rules (NHR)
