@@ -17,6 +17,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-18 17:30 (supervisor) · Chains: Cd333 completed (its field fxzpp converged with the outer loop before the policy
+  change) and InP-In149P104Cl135_swap completed. InP-In365P288Cl231 failed again: TREXIO out of memory (884 atoms), as Cd373;
+  truncated orbitals moved aside, resubmitted on cpu-clx:large, 2 nodes, --mem=700G (740G is not accepted): job 9583159.
+  InP-P-In204P149Cl165_swap timed out at geo_opt step 181 (converging), resubmitted once 6 h: job 9583158. InP-P-In204P153Cl153
+  second retry running (9582792), InP-In149P108Cl123 retry running (9582615). Rule for the library chains: dots of ~800 atoms
+  and more run their TREXIO step on cpu-clx:large (--mem=700G): to build into the chain generator before those chains.
 - 2026-10-18 · Webapp: "yes, in the webapp locally" (Ivan). The 10 finished earlier dots are in the local QDSpaceWebApp
   (not committed, not pushed): the 6 CdSe in public/II-VI/CdSe/builder/<id>/ (props/ + dft/ next to the builder record; their
   MACE relax started from the earlier DFT geometry), the 4 InP in a new series public/III-V/InP/builder_legacy/<id>/ (legacy
