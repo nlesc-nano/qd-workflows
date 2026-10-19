@@ -17,6 +17,10 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 · Ladder: "I am ok with what you did on 3 processes if it makes the calc more efficient . Let's not change the ladder
+  yet . Let's finish the calcs first then we fix the ladder" (Ivan). 3 processes per GPU kept for the remaining large dots; the
+  ladder code (steps/detachment.py) is not touched until the campaign's calculations are finished; then profile and speed it up
+  (proposed session "Profile and speed up the large-dot MACE ladder").
 - 2026-10-19 08:00 (supervisor) · The ladder of large dots is single-threaded Python for hours (one core per process, GPUs at 0 %,
   10-21 GB GPU memory each). Not optimised now: any change to steps/detachment.py changes its cache key and would invalidate
   the 725 finished ladders (and stage 3 of those dots) - a code task for after the campaign. Instead the 105 remaining dots of
