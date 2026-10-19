@@ -13,6 +13,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 23:40 (supervisor, after Ivan: "you always restart the relaxation, so the 12 hours limit is not a problem. If you put
+  in a long queue that it may enter very late") · All queued jobs wait on the 32-jobs-per-user limit; cpu-clx has ~260 idle
+  nodes, cpu-clx:large (32 nodes) is full. Large dots (>= 800 atoms, 212 chains) now run on standard nodes (2-4 nodes, 12 h,
+  continuing from the last geometry) up to the MO window; the chain itself submits TREXIO/trim/QDEX on 1 large-memory node
+  (2 above 1,500 atoms) - marker file TREXIO_ON_LARGE, qd-workflows 7bc80e1. The 212 queued ones were moved. Relaxation status
+  (geo_opt) at 23:30: done/finished chains 243 + 27 past geo_opt; in progress 23; not started 453 (115 < 400 atoms, 130 of
+  400-800, 208 >= 800).
 - 2026-10-19 23:10 (supervisor) · DFT bundle packing was 3x too optimistic (my 0.5 h + 0.004 h/atom came from the earlier dots,
   whose geo_opt started from a DFT geometry): library chains take ~4-6 h at 250-380 atoms and >12 h on one node at 630-700
   atoms. 132 queued bundles cancelled; the 222 chains not done and not running replanned by the cost law (stage2/
