@@ -13,6 +13,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 23:10 (supervisor) · DFT bundle packing was 3x too optimistic (my 0.5 h + 0.004 h/atom came from the earlier dots,
+  whose geo_opt started from a DFT geometry): library chains take ~4-6 h at 250-380 atoms and >12 h on one node at 630-700
+  atoms. 132 queued bundles cancelled; the 222 chains not done and not running replanned by the cost law (stage2/
+  replan_chains.py): 81 bundles (chcNNN) + 98 own jobs on 1-7 nodes (time per node <= 10 h), ~190k core-h by the cost law.
+  The watchdog replans and submits automatically after a bundle time-out (logs/replan_submit.sh, tag chr<date>).
 - 2026-10-19 22:30 (supervisor) · Planner bug of mine: groups.txt of the 8/12-group jobs listed only groups 0-3, and the
   exclusion lists were built from it, so 5 dots ended up in two active batches (s2rest_01/02 and s2rest2_01): the process of
   s2rest2_01/gpu10 (duplicates only) stopped, 3 other duplicates run twice (identical results, atomic writes). Fixed: groups.txt
