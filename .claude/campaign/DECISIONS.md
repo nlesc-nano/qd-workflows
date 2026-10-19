@@ -11,12 +11,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
-- **2026-10-19 · Field run SCF stalls just above its threshold (CdSe-Cd-Cd183Se169Cl28-clean, field/fyzpp).** The field runs
-  use EPS_SCF 1e-7 (precise forces for the finite differences); this one creeps at 1.5e-7 with OT SD (energy -4e-8 Ha per
-  step) for 200 cycles; the restart from its own .wfn falls back into the same creep. Options: (a) accept a field run that
-  stalls below 2e-7 (precise enough for the finite differences, E = 0.002 a.u.); (b) leave the dot without DFT IR/Raman.
-  Recommendation: (a). Needs Ivan (SCF settings). Second case 2026-10-19 01:45: CdSe-Se-Cd56Se42Cl28-reconstructed, also
-  field/fyzpp (the (+y, +z) field), creeping at 3.9e-7 in OT SD; both chains wait for the answer.
+- **2026-10-19 · Field runs: SCF stalls above EPS_SCF 1e-7 (systematic).** At 03:50, 16 field runs in 9 dots (CdSe of 175-530
+  atoms, InP-In161) ended "SCF run NOT converged" after 200 cycles, OT falling back to SD and creeping (energy -4e-8 Ha per
+  step); final convergence 1.1e-7 to 7.5e-6 (about half below 3e-7, a few at 1e-6 and above); the restart from the run's own
+  .wfn falls back into the same creep. The chains keep their finished runs; only the stalled field runs would be redone.
+  Options: (a) accept a field run that stalls below a threshold (2e-7 covers about half; 1e-6 almost all); (b) leave these
+  dots without DFT IR/Raman; (c) another SCF approach for the field runs. Needs Ivan (SCF settings). The watchdog holds
+  these chains (logged) instead of resubmitting them.
 - **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
   104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
   demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
