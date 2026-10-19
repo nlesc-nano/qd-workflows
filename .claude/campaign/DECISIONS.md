@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 08:00 (supervisor) · The ladder of large dots is single-threaded Python for hours (one core per process, GPUs at 0 %,
+  10-21 GB GPU memory each). Not optimised now: any change to steps/detachment.py changes its cache key and would invalidate
+  the 725 finished ladders (and stage 3 of those dots) - a code task for after the campaign. Instead the 105 remaining dots of
+  600-2,000 atoms run 12 processes per node (3 per GPU): 6 jobs s2gt600c_01..06 (9585090-95), replacing the 8 queued
+  s2gt600b jobs.
 - 2026-10-19 · Soft modes: "if after the second round of relaxation they stay with soft mode let's keep them" (Ivan); imaginary
   modes in the spectra: left out of IR/Raman, noted on the page (Ivan: "Ok"). Thermochemistry unchanged (|nu|, floor 10 cm-1,
   Grimme quasi-RRHO). Done: Orchestr.AI 3818d5a (vibspec peak lists and report spectra without imaginary modes; summary
