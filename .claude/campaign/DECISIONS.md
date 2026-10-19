@@ -24,6 +24,9 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 04:30 (supervisor) · Bug of mine in the chain template: the rerun of a field/esp run restarted from its own .wfn
+  had no `|| true`, so a second failure killed the chain silently under `set -e`. Fixed (qd-workflows a90494d), template and
+  the 68 existing chain.sh patched; the watchdog holds any failed chain with a non-converged field run.
 - 2026-10-19 01:30 (supervisor) · My error: the 42 library chains resubmitted on 2026-10-18 got a forced 3 h wall time (and the
   watchdog 4 h), overriding the cost law (4-8 h for 400-530 atoms): many timed out and were resubmitted. The watchdog now uses
   each chain's own wall time (cost law), at least 3 h.
