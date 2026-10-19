@@ -11,11 +11,16 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
-- **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
-  104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
-  demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
-
 ## Decided
+
+- 2026-10-19 17:40 (supervisor) · NHR closed for an import update ~11:00-17:28 (jobs kept running). After: the 32-job limit was
+  filled by DFT bundles, so stage 3 batch_02 (queued since 10:40) and the GPU leftovers waited: the 317 pending bundles/chains
+  niced (1000) so GPU and stage 3 jobs get free slots first. s2gt600b_10/11 TIMEOUT, s2gt600c_06 "FAILED" only for empty-group
+  folders (planner fixed: loop over existing groups); the 21 dots not done and not in a job: s2rest2_01..02 (9587038-39).
+  Totals: stage 2 829/858, chains complete 159, stage 3 10 (+63 queued); budget 219,858 core-h used (4.9 %), last 24 h 174k.
+- 2026-10-19 (Ivan, in chat: "Approve conda clean --packages on Hyperion") · Hyperion home /dipc/iinfante at 94 % of its
+  300,000 files: `conda clean --packages --yes` run on hyperion-login-01 after a dry run (322 packages, 3.81 GB). pkgs 5.5 GB
+  -> 1.7 GB; envs (13 GB) untouched. Home .conda files 274k -> 164k by our count (find); the quota figure was not re-read.
 
 - 2026-10-19 10:40 (supervisor) · Stage 2 bis had nearly stalled (89 chains started for 742 dots ready): NHR allows 500 queued and
   32 running jobs per user, so chains are now bundled: 192 single-node bundles (1-6 chains one after another on a whole node,
