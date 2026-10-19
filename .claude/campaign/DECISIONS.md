@@ -13,6 +13,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 23:55 · Cores: "Large memory is only needed to run trexio single point ... All others can run in standard genoa
+  nodes with 192 cores or two nodes of clx ... Below 6-800 atoms you can easily use 192 core ... For the largest ones 384 cores
+  is super enough" (Ivan). Done: < 800 atoms on 192 cores (2 CLX nodes), >= 800 atoms on 384 cores (4 CLX nodes), only TREXIO
+  on a large-memory node (by the chain itself). The 338 queued bundles/chains resubmitted with these sizes; the watchdog and
+  the replan use them. Kept on CLX: the campaign profile and every chain.sh use the CLX build (Genoa would need the Genoa
+  build's environment).
 - 2026-10-19 23:40 (supervisor, after Ivan: "you always restart the relaxation, so the 12 hours limit is not a problem. If you put
   in a long queue that it may enter very late") · All queued jobs wait on the 32-jobs-per-user limit; cpu-clx has ~260 idle
   nodes, cpu-clx:large (32 nodes) is full. Large dots (>= 800 atoms, 212 chains) now run on standard nodes (2-4 nodes, 12 h,
