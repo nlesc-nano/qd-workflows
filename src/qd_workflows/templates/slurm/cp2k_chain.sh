@@ -130,7 +130,7 @@ if [ "{{FIELD}}" = "1" ]; then
         for r in $(orch_field status field); do
             if [ "$(qdw cp2k scf-restart "field/$r" | sed 's/.*: //')" = "restarted" ]; then
                 plog event chain "field/$r: SCF not converged at MAX_SCF, restarted from its own .wfn"
-                (cd "field/$r" && cp2k_n $R)
+                (cd "field/$r" && cp2k_n $R) || true      # a second failure is reported below, not fatal here
             fi
         done
     fi
@@ -183,7 +183,7 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
             case $r in dot_*)
                 if [ "$(qdw cp2k scf-restart "esp/$r" | sed 's/.*: //')" = "restarted" ]; then
                     plog event chain "esp/$r: SCF not converged at MAX_SCF, restarted from its own .wfn"
-                    (cd "esp/$r" && cp2k_n $NR)
+                    (cd "esp/$r" && cp2k_n $NR) || true
                 fi ;;
             esac
         done
