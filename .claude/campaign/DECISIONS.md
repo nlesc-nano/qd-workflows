@@ -13,6 +13,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 22:00 (supervisor) · Webapp (local): 53 more finished dots published (51 library + Cd333, Cd373); 64 dots with MACE
+  + DFT results in the index. Ingest fix (QDSpaceWebApp commit): builder records are merged only when their start geometry is
+  identical - a vacancy and a swap cut can share the fingerprint (composition + binned radial distances), and the swap page
+  was dropped. Index 1,785 -> 1,816 structures; a second record with the same id gets "-v2" (e.g.
+  InP-In-In31P16Cl45-reconstructed-v2 is the swap dot). Stage 3 of the 10 re-relaxed dots needs their relax settings (fmax
+  0.005, relax_continue, L-BFGS): batch_02r. Watchdog: any first chain failure resubmitted once (reason logged), >= 800 atoms
+  back to cpu-clx:large. InP-In863P794Cl207: CP2K SIGABRT at exit on 6 nodes (as In365), resubmitted.
 - 2026-10-19 17:40 (supervisor) · NHR closed for an import update ~11:00-17:28 (jobs kept running). After: the 32-job limit was
   filled by DFT bundles, so stage 3 batch_02 (queued since 10:40) and the GPU leftovers waited: the 317 pending bundles/chains
   niced (1000) so GPU and stage 3 jobs get free slots first. s2gt600b_10/11 TIMEOUT, s2gt600c_06 "FAILED" only for empty-group
