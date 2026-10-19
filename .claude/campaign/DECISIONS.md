@@ -17,6 +17,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 07:40 (supervisor) · Re-relax results (21 dots, fmax 0.005, L-BFGS after the thread fix: 1-160 s per relax):
+  imaginary modes gone in 13; 8 keep small ones (-11 to -35 cm-1: Cd477, Cd44Se37, In52P31, Cd183Se150, Cd640Se561-clean,
+  Cd55, Cd31, Cd95), soft modes rather than loose convergence. Stage 2 so far: 725 of 858 dots done (446 up to 600 atoms, 279
+  above); 133 left (12 jobs). Ivan's re-relax rule applied to the 103 further dots with imaginary modes (38 below -20 cm-1,
+  worst AlP-P-Al116P99Cl51-clean -193 cm-1): jobs 9585077-79 (reimag2_01..03, 8 groups per node).
 - 2026-10-19 · Field runs stalling above EPS_SCF 1e-7 (16+ runs in 9 dots): "Use 10-6 as threshold" (Ivan). Done: field runs use
   EPS_SCF 1e-6 (Orchestr.AI 36f7430, deployed); the 31 unfinished field inputs switched (20 stalled ones restart from their own
   .wfn; old inputs/outputs kept as *.eps1e-7); runs already converged at 1e-7 kept; the 9 held chains resubmitted
