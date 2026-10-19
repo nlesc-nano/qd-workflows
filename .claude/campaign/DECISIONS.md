@@ -13,6 +13,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 22:30 (supervisor) · Planner bug of mine: groups.txt of the 8/12-group jobs listed only groups 0-3, and the
+  exclusion lists were built from it, so 5 dots ended up in two active batches (s2rest_01/02 and s2rest2_01): the process of
+  s2rest2_01/gpu10 (duplicates only) stopped, 3 other duplicates run twice (identical results, atomic writes). Fixed: groups.txt
+  lists every group and the planner takes busy dots from the configs of all queued/running stage 2 jobs. s2gt600c_01/03 TIMEOUT
+  (their dots are in active jobs); the one uncovered dot (InP-In407P336Cl201F12) in s2rest3_01.
 - 2026-10-19 22:00 (supervisor) · Webapp (local): 53 more finished dots published (51 library + Cd333, Cd373); 64 dots with MACE
   + DFT results in the index. Ingest fix (QDSpaceWebApp commit): builder records are merged only when their start geometry is
   identical - a vacancy and a swap cut can share the fingerprint (composition + binned radial distances), and the swap page
