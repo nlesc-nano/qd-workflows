@@ -17,6 +17,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 · Soft modes: "if after the second round of relaxation they stay with soft mode let's keep them" (Ivan); imaginary
+  modes in the spectra: left out of IR/Raman, noted on the page (Ivan: "Ok"). Thermochemistry unchanged (|nu|, floor 10 cm-1,
+  Grimme quasi-RRHO). Done: Orchestr.AI 3818d5a (vibspec peak lists and report spectra without imaginary modes; summary
+  n_imaginary_left_out), QDSpaceWebApp commit (Structure view: spectra from real modes only; the Hessian card says "soft,
+  lowest X cm-1; not in the IR/Raman spectra"), checked on CdSe Cd95. The static report pages refresh at each dot's next
+  stage 3 run.
 - 2026-10-19 07:40 (supervisor) · Re-relax results (21 dots, fmax 0.005, L-BFGS after the thread fix: 1-160 s per relax):
   imaginary modes gone in 13; 8 keep small ones (-11 to -35 cm-1: Cd477, Cd44Se37, In52P31, Cd183Se150, Cd640Se561-clean,
   Cd55, Cd31, Cd95), soft modes rather than loose convergence. Stage 2 so far: 725 of 858 dots done (446 up to 600 atoms, 279
