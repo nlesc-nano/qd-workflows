@@ -17,6 +17,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-19 10:40 (supervisor) · Stage 2 bis had nearly stalled (89 chains started for 742 dots ready): NHR allows 500 queued and
+  32 running jobs per user, so chains are now bundled: 192 single-node bundles (1-6 chains one after another on a whole node,
+  12 h, CdSe/InP first; stage2bis/chbNNN.sh, packing time max(0.6 x cost law, 0.5 h + 0.004 h/atom)) and 161 multi-node chains
+  (all >= 800 atoms: cpu-clx:large, --mem=700G for the TREXIO step; 32 large nodes, so these take days). Upper bound 727k core-h.
+  Stage 3 batch_02: 63 dots (job 9585763). Stage 2 leftovers: 78 dots in 4 jobs s2rest_01..04. Budget: 161,696 core-h used
+  (3.6 %), last 24 h 125,962 (the GPU burst); whole campaign projected well under 1 M core-h of the 4.5 M.
 - 2026-10-19 · Ladder: "I am ok with what you did on 3 processes if it makes the calc more efficient . Let's not change the ladder
   yet . Let's finish the calcs first then we fix the ladder" (Ivan). 3 processes per GPU kept for the remaining large dots; the
   ladder code (steps/detachment.py) is not touched until the campaign's calculations are finished; then profile and speed it up
