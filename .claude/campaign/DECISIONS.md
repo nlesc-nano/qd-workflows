@@ -11,19 +11,16 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
-- **2026-10-19 · Field runs: SCF stalls above EPS_SCF 1e-7 (systematic).** At 03:50, 16 field runs in 9 dots (CdSe of 175-530
-  atoms, InP-In161) ended "SCF run NOT converged" after 200 cycles, OT falling back to SD and creeping (energy -4e-8 Ha per
-  step); final convergence 1.1e-7 to 7.5e-6 (about half below 3e-7, a few at 1e-6 and above); the restart from the run's own
-  .wfn falls back into the same creep. The chains keep their finished runs; only the stalled field runs would be redone.
-  Options: (a) accept a field run that stalls below a threshold (2e-7 covers about half; 1e-6 almost all); (b) leave these
-  dots without DFT IR/Raman; (c) another SCF approach for the field runs. Needs Ivan (SCF settings). The watchdog holds
-  these chains (logged) instead of resubmitting them.
 - **2026-10-17 · Hyperion home /dipc/iinfante at 94 % of its 300,000 files** (282,572; 97 % in `.conda`: 170,530 in envs,
   104,047 in pkgs; the CsPbX3 move does not touch home). Recommendation: `conda clean --packages` (pkgs, 5.5 GB, rebuilt on
   demand); envs stay. Needs Ivan (deletion). Not blocking the campaign (it runs on NHR).
 
 ## Decided
 
+- 2026-10-19 · Field runs stalling above EPS_SCF 1e-7 (16+ runs in 9 dots): "Use 10-6 as threshold" (Ivan). Done: field runs use
+  EPS_SCF 1e-6 (Orchestr.AI 36f7430, deployed); the 31 unfinished field inputs switched (20 stalled ones restart from their own
+  .wfn; old inputs/outputs kept as *.eps1e-7); runs already converged at 1e-7 kept; the 9 held chains resubmitted
+  (9585068-76); the watchdog holds cleared.
 - 2026-10-19 04:30 (supervisor) · Bug of mine in the chain template: the rerun of a field/esp run restarted from its own .wfn
   had no `|| true`, so a second failure killed the chain silently under `set -e`. Fixed (qd-workflows a90494d), template and
   the 68 existing chain.sh patched; the watchdog holds any failed chain with a non-converged field run.
