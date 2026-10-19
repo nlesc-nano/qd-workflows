@@ -205,6 +205,16 @@ if ! ls pdos/*.pdos >/dev/null 2>&1; then echo "[chain] pdos"; STEP=pdos; plog e
 # 4. MO window: 5 eV below the valence band edge to 5 eV above the conduction band edge
 [ -s window.json ] || { STEP=window; qdw cp2k window pdos/*.pdos -o window.json > /dev/null; plog window chain window.json; }
 
+# 4b. Large dots (file TREXIO_ON_LARGE here): everything up to the MO window runs on standard nodes; the TREXIO
+#     single point needs a large-memory node, so a job elsewhere stops here and submits its own continuation there.
+if [ -f TREXIO_ON_LARGE ] && [ "${SLURM_JOB_PARTITION:-}" != "cpu-clx:large" ] \
+   && ! ls trexio/orbitals*.h5 trexio/orbitals*.trexio >/dev/null 2>&1; then
+    nl=1; [ "$(head -1 relaxed.xyz)" -ge 1500 ] && nl=2
+    j=$(sbatch --parsable -p cpu-clx:large -N $nl -n $((nl * 96)) --ntasks-per-node=96 --mem=700G -t 06:00:00 chain.sh)
+    echo "[chain] TREXIO on a large-memory node: job $j"; plog event chain "$P: up to the MO window done; TREXIO, trim and QDEX continue on $nl large-memory node(s): job $j"
+    exit 0
+fi
+
 # 5. TREXIO single point (one diagonalisation, ADDED_MOS = virtual MOs in the window)
 [ -d trexio ] || qdw cp2k prepare relaxed.xyz --step trexio --project "$P-trexio" --wfn "../geo_opt/$P-RESTART.wfn" --window window.json --out trexio $EXTRA
 T=$(ls trexio/orbitals*.h5 trexio/orbitals*.trexio 2>/dev/null | head -1 || true)
