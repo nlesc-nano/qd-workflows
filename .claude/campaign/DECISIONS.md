@@ -13,6 +13,14 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 23:50 (supervisor) · Budget method corrected. sacct CPUTimeRAW counts hyperthreads (CLX node = 192, Genoa = 384
+  AllocCPUS), so it doubled CPU jobs, undercounted GPU nodes (144 instead of 600 core-h per node-hour), and my sums also held
+  Ivan's USMAN_HgTe_Cl_MD jobs. Now: billed core-h = NNodes x ElapsedRaw x (CLX 96, Genoa 192, A100 600), campaign jobs only.
+  Campaign total 329,703 core-h (7.3 % of 4.5 M): DFT/CPU 139,190, GPU 189,712, stage 3 801; last 24 h 83,591. Earlier posts
+  (413,626 etc.) were too high. Remaining DFT (513 chains, 318 of them >= 800 atoms) re-estimated at ~1.3 M (1-2 M) core-h.
+  Cores per chain follow Ivan's rule (< 800 atoms 192 cores, 800-1299 384, >= 1300 one Genoa node = 192); 384 ranks scale
+  near-ideally (1,252 atoms: 11.5 s per SCF iteration vs 12.5 s ideal from 504 atoms on 96 ranks).
+
 - 2026-10-20 23:15 (supervisor) · Correction: the Nice 1000 on our pending chains came from our own logs/replan_submit.sh
   (set 2026-10-19 17:40 so GPU and stage 3 jobs got our slots first), not from NHR. Nice works against all users, and with the
   account fair-share ~0 (2.8 % of the machine used vs 0.4 % share) it held the chains back; stage 3 now runs on the test
