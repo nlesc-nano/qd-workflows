@@ -13,6 +13,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 06:00 (supervisor) · Dots of 1,400-1,950 atoms were OOM-killed in geo_opt on 4 CLX nodes (MaxRSS ~3.5 GB per rank,
+  ~340 GB per node > 288 GB): dots >= 1,300 atoms run on 8 CLX nodes (768 cores; memory spread, not speed); 37 queued chains
+  moved; watchdog and replan use the rule. Alternative left for Ivan: 1 Genoa node (192 cores, 1.5 TB) needs the Genoa build in
+  the chain scripts (only 4 Genoa nodes idle now). Also fixed: a broken line in replan_chains.py (would have crashed the next
+  automatic replan) and the watchdog's failure-reason text.
 - 2026-10-19 23:55 · Cores: "Large memory is only needed to run trexio single point ... All others can run in standard genoa
   nodes with 192 cores or two nodes of clx ... Below 6-800 atoms you can easily use 192 core ... For the largest ones 384 cores
   is super enough" (Ivan). Done: < 800 atoms on 192 cores (2 CLX nodes), >= 800 atoms on 384 cores (4 CLX nodes), only TREXIO
