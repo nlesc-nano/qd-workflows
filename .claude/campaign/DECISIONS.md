@@ -13,6 +13,11 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 07:00 · Ivan: "So you pass from one node to 8 ??? ... by using 8 nodes you burn all the budget, it doesn't make any
+  sense". My error: 8 CLX nodes only to spread geo_opt memory. Now: dots >= 1,300 atoms on one Genoa node each (192 ranks,
+  1.4 TB, Genoa CP2K build, TREXIO in place; chain_genoa.sh made by stage2/make_genoa.py): 44 jobs cancelled, 50 chains
+  submitted (they continue from their last geometry); watchdog and replan use chain_genoa.sh for them. Status: MACE stage 2
+  847/858, DFT geo_opt 348, chains complete 325, stage 3 73; budget 298,107 core-h (6.6 %), last 24 h 156k.
 - 2026-10-20 06:25 (supervisor) · The watchdog replans GPU (stage 2) leftovers itself after a time-out too (logs/gpu_replan.sh:
   dots not done and not in any queued/running job, 12 processes per node, tag s2auto<date>). s2rest02 TIMEOUT: 1 dot replanned
   (9589822). More geo_opt OOMs of 1,400-1,500-atom dots were resubmitted on 8 nodes by the watchdog.
