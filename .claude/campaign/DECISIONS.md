@@ -13,6 +13,16 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-21 00:20 · Ivan: "try to go from smaller to larger on nhr keeping an eye on the budget. You can attempt to run the
+  largest on hyperion where we have no limits". NHR: no `scontrol top` (not enabled) and Nice hurts against all users, so
+  holds: all 205 pending chain jobs >= 800 atoms held; logs/release_by_size.sh (watchdog step 2d) releases the smallest held
+  800-1299-atom jobs while < 40 of ours are queued unheld; dots >= 1300 atoms stay held (50 jobs) for Hyperion; the watchdog
+  no longer resubmits them and replan_chains.py skips them and sorts by size (replan_submit.sh submits 800-1299 with -H).
+  Hyperion: CP2K/2026.2-foss-2025a module exists (same version as NHR). HgTe tests (/scratch/iinfante/CP2K/HgTe/AL, PBE
+  MOLOPT-UZH 400 Ry): 321 at. 96 ranks 6.8 s/SCF iter, 711 at. 144 ranks 7.3 s, 1299 at. 240 ranks (emerald) 10.3 s, 340 GB.
+  157 dots >= 1300 atoms (median 1,672, max 1,990): ~1,400 SCF iterations per chain -> 1.0-4.3k core-h per chain,
+  total ~216k (HgTe cost model) to ~490k (NHR CdSe model), up to ~730k with geo_opt outliers; ~800 GB at 2,000 atoms.
+
 - 2026-10-20 23:50 (supervisor) · Budget method corrected. sacct CPUTimeRAW counts hyperthreads (CLX node = 192, Genoa = 384
   AllocCPUS), so it doubled CPU jobs, undercounted GPU nodes (144 instead of 600 core-h per node-hour), and my sums also held
   Ivan's USMAN_HgTe_Cl_MD jobs. Now: billed core-h = NNodes x ElapsedRaw x (CLX 96, Genoa 192, A100 600), campaign jobs only.
