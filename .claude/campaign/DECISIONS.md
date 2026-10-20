@@ -13,6 +13,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 15:40 (supervisor) · Stage 3 of large dots: the report step took 2,434 s for a 1,211-atom dot (514 s at 738 atoms),
+  so a 1 h test node cannot hold dots up to 2,000 atoms. stage3_ready.sh now sends dots >= 900 atoms in groups of 2, side by
+  side on one regular cpu-genoa node (8 h, job <tag>-big); the rest stays on the test node. All 23 vacuum-only dots now have
+  DFT solvation (22 by job 9591129, the legacy InP-P-In204P153Cl153 by 9591217 after a time-limit kill); legacy COSMO fix:
+  11 of 17 changed (9591131). Stage 3 reruns: 0 failures; 2 left for the next watchdog cycle.
+
 - 2026-10-20 12:40 · ESP runs that a restart does not converge. Ivan: "I would then just IGNORE CONVERGENCE FAILURE or raise
   the eps threshold upon restart just to ensure the ESP is computed. Since the energy doesnt fluctuate but stedily converge
   I would call it a day and compute esp". Now (qd-workflows f/esp.py, deployed): an ESP run (prints cubes) restarts from its
