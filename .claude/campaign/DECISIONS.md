@@ -13,6 +13,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 07:05 · Ivan: "Why there are only 73 webapp considering that 325 have the full dft chain finished ?" and
+  "You can do it an a test node or even the home since it's fast no ?". Cause: stage 3 (assembly for the webapp) was only
+  started by hand, twice. It is serial Python (~40 s per dot; batch_02r: 18 min CPU in 17.5 min on 96 reserved cores), and
+  the 11 cpu-clx jobs waited behind the 32-job limit. Now: logs/stage3_ready.sh finds dots with chain .done + stage 2 done
+  and no report, groups of <= 25 dots, all groups side by side on one cpu-genoa:test node (logs/stage3_test.sh, 1 h,
+  outside QOS normal); each dot is tried at most twice (logs/stage3_tries.txt). The NHR watchdog runs it every cycle.
+  First run: 253 dots, job 9589956 (the 11 pending cpu-clx jobs 9589933-43 cancelled). Not on the login node (NHR policy).
 - 2026-10-20 07:00 · Ivan: "So you pass from one node to 8 ??? ... by using 8 nodes you burn all the budget, it doesn't make any
   sense". My error: 8 CLX nodes only to spread geo_opt memory. Now: dots >= 1,300 atoms on one Genoa node each (192 ranks,
   1.4 TB, Genoa CP2K build, TREXIO in place; chain_genoa.sh made by stage2/make_genoa.py): 44 jobs cancelled, 50 chains
