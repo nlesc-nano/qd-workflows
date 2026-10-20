@@ -11,15 +11,19 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
-- 2026-10-20 11:30 · ESP runs of the stripped/added dots that do not converge from their own .wfn. Ivan: "In these cases it is
-  always better to make a quick restart ... that should converge then in a few cycles using the restart wfn file". The chain
-  already restarts once (212 restarts, 191 converged). 21 ESP runs (dot_9/11/12 = fully stripped, dot_add* = fully covered;
-  mostly Al/Ga/In-V dots) did not: in the restart the energy still moves by 1e-4 to 2e-2 Ha over 200 cycles (3 go up), and
-  a second restart by hand (AlAs-Al-Al35As26Cl27-clean dot_add12, job 9591087) also stopped at 200 (conv 3.8e-6, dE -2e-4 Ha).
-  Their 23 dots have no DFT solvation (vacuum only). Proposal: these runs only, diagonalization + Fermi smearing from the
-  latest .wfn (probably near-zero gap of bare surfaces). Waits for Ivan. Code for up to 3 restarts committed (9b6e054), not deployed.
-
 ## Decided
+
+- 2026-10-20 12:40 · ESP runs that a restart does not converge. Ivan: "I would then just IGNORE CONVERGENCE FAILURE or raise
+  the eps threshold upon restart just to ensure the ESP is computed. Since the energy doesnt fluctuate but stedily converge
+  I would call it a day and compute esp". Now (qd-workflows f/esp.py, deployed): an ESP run (prints cubes) restarts from its
+  own .wfn with EPS_SCF 1e-5 and IGNORE_CONVERGENCE_FAILURE; solvation.json flags scf_converged per species. Field runs keep
+  their SCF settings (finite differences) and restart from their .wfn up to 3 times. Test: AlAs-Al-Al35As26Cl27-clean
+  dot_add12 converged at 1e-5 in 1 cycle (42 s). The 22 others of the 23 vacuum-only dots: job 9591129 (2 CLX test nodes).
+- 2026-10-20 12:40 (supervisor) · COSMO fix (02ab8e1, from the COSMO session): pseudo-valence densities below the isosurface
+  value at Cd/Al/Pb/... nuclei gave closed pockets with huge potentials (AlCl3 E_inf -24.5 eV -> -0.105 eV). Deployed;
+  278 of 313 records' cp2k/solvation.json replaced (old kept as solvation.json.pre_02ab8e1), 35 unchanged; 17 legacy records
+  by job 9591131. stage3_ready.sh reruns stage 3 for dots whose cp2k/solvation.json is newer than their report (the
+  watchdog does it each cycle); then the webapp is republished.
 
 - 2026-10-20 07:05 · Ivan: "Why there are only 73 webapp considering that 325 have the full dft chain finished ?" and
   "You can do it an a test node or even the home since it's fast no ?". Cause: stage 3 (assembly for the webapp) was only
