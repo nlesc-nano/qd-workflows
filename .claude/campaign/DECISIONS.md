@@ -13,6 +13,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-21 01:20 · Ivan: "I would do also those less 600 atoms in the same way. I thought they had finished already".
+  GPW for every chain still to run (inputs.GPW_ABOVE_ATOMS = 0, qd-workflows commit after 168a39e, deployed): 100 more
+  pending dots <= 600 atoms switched (geo_opt inputs converted, GAPW kept as .gapw); 15 small dots whose geo_opt finished
+  keep GAPW. All 401 unfinished chains: 383 gpw, 18 gapw; 346 done chains untouched; ~112 not yet prepared get gpw.
+  The <= 600-atom dots were not finished because they waited in bundles behind the queue (account fair-share ~0).
+
 - 2026-10-21 01:00 · Ivan: "we need GAPW mostly for the forces when we label ML frames. Not strictly needed. We can set a
   threshold on the number of atoms. Beyond 600 we can switch to GPW, REL_CUTOFF default ... those calcs that have run
   already should stay as is and not re-run." (Why NHR looked costlier than his Hyperion HgTe test: the campaign templates use
