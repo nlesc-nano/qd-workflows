@@ -11,6 +11,14 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Open
 
+- 2026-10-20 11:30 · ESP runs of the stripped/added dots that do not converge from their own .wfn. Ivan: "In these cases it is
+  always better to make a quick restart ... that should converge then in a few cycles using the restart wfn file". The chain
+  already restarts once (212 restarts, 191 converged). 21 ESP runs (dot_9/11/12 = fully stripped, dot_add* = fully covered;
+  mostly Al/Ga/In-V dots) did not: in the restart the energy still moves by 1e-4 to 2e-2 Ha over 200 cycles (3 go up), and
+  a second restart by hand (AlAs-Al-Al35As26Cl27-clean dot_add12, job 9591087) also stopped at 200 (conv 3.8e-6, dE -2e-4 Ha).
+  Their 23 dots have no DFT solvation (vacuum only). Proposal: these runs only, diagonalization + Fermi smearing from the
+  latest .wfn (probably near-zero gap of bare surfaces). Waits for Ivan. Code for up to 3 restarts committed (9b6e054), not deployed.
+
 ## Decided
 
 - 2026-10-20 07:05 · Ivan: "Why there are only 73 webapp considering that 325 have the full dft chain finished ?" and
