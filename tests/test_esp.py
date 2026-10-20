@@ -77,5 +77,8 @@ def test_scf_restart_goes_on_from_the_runs_own_wfn(tmp_path):
     rest = "\n".join(ln for ln in t.splitlines() if "WFN_RESTART_FILE_NAME" not in ln) + "\n"
     assert rest.replace("SCF_GUESS  restart", "SCF_GUESS  atomic") == inp                    # nothing else changed
     assert (d / "cp2k.out.unconverged").is_file() and not (d / "cp2k.out").exists()
+    for k in (2, 3):                                        # up to three restarts, every output kept
+        (d / "cp2k.out").write_text(" SCF run NOT converged.\n")
+        assert esp.scf_restart(d) == "restarted" and (d / f"cp2k.out.unconverged{k}").is_file()
     (d / "cp2k.out").write_text(" SCF run NOT converged.\n")
-    assert esp.scf_restart(d) == "already restarted once"
+    assert esp.scf_restart(d) == "already restarted 3 times"

@@ -290,7 +290,7 @@ def main(argv=None) -> int:
     p.add_argument("dir", help='directory of the esp runs')
     p.add_argument("-o", "--output", required=True, help='solvation.json to write')
 
-    p = cp.add_parser("scf-restart", help="runs stopped with 'SCF run NOT converged': restart once from their own .wfn")
+    p = cp.add_parser("scf-restart", help="runs stopped with 'SCF run NOT converged': restart from their own .wfn (at most 3 times)")
     p.add_argument("dirs", nargs="+", help="run directories")
 
     p = cp.add_parser("label", help="energy and forces of a sample single point")

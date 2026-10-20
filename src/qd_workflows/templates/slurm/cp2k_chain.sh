@@ -126,12 +126,12 @@ if [ "{{FIELD}}" = "1" ]; then
             k=$((k + 1)); if [ $k -ge $FP ]; then wait; k=0; fi
         done
         wait
-        # a run that stopped at MAX_SCF goes on once from its own .wfn (written every 50 cycles)
+        # a run that stopped at MAX_SCF goes on from its own .wfn (written every 50 cycles), up to 3 times
         for r in $(orch_field status field); do
-            if [ "$(qdw cp2k scf-restart "field/$r" | sed 's/.*: //')" = "restarted" ]; then
+            while [ "$(qdw cp2k scf-restart "field/$r" | sed 's/.*: //')" = "restarted" ]; do
                 plog event chain "field/$r: SCF not converged at MAX_SCF, restarted from its own .wfn"
-                (cd "field/$r" && cp2k_n $R) || true      # a second failure is reported below, not fatal here
-            fi
+                (cd "field/$r" && cp2k_n $R) || true      # a last failure is reported below, not fatal here
+            done
         done
     fi
     todo=$(orch_field status field)
@@ -179,12 +179,12 @@ if [ "{{FIELD}}" = "1" ] && [ ! -s solvation.json ]; then (   # a failure here m
             esac
         done
         wait
-        for r in $(qdw cp2k esp status esp); do                  # stopped at MAX_SCF: once more from its own .wfn
+        for r in $(qdw cp2k esp status esp); do                  # stopped at MAX_SCF: on from its own .wfn, up to 3 times
             case $r in dot_*)
-                if [ "$(qdw cp2k scf-restart "esp/$r" | sed 's/.*: //')" = "restarted" ]; then
+                while [ "$(qdw cp2k scf-restart "esp/$r" | sed 's/.*: //')" = "restarted" ]; do
                     plog event chain "esp/$r: SCF not converged at MAX_SCF, restarted from its own .wfn"
                     (cd "esp/$r" && cp2k_n $NR) || true
-                fi ;;
+                done ;;
             esac
         done
     fi

@@ -69,15 +69,21 @@ def restart_print(t: str) -> str:
                 + r"\n\g<1>    &END RESTART\n\g<1>  &END PRINT")
 
 
-def scf_restart(run_dir) -> str:
-    """A run that stopped with "SCF run NOT converged": restart it once from its own .wfn (SCF_GUESS restart);
-    its output is kept as cp2k.out.unconverged. Returns "restarted" or why not."""
+MAX_SCF_RESTARTS = 3
+
+
+def scf_restart(run_dir, max_restarts: int = MAX_SCF_RESTARTS) -> str:
+    """A run that stopped with "SCF run NOT converged": restart it from its own .wfn (SCF_GUESS restart), at most
+    `max_restarts` times; its outputs are kept as cp2k.out.unconverged, .unconverged2, ... Returns "restarted" or
+    why not."""
     d = Path(run_dir)
     out = d / "cp2k.out"
     if not out.is_file() or "SCF run NOT converged" not in out.read_text(errors="ignore"):
         return "not an SCF failure"
-    if (d / "cp2k.out.unconverged").exists():
-        return "already restarted once"
+    done = len(list(d.glob("cp2k.out.unconverged*")))
+    if done >= max_restarts:
+        return f"already restarted {done} times"
+    tag = "unconverged" + (str(done + 1) if done else "")
     t = (d / "cp2k.inp").read_text()
     project = re.search(r"^\s*PROJECT\s+(\S+)", t, flags=re.M).group(1)
     wfn = f"{project}-RESTART.wfn"
@@ -88,9 +94,9 @@ def scf_restart(run_dir) -> str:
     if not n:
         t = _sub(t, r"^(\s*)&DFT\s*$", rf"\g<0>\n\g<1>  WFN_RESTART_FILE_NAME {wfn}")
     (d / "cp2k.inp").write_text(t)
-    out.rename(d / "cp2k.out.unconverged")
+    out.rename(d / f"cp2k.out.{tag}")
     if (d / "srun.log").is_file():
-        (d / "srun.log").rename(d / "srun.log.unconverged")
+        (d / "srun.log").rename(d / f"srun.log.{tag}")
     return "restarted"
 
 
