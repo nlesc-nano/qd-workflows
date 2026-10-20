@@ -13,6 +13,16 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-21 01:00 · Ivan: "we need GAPW mostly for the forces when we label ML frames. Not strictly needed. We can set a
+  threshold on the number of atoms. Beyond 600 we can switch to GPW, REL_CUTOFF default ... those calcs that have run
+  already should stay as is and not re-run." (Why NHR looked costlier than his Hyperion HgTe test: the campaign templates use
+  GAPW + FORCE_PAW + GAPW_ACCURATE_XCINT + REL_CUTOFF 60; his test was plain GPW.) Done (qd-workflows 168a39e, deployed):
+  one method per chain, file cp2k/METHOD; new chains: gpw above 600 atoms (inputs.GPW_ABOVE_ATOMS), every later step
+  prepared with --method $(cat METHOD). Pending NHR chains (logs/switch_gpw.py): 283 dots > 600 atoms without a finished
+  geo_opt -> gpw (geo_opt/cp2k.inp converted, GAPW original kept as cp2k.inp.gapw; geo_opt continues from its last geometry
+  and GAPW .wfn); 3 dots > 600 atoms whose geo_opt finished keep gapw; 346 done chains and 115 pending dots <= 600 atoms
+  untouched. The monomer library ESP stays GAPW. ML-frame labelling must use GAPW dots only (or GAPW single points).
+
 - 2026-10-21 00:20 · Ivan: "try to go from smaller to larger on nhr keeping an eye on the budget. You can attempt to run the
   largest on hyperion where we have no limits". NHR: no `scontrol top` (not enabled) and Nice hurts against all users, so
   holds: all 205 pending chain jobs >= 800 atoms held; logs/release_by_size.sh (watchdog step 2d) releases the smallest held
