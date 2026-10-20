@@ -117,4 +117,4 @@ def test_to_gpw_drops_the_gapw_settings_only():
     assert inputs.to_gpw(g) == g                                         # idempotent
     removed = [ln for ln in t.splitlines() if ln not in g.splitlines()]
     assert len(removed) == 4                                             # METHOD line changed + 3 lines dropped
-    assert inputs.chain_method(600) == "gapw" and inputs.chain_method(601) == "gpw"
+    assert inputs.chain_method(35) == "gpw" and inputs.chain_method(2000) == "gpw"

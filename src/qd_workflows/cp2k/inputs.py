@@ -202,10 +202,10 @@ def local_data_dir(cluster: dict, override: str | None = None) -> Path:
     raise FileNotFoundError("CP2K data files not found: pass --data-dir or set QDW_CP2K_DATA")
 
 
-# GAPW (FORCE_PAW, GAPW_ACCURATE_XCINT, REL_CUTOFF 60) is needed mostly for the forces of the ML-frame labels; dots
-# above GPW_ABOVE_ATOMS atoms run the faster GPW with the default REL_CUTOFF (Ivan, 2026-10-21). A chain keeps one
-# method for all its steps (the file METHOD in the chain directory).
-GPW_ABOVE_ATOMS = 600
+# GAPW (FORCE_PAW, GAPW_ACCURATE_XCINT, REL_CUTOFF 60) is needed mostly for the forces of the ML-frame labels; the
+# chains still to run use the faster GPW with the default REL_CUTOFF (Ivan, 2026-10-21: first above 600 atoms, then for
+# all sizes). A chain keeps one method for all its steps (the file METHOD in the chain directory).
+GPW_ABOVE_ATOMS = 0
 METHODS = ("gapw", "gpw")
 
 
