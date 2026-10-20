@@ -236,10 +236,19 @@ def read_cube(path) -> dict:
 
 def isosurface(density: dict, rho0: float = RHO_ISO, spacing: float = ISO_SPACING_A):
     """Surface elements of the isosurface rho = rho0: centroids (A), areas (A^2); enclosed volume (A^3)."""
+    from scipy.ndimage import binary_fill_holes
     from skimage.measure import marching_cubes
     h = [ax[1] - ax[0] for ax in density["axes"]]
     stride = max(1, int(round(spacing / min(h))))
-    verts, faces, _, _ = marching_cubes(density["data"], level=rho0, spacing=tuple(h), step_size=stride)
+    # the pseudo-valence density drops below rho0 at the nucleus of many elements (Al, Cd, Pb, ...):
+    # those enclosed pockets gave extra closed surfaces next to the nuclei, where the potential is
+    # tens of volts, and E_inf of AlCl3 came out -24.5 eV instead of about -0.2 eV. The cavity is the
+    # outer surface only: raise every region below rho0 that does not reach the cube boundary (the
+    # voxels above rho0 stay as they are, so the outer surface does not move)
+    above = density["data"] > rho0
+    inside = binary_fill_holes(above)
+    data = np.where(inside & ~above, density["data"].max(), density["data"])
+    verts, faces, _, _ = marching_cubes(data, level=rho0, spacing=tuple(h), step_size=stride)
     verts = verts + np.array([ax[0] for ax in density["axes"]])
     # marching cubes can return coincident vertices (a zero distance in the COSMO matrix): merge them
     verts, inv = np.unique(np.round(verts, 6), axis=0, return_inverse=True)
@@ -253,7 +262,7 @@ def isosurface(density: dict, rho0: float = RHO_ISO, spacing: float = ISO_SPACIN
     for k in range(3):
         np.add.at(area, faces[:, k], tri_area / 3)
     keep = area > 1e-8
-    vol = float((density["data"] > rho0).sum() * np.prod(h))
+    vol = float(inside.sum() * np.prod(h))
     return verts[keep], area[keep], vol
 
 
