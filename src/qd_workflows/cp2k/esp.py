@@ -70,15 +70,17 @@ def restart_print(t: str) -> str:
 
 
 MAX_SCF_RESTARTS = 3
+ESP_RESTART_EPS_SCF = "1e-5"
 
 
 def scf_restart(run_dir, max_restarts: int = MAX_SCF_RESTARTS) -> str:
     """A run that stopped with "SCF run NOT converged": restart it from its own .wfn (SCF_GUESS restart), at most
     `max_restarts` times; its outputs are kept as cp2k.out.unconverged, .unconverged2, ... Returns "restarted" or
-    why not."""
+    why not. An ESP run (it prints the cubes) restarts with EPS_SCF 1e-5 and IGNORE_CONVERGENCE_FAILURE, so
+    its cubes are written in any case (Ivan, 2026-10-20: the energy goes down steadily, compute the ESP)."""
     d = Path(run_dir)
     out = d / "cp2k.out"
-    if not out.is_file() or "SCF run NOT converged" not in out.read_text(errors="ignore"):
+    if not out.is_file() or "SCF run NOT converged" not in out.read_text(errors="ignore") or _done(d):
         return "not an SCF failure"
     done = len(list(d.glob("cp2k.out.unconverged*")))
     if done >= max_restarts:
@@ -93,6 +95,8 @@ def scf_restart(run_dir, max_restarts: int = MAX_SCF_RESTARTS) -> str:
     t, n = re.subn(r"^(\s*WFN_RESTART_FILE_NAME\s+).*$", rf"\g<1>{wfn}", t, count=1, flags=re.M)
     if not n:
         t = _sub(t, r"^(\s*)&DFT\s*$", rf"\g<0>\n\g<1>  WFN_RESTART_FILE_NAME {wfn}")
+    if "&V_HARTREE_CUBE" in t and not _ignores_failure(t):
+        t = _sub(t, r"^(\s*)(EPS_SCF\s+)\S+", rf"\g<1>\g<2>{ESP_RESTART_EPS_SCF}\n\g<1>IGNORE_CONVERGENCE_FAILURE")
     (d / "cp2k.inp").write_text(t)
     out.rename(d / f"cp2k.out.{tag}")
     if (d / "srun.log").is_file():
@@ -171,13 +175,26 @@ def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: 
     return names
 
 
+def _ignores_failure(inp: str) -> bool:
+    return bool(re.search(r"^\s*IGNORE_CONVERGENCE_FAILURE", inp, flags=re.M))
+
+
+def _scf_converged(d: Path) -> bool:
+    t = (d / "cp2k.out").read_text(errors="ignore")
+    return "SCF run converged" in t and "SCF run NOT converged" not in t
+
+
 def _done(d: Path) -> bool:
+    """Cubes written and the SCF converged, or an ESP restart that accepted the SCF as it was
+    (IGNORE_CONVERGENCE_FAILURE) and ended normally."""
     o = d / "cp2k.out"
-    if not o.is_file():
+    if not o.is_file() or not (any(d.glob("v_hartree*")) and any(d.glob("density*"))):
         return False
-    t = o.read_text(errors="ignore")
-    return ("SCF run converged" in t and "SCF run NOT converged" not in t
-            and any(d.glob("v_hartree*")) and any(d.glob("density*")))
+    if _scf_converged(d):
+        return True
+    inp = d / "cp2k.inp"
+    return (inp.is_file() and _ignores_failure(inp.read_text())
+            and "PROGRAM ENDED AT" in o.read_text(errors="ignore"))
 
 
 def status(out_dir: str) -> str:
@@ -204,7 +221,8 @@ def collect(out_dir: str, max_points: int = MAX_POINTS) -> dict:
         r = sv.cosmo_isodensity(pot, den, sv.RHO_ISO, spacing)
         sym, _ = read_xyz(d / "geom.xyz")
         res[name] = {"E_inf_eV": r["E_inf_eV"], "S_A2": r["S_A2"], "V_A3": r["V_A3"], "n_points": r["n_points"],
-                     "spacing_A": spacing, "n_atoms": len(sym), "screening_charge": r["screening_charge"]}
+                     "spacing_A": spacing, "n_atoms": len(sym), "screening_charge": r["screening_charge"],
+                     "scf_converged": _scf_converged(d)}
         m = re.match(r"dot_(\d+)$", name)
         if m:
             res[name]["k"] = int(m.group(1))

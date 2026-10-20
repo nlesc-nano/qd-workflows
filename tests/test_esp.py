@@ -74,11 +74,33 @@ def test_scf_restart_goes_on_from_the_runs_own_wfn(tmp_path):
     assert esp.scf_restart(d) == "restarted"
     t = (d / "cp2k.inp").read_text()
     assert "SCF_GUESS  restart" in t and "WFN_RESTART_FILE_NAME dot_12-RESTART.wfn" in t
-    rest = "\n".join(ln for ln in t.splitlines() if "WFN_RESTART_FILE_NAME" not in ln) + "\n"
-    assert rest.replace("SCF_GUESS  restart", "SCF_GUESS  atomic") == inp                    # nothing else changed
+    # an ESP run accepts the SCF of its restart: EPS_SCF 1e-5 and IGNORE_CONVERGENCE_FAILURE, so the cubes come out
+    assert re.search(r"^\s*EPS_SCF\s+1e-5\s*$", t, flags=re.M) and re.search(r"^\s*IGNORE_CONVERGENCE_FAILURE$", t, flags=re.M)
+    assert t.count("IGNORE_CONVERGENCE_FAILURE\n") == 1
     assert (d / "cp2k.out.unconverged").is_file() and not (d / "cp2k.out").exists()
+    (d / "cp2k.out").write_text(" SCF run NOT converged.\n PROGRAM ENDED AT\n")
+    assert not esp._done(d)                                    # no cubes yet
+    (d / "v_hartree-1.cube").write_text("x"); (d / "density-1.cube").write_text("x")
+    assert esp._done(d) and not esp._scf_converged(d)          # accepted, flagged as not converged
+    assert esp.scf_restart(d) == "not an SCF failure"          # no further restart
+    for f in ("v_hartree-1.cube", "density-1.cube"):
+        (d / f).unlink()
     for k in (2, 3):                                        # up to three restarts, every output kept
         (d / "cp2k.out").write_text(" SCF run NOT converged.\n")
         assert esp.scf_restart(d) == "restarted" and (d / f"cp2k.out.unconverged{k}").is_file()
+    assert (d / "cp2k.inp").read_text().count("IGNORE_CONVERGENCE_FAILURE\n") == 1
     (d / "cp2k.out").write_text(" SCF run NOT converged.\n")
     assert esp.scf_restart(d) == "already restarted 3 times"
+
+
+def test_scf_restart_of_a_field_run_keeps_its_scf_settings(tmp_path):
+    d = tmp_path / "fxp"
+    d.mkdir()
+    inp = esp.restart_print(BASE.replace("X-field", "fxp"))       # a field run: no cubes
+    (d / "cp2k.inp").write_text(inp)
+    (d / "cp2k.out").write_text(" SCF run NOT converged.\n")
+    (d / "fxp-RESTART.wfn").write_text("x")
+    assert esp.scf_restart(d) == "restarted"
+    t = (d / "cp2k.inp").read_text()
+    assert "IGNORE_CONVERGENCE_FAILURE" not in t
+    assert re.findall(r"^\s*EPS_SCF\s+(\S+)", t, flags=re.M) == re.findall(r"^\s*EPS_SCF\s+(\S+)", inp, flags=re.M)
