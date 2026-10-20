@@ -13,6 +13,9 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 06:25 (supervisor) · The watchdog replans GPU (stage 2) leftovers itself after a time-out too (logs/gpu_replan.sh:
+  dots not done and not in any queued/running job, 12 processes per node, tag s2auto<date>). s2rest02 TIMEOUT: 1 dot replanned
+  (9589822). More geo_opt OOMs of 1,400-1,500-atom dots were resubmitted on 8 nodes by the watchdog.
 - 2026-10-20 06:00 (supervisor) · Dots of 1,400-1,950 atoms were OOM-killed in geo_opt on 4 CLX nodes (MaxRSS ~3.5 GB per rank,
   ~340 GB per node > 288 GB): dots >= 1,300 atoms run on 8 CLX nodes (768 cores; memory spread, not speed); 37 queued chains
   moved; watchdog and replan use the rule. Alternative left for Ivan: 1 Genoa node (192 cores, 1.5 TB) needs the Genoa build in
