@@ -104,3 +104,17 @@ def test_scf_restart_of_a_field_run_keeps_its_scf_settings(tmp_path):
     t = (d / "cp2k.inp").read_text()
     assert "IGNORE_CONVERGENCE_FAILURE" not in t
     assert re.findall(r"^\s*EPS_SCF\s+(\S+)", t, flags=re.M) == re.findall(r"^\s*EPS_SCF\s+(\S+)", inp, flags=re.M)
+
+
+def test_to_gpw_drops_the_gapw_settings_only():
+    from qd_workflows.cp2k import inputs
+    t = (inputs.TEMPLATES / "cp2k" / "geo_opt.inp").read_text()
+    g = inputs.to_gpw(t)
+    assert re.search(r"^\s*METHOD\s+gpw\b", g, flags=re.M) and "gapw" not in g.lower().replace("gapw_", "")
+    for k in ("FORCE_PAW", "GAPW_ACCURATE_XCINT", "REL_CUTOFF"):
+        assert not re.search(rf"^\s*{k}\b", g, flags=re.M)
+    assert re.search(r"^\s*CUTOFF\s+400", g, flags=re.M) and re.search(r"^\s*NGRIDS\s+4", g, flags=re.M)
+    assert inputs.to_gpw(g) == g                                         # idempotent
+    removed = [ln for ln in t.splitlines() if ln not in g.splitlines()]
+    assert len(removed) == 4                                             # METHOD line changed + 3 lines dropped
+    assert inputs.chain_method(600) == "gapw" and inputs.chain_method(601) == "gpw"

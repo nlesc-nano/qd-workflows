@@ -16,8 +16,8 @@ def _cp2k(args) -> int:
         window = json.loads(open(args.window).read()) if args.window else None
         info = inputs.prepare(args.xyz, args.step, args.project, args.out, load_cluster(args.cluster),
                               wfn=args.wfn, window=window, charge=args.charge, optimizer=args.optimizer,
-                              data_dir=args.data_dir, time=args.time, qos=args.qos)
-        print(json.dumps({k: info[k] for k in ("project", "step", "n_atoms", "basis_functions",
+                              data_dir=args.data_dir, time=args.time, qos=args.qos, method=args.method)
+        print(json.dumps({k: info[k] for k in ("project", "step", "method", "n_atoms", "basis_functions",
                                                 "occupied_mos", "cell_A", "resources")}, indent=1))
     elif args.action == "chain":
         info = inputs.chain(args.xyz, args.project, args.out, load_cluster(args.cluster), cluster_ref=args.cluster,
@@ -248,6 +248,8 @@ def main(argv=None) -> int:
     p.add_argument("--data-dir", help="local copy of the CP2K data files (default: $QDW_CP2K_DATA, then the cluster path)")
     p.add_argument("--time", help="wall time, overriding the cluster profile (e.g. 00:10:00)")
     p.add_argument("--qos", help="QoS, overriding the cluster profile (e.g. test)")
+    p.add_argument("--method", default="gapw", choices=("gapw", "gpw"),
+                   help="gapw (the templates) or gpw (default REL_CUTOFF; the chains above 600 atoms, file METHOD)")
 
     p = cp.add_parser("chain", help="one job for geo_opt, PDOS, window, TREXIO and trim")
     p.add_argument("xyz", help="MACE-relaxed structure")

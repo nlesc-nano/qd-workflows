@@ -72,6 +72,7 @@ step_mem() {
 # The last lines srun and CP2K printed for the unfinished runs $2... of step directory $1.
 why() { local d=$1 r; shift; for r in "$@"; do echo "[chain] $d/$r: $(tail -n 2 "$d/$r/srun.log" 2>/dev/null | tr '\n' ' ')"; done; }
 EXTRA="--cluster {{CLUSTER}} --time {{TIME}} --qos {{QOS}}"
+[ -s METHOD ] && EXTRA="$EXTRA --method $(cat METHOD)"   # one method for the whole chain (gapw, or gpw above 600 atoms)
 MONOLIB="{{MONOMER_LIBRARY}}"   # CP2K monomer library (qdw monomers), empty: every chain runs its monomers
 # Progress log of the run (qdw log, $QDW_LOG): a line when each step starts and ends, with its key
 # result; on exit, how the job ended and the step it was in. Never stops the chain.

@@ -202,6 +202,24 @@ def local_data_dir(cluster: dict, override: str | None = None) -> Path:
     raise FileNotFoundError("CP2K data files not found: pass --data-dir or set QDW_CP2K_DATA")
 
 
+# GAPW (FORCE_PAW, GAPW_ACCURATE_XCINT, REL_CUTOFF 60) is needed mostly for the forces of the ML-frame labels; dots
+# above GPW_ABOVE_ATOMS atoms run the faster GPW with the default REL_CUTOFF (Ivan, 2026-10-21). A chain keeps one
+# method for all its steps (the file METHOD in the chain directory).
+GPW_ABOVE_ATOMS = 600
+METHODS = ("gapw", "gpw")
+
+
+def chain_method(n_atoms: int) -> str:
+    return "gpw" if n_atoms > GPW_ABOVE_ATOMS else "gapw"
+
+
+def to_gpw(inp: str) -> str:
+    """The same input with GPW: METHOD gpw, no FORCE_PAW / GAPW_ACCURATE_XCINT, REL_CUTOFF at its default."""
+    t = re.sub(r"^(\s*METHOD\s+)gapw\b", r"\g<1>gpw", inp, flags=re.M | re.I)
+    t = re.sub(r"^\s*(FORCE_PAW|GAPW_ACCURATE_XCINT|REL_CUTOFF)\b.*\n", "", t, flags=re.M | re.I)
+    return t
+
+
 def prepare(
     xyz: str,
     step: str,
@@ -217,6 +235,7 @@ def prepare(
     time: str | None = None,
     qos: str | None = None,
     xc: str = "PBE",
+    method: str = "gapw",
 ) -> dict:
     """
     Write `<out_dir>/{cp2k.inp, geom.xyz, job.sh, job.json}` for one step.
@@ -224,8 +243,11 @@ def prepare(
     `wfn` is the geo_opt restart file every later step reads (a path relative to
     out_dir or absolute); geo_opt restarts from its own. `window` (from
     `outputs.mo_window`) sets ADDED_MOS for the trexio step. `time` and `qos`
-    override the cluster profile (e.g. a short test queue).
+    override the cluster profile (e.g. a short test queue). `method`: gapw (the
+    templates) or gpw (to_gpw).
     """
+    if method not in METHODS:
+        raise ValueError(f"unknown method {method!r}; one of {', '.join(METHODS)}")
     if step not in STEPS:
         raise ValueError(f"unknown step {step!r}; one of {', '.join(STEPS)}")
     cp = cluster["cp2k"]
@@ -274,7 +296,8 @@ def prepare(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     write_xyz(out / "geom.xyz", symbols, coords, f"{project} {step}")
-    (out / "cp2k.inp").write_text(render((TEMPLATES / "cp2k" / template).read_text(), values))
+    inp = render((TEMPLATES / "cp2k" / template).read_text(), values)
+    (out / "cp2k.inp").write_text(to_gpw(inp) if method == "gpw" else inp)
 
     res = cp2k_resources(cluster, n_bf)
     job = {
@@ -295,7 +318,7 @@ def prepare(
     }
     (out / "job.sh").write_text(render((TEMPLATES / "slurm" / "cp2k.sh").read_text(), job))
     info = {
-        "project": project, "step": step, "cluster": cluster["name"], "n_atoms": len(symbols),
+        "project": project, "step": step, "cluster": cluster["name"], "n_atoms": len(symbols), "method": method,
         "composition": dict(sorted(counts.items())), "basis_functions": n_bf, "electrons": n_elec,
         "occupied_mos": n_elec // 2, "cell_A": values["CELL"], "wfn": values["WFN_FILE"],
         "kinds": {e: {"basis": k.basis, "potential": k.potential, "valence": k.valence, "functions": k.functions}
@@ -341,8 +364,10 @@ def chain(xyz: str, project: str, out_dir: str, cluster: dict, *, cluster_ref: s
     out.mkdir(parents=True, exist_ok=True)
     if record:
         (out / "record.json").write_text(Path(record).read_text())
+    method = (out / "METHOD").read_text().strip() if (out / "METHOD").is_file() else chain_method(len(read_xyz(xyz)[0]))
+    (out / "METHOD").write_text(method + "\n")      # every step of the chain (chain.sh: --method $(cat METHOD))
     info = prepare(xyz, "geo_opt", project, str(out / "geo_opt"), cluster, charge=charge,
-                   optimizer=optimizer, data_dir=data_dir, time=time, qos=qos)
+                   optimizer=optimizer, data_dir=data_dir, time=time, qos=qos, method=method)
     cp = cluster["cp2k"]
     res = info["resources"]
     py = cluster.get("qdw_python")
