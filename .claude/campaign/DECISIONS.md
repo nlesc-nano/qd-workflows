@@ -13,6 +13,12 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-20 23:15 (supervisor) · Correction: the Nice 1000 on our pending chains came from our own logs/replan_submit.sh
+  (set 2026-10-19 17:40 so GPU and stage 3 jobs got our slots first), not from NHR. Nice works against all users, and with the
+  account fair-share ~0 (2.8 % of the machine used vs 0.4 % share) it held the chains back; stage 3 now runs on the test
+  partition, so the reason is gone. All 313 pending jobs reset to Nice 0 (priority ~99,600 -> ~100,800), --nice removed from
+  replan_submit.sh (old copy .bak_nice). Only 1 job was running at 23:00 (CLX 759/772 nodes allocated).
+
 - 2026-10-20 15:40 (supervisor) · Stage 3 of large dots: the report step took 2,434 s for a 1,211-atom dot (514 s at 738 atoms),
   so a 1 h test node cannot hold dots up to 2,000 atoms. stage3_ready.sh now sends dots >= 900 atoms in groups of 2, side by
   side on one regular cpu-genoa node (8 h, job <tag>-big); the rest stays on the test node. All 23 vacuum-only dots now have
