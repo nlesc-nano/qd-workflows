@@ -13,6 +13,14 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-21 13:20 · Ivan (to the Hyperion session): "I will probably have 1M cpu hours soon in another cluster, so maybe now
+  we can cool down a bit on NHR and focus only on the smaller system < 800 atoms or so" and "Keep hyperion as is for now,
+  lets wait the other resources". NHR: only dots < 800 atoms. All 156 chain jobs of 800-1299 atoms held (the Hyperion
+  session; release_by_size.sh releases only < 800); supervisor: the watchdog no longer resubmits failed chains >= 800 atoms
+  and replan_chains.py skips them. Hyperion: 148 of the 157 dots >= 1300 atoms submitted (pilot verified: energies equal to
+  1e-9 Ha, QDEX identical; 47 s per SCF iteration on 112 emerald ranks vs 15 s on 192 CLX, ScaLAPACK vs COSMA build).
+  800-1299 (161 dots, ~0.24 M core-h on NHR) wait for the new cluster. Quarter: 1.81 M core-h balance on bep00157.
+
 - 2026-10-21 01:20 · Ivan: "I would do also those less 600 atoms in the same way. I thought they had finished already".
   GPW for every chain still to run (inputs.GPW_ABOVE_ATOMS = 0, qd-workflows commit after 168a39e, deployed): 100 more
   pending dots <= 600 atoms switched (geo_opt inputs converted, GAPW kept as .gapw); 15 small dots whose geo_opt finished
