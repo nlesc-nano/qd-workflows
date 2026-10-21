@@ -13,6 +13,15 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-21 (supervisor, after Ivan "cant you do it yourself ?") · PbTe added to QDEX's material database by the PbTe
+  session (QDEX repo commit 44e7f52 on the laptop, not pushed; NHR checkout hardness.py md5 cf620891, originals
+  *.before-pbte-2026-10-21): PBE 0.505 / PBE+SOC -0.109 eV at a_exp 6.462 A, QSGW+SOC 0.347 eV (Svane10 carried to
+  a_exp), Delta_Sigma 0.456 eV (PbS 0.430, PbSe 0.443); literature constants sourced in the code; monomer = campaign
+  Pb14Te13Cl2 (indices 9-13, not read by the campaign config; Pb38 suggested later). Verified: Pb14Te13Cl2 QP gap 1.96 SF /
+  1.59 SOC eV, below the same-size PbSe dot; PbSe rerun identical. Hold lifted (qdex_hold.txt emptied, chc009 released;
+  the 7 PbTe dots at QDEX are in queued bundles); Hyperion QDEX hardness.py replaced (same md5, backup kept).
+  Values and sources: side-session note pbte-qdex-material-db.md.
+
 - 2026-10-21 16:50 · All 19 PbTe dots stop at QDEX: "Material 'PBTE' not found in database or lacks bulk GW data"
   (QDEX qdex/hardness.py has PBS/PBSE rows at lines ~147, 200, 314, 331, 361, 764, 939; PbTe_rs bulk bands exist).
   Ivan: "I will add PbTe bulk data to QDEX ... hold the PbTe QDEX steps until then." Hold: logs/qdex_hold.txt (PbTe);
