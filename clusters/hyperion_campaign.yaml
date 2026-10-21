@@ -1,0 +1,60 @@
+# Hyperion (DIPC) for the structure-database campaign's largest dots (>= 1,300 atoms; Ivan 2026-10-20: "run the
+# largest on hyperion where we have no limits"). Same CP2K version as NHR (2026.2, EasyBuild foss-2025a), the NHR
+# campaign's deployed code, data files and monomer library copied to /scratch/iinfante/qdw_campaign.
+# A chain runs on one emerald node (112 ranks, 2 TB): TREXIO fits in place, no large-memory continuation.
+# Chains are submitted by qdw_campaign/bin/hyp_chain.sh (24 h pieces of the regular QoS that continue where they stopped);
+# the #SBATCH lines of chain.sh are not used.
+name: hyperion_campaign
+scheduler: slurm
+cores_per_node: 112          # emerald (some have 128: 16 cores stay free for other jobs)
+request: nodes               # every CP2K job on whole nodes, all cores as MPI ranks (Ivan's rule)
+min_cores: 112
+mem_per_cpu: 4g
+node_memory_gb: 1900
+qos: regular
+setup:
+  - source /etc/profile.d/lmod.sh
+  # mpirun, not srun: Hyperion's Slurm has only pmi2 and the foss-2025a OpenMPI 5 has no PMI (srun starts singletons).
+  # One rank per core (OpenMPI 5 binds to the NUMA domain above 2 ranks by default).
+  - export PRTE_MCA_hwloc_default_binding_policy=core
+qdw_python: /dipc/iinfante/.conda/envs/qdw-compute/bin/python
+qdw_pythonpath: /scratch/iinfante/qdw_campaign/code/qd-workflows/src:/scratch/iinfante/qdw_campaign/code/Orchestr.AI/src
+
+cp2k:
+  module: CP2K/2026.2-foss-2025a
+  executable: cp2k.psmp       # module resolves to the Emerald build on emerald nodes (same CP2K 2026.2-foss-2025a)
+  field_parallel: 1
+  esp_parallel: 1
+  omp_num_threads: 1
+  monomer_library: /scratch/iinfante/qdw_campaign/monomers/cp2k   # copy of NHR qdw_campaign/monomers (inputs' data paths rewritten)
+  data_dir: /scratch/iinfante/qdw_campaign/cp2k_data             # BASIS_MOLOPT_UZH, POTENTIAL_UZH copied from NHR (same md5)
+  basis_file: BASIS_MOLOPT_UZH
+  potential_file: POTENTIAL_UZH
+  basis: DZVP-MOLOPT-GGA-GTH
+  potential: GTH-GGA
+  time:
+    geo_opt: "24:00:00"
+    pdos: "06:00:00"
+    trexio: "06:00:00"
+    sample: "02:00:00"
+    chain: "24:00:00"
+  calibration:
+    basis_functions: 24000
+    cores: 240
+    memory_gb: 340
+
+qdex:
+  command: /scratch/iinfante/qdw_campaign/code/bin/qdex      # NHR's QDEX checkout (7c36c48) in the qdex conda environment
+  gth_soc_file: /scratch/iinfante/qdw_campaign/cp2k_data/GTH_SOC_POTENTIALS.txt
+  max_states: 1000
+  eps_out: 2.24
+  g_shell: 2
+
+props:
+  conda_env: qdw-compute
+  model: /scratch/iinfante/escience/qdw-test/models/macemh1model
+  gxtb: /scratch/iinfante/xtb/xtb-6.7.1/bin/gxtb
+  refs: /scratch/iinfante/escience/qdw-test/references
+  cif_dirs:                    # same files as NHR's copies (md5 of both trees checked 2026-10-20)
+    - /scratch/iinfante/escience/qdw-test/QD_Builder/examples/cifs
+    - /scratch/iinfante/escience/qdw-test/QD_Builder/examples/library/cifs
