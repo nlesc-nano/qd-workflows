@@ -13,6 +13,13 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-21 16:50 · All 19 PbTe dots stop at QDEX: "Material 'PBTE' not found in database or lacks bulk GW data"
+  (QDEX qdex/hardness.py has PBS/PBSE rows at lines ~147, 200, 314, 331, 361, 764, 939; PbTe_rs bulk bands exist).
+  Ivan: "I will add PbTe bulk data to QDEX ... hold the PbTe QDEX steps until then." Hold: logs/qdex_hold.txt (PbTe);
+  replan_chains.py and the watchdog skip PbTe dots whose orbitals.h5 exists (only QDEX left); bundle chc009 (3 PbTe dots
+  at QDEX only) held. PbTe chains still run every step up to TREXIO. When the data is in: update the QDEX copies (NHR
+  /scratch/usr/becivinf/qdw_tests/cd176_pilot/code/QDEX, Hyperion copy), empty qdex_hold.txt, release chc009, replan.
+
 - 2026-10-21 13:20 · Ivan (to the Hyperion session): "I will probably have 1M cpu hours soon in another cluster, so maybe now
   we can cool down a bit on NHR and focus only on the smaller system < 800 atoms or so" and "Keep hyperion as is for now,
   lets wait the other resources". NHR: only dots < 800 atoms. All 156 chain jobs of 800-1299 atoms held (the Hyperion
