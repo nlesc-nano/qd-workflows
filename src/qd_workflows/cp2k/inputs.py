@@ -16,7 +16,9 @@ from .basis import kind_blocks, kinds_for
 
 STEPS = ("geo_opt", "pdos", "trexio", "sample", "charges")
 VACUUM_A = 12.0          # added to the extent along each axis (6 Å on each side)
-LBFGS_ABOVE_ATOMS = 1000
+# auto = BFGS at every size (Ivan, 2026-10-22): above 1,000 atoms LBFGS stopped on its energy criterion
+# (REL_REDUCTION_OF_F <= FACTR*EPSMCH) with the maximum force 1-15x above MAX_FORCE (15 dots on NHR, 2 on Hyperion).
+LBFGS_ABOVE_ATOMS = None
 
 PDOS_PRINT = """    &PRINT
       &DOS
@@ -84,6 +86,11 @@ GEO_CONVERGENCE = """    MAX_FORCE 4.5E-4
 
 def geo_motion(lbfgs: bool) -> str:
     return "&MOTION\n  &GEO_OPT\n" + ("    OPTIMIZER LBFGS\n" if lbfgs else "") + GEO_CONVERGENCE + "  &END\n&END\n"
+
+
+def to_bfgs(inp: str) -> str:
+    """An existing geo_opt input with BFGS (CP2K's default optimizer) instead of LBFGS; the limits are kept."""
+    return re.sub(r"^\s*OPTIMIZER\s+LBFGS\s*\n", "", inp, flags=re.M | re.I)
 
 
 def forces_only(inp: str) -> str:
@@ -273,7 +280,8 @@ def prepare(
         raise ValueError(f"step {step} restarts from the geo_opt .wfn: pass wfn")
     if step == "geo_opt":
         template = "geo_opt.inp"
-        use_lbfgs = optimizer.upper() == "LBFGS" or (optimizer == "auto" and len(symbols) > LBFGS_ABOVE_ATOMS)
+        use_lbfgs = optimizer.upper() == "LBFGS" or (optimizer == "auto" and LBFGS_ABOVE_ATOMS is not None
+                                                     and len(symbols) > LBFGS_ABOVE_ATOMS)
         values["MOTION"] = geo_motion(use_lbfgs)
     elif step == "charges":
         template = "single_point_ot.inp"

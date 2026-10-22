@@ -64,3 +64,10 @@ def test_geo_opt_converges_on_the_forces_only():
     assert new.index("&MOTION") < new.index("&GLOBAL") and "RMS_DR 1.0" in new and inputs.forces_only(new) == new
     lb = inputs.forces_only("&MOTION\n  &GEO_OPT\n    OPTIMIZER LBFGS\n  &END\n&END\n&GLOBAL\n&END\n")
     assert lb.count("&GEO_OPT") == 1 and "MAX_DR 1.0" in lb and "OPTIMIZER LBFGS" in lb
+
+
+def test_to_bfgs_keeps_the_force_limits():
+    from qd_workflows.cp2k import inputs
+    lb = inputs.geo_motion(True)
+    b = inputs.to_bfgs(lb)
+    assert "LBFGS" not in b and b == inputs.geo_motion(False) and inputs.to_bfgs(b) == b
