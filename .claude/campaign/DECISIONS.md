@@ -13,6 +13,15 @@ records each decision below as "(supervisor)", and informs Ivan. Deleting data s
 
 ## Decided
 
+- 2026-10-22 13:40 · Ivan: "Use BFGS instead of LBFGS above 1,000 atoms (same force thresholds), continuing from the last
+  geometry; apply on NHR and Hyperion." Why: LBFGS stopped on its energy criterion (REL_REDUCTION_OF_F <= FACTR*EPSMCH,
+  "run CONVERGED") with the maximum force 1-15x above MAX_FORCE 4.5e-4 (RMS converged): 15 dots on NHR (mostly GAPW runs
+  before the switch), 2 of 3 on Hyperion (CdS-S-Cd640S477Cl326 max 1.9e-3, AlP-Al-Al929P863Cl198 6.7e-3 Ha/bohr); the chain
+  then counts geo_opt as not converged. Done: qd-workflows 970b5d2 (auto = BFGS at every size, inputs.to_bfgs), deployed
+  on NHR and Hyperion; logs/switch_bfgs.py converted the unfinished geo_opt inputs (LBFGS original kept as cp2k.inp.lbfgs):
+  NHR 117, Hyperion 146. The two stopped Hyperion chains resubmitted (7723781, 7723782); they continue from their last
+  geometry. NHR's 15 stopped dots are >= 800 atoms (held) and get BFGS when they run.
+
 - 2026-10-21 (supervisor, after Ivan "cant you do it yourself ?") · PbTe added to QDEX's material database by the PbTe
   session (QDEX repo commit 44e7f52 on the laptop, not pushed; NHR checkout hardness.py md5 cf620891, originals
   *.before-pbte-2026-10-21): PBE 0.505 / PBE+SOC -0.109 eV at a_exp 6.462 A, QSGW+SOC 0.347 eV (Svane10 carried to
