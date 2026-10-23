@@ -4,7 +4,7 @@ components:
   QD_builder:
     repo: git@github.com:nlesc-nano/QD_Builder.git
     branch: docs
-    commit: 0bddd0f
+    commit: f88dd3b
   Orchestr.AI:
     repo: https://github.com/nlesc-nano/Orchestr.AI.git
     branch: feature/qd-properties   # from camilo (dba7514)
