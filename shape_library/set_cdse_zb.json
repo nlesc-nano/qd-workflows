@@ -1,0 +1,1400 @@
+{
+ "parameters": {
+  "exposed_share": 0.02,
+  "fit": {
+   "tiers": [
+    {
+     "max_atoms": 300,
+     "n": 60
+    },
+    {
+     "max_atoms": 600,
+     "n": 30
+    }
+   ],
+   "per_shape": 6
+  },
+  "groups": {
+   "max_atoms": 300,
+   "n_pure": 5,
+   "min_pure": 3,
+   "dominated_share": 0.6,
+   "n_dominated": 4
+  },
+  "strip": {
+   "per_group": 2,
+   "mixed": 2,
+   "atoms": [
+    60,
+    200
+   ],
+   "mixed_min_families": 3
+  }
+ },
+ "libraries": {
+  "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb": "876096fe1295d1a37aa9b7651b10d8d7ce63fca267a1dde517c0a6f784881b2b",
+  "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove": "e3f1ae6c37df5ac6ce22e523c239ae4067c3607f7a44e80878055281c3d36cd7",
+  "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add": "ac8f097baa67cd6c4142c057cb5e9fa05789cba71404e1ea36fbf65d4ad40db8",
+  "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove": "a881ef2b769aac3468321767b2a19c9f45d19964d0326e29cb7544283e3ef412"
+ },
+ "columns": [
+  "A_100",
+  "A_110",
+  "A_111A",
+  "A_111B",
+  "L_100|100",
+  "L_100|110",
+  "L_100|111A",
+  "L_100|111B",
+  "L_110|110",
+  "L_110|111A",
+  "L_110|111B",
+  "L_111A|111A",
+  "L_111A|111B",
+  "L_111B|111B",
+  "N_v"
+ ],
+ "n": 108,
+ "n_strip": 12,
+ "condition": 22.7009249007651,
+ "groups": {
+  "pure 100": 6,
+  "pure 110": 26,
+  "pure 111A": 10,
+  "pure 111B": 9,
+  "pure 111A+111B": 24
+ },
+ "ids": [
+  "CdSe-Cd16Se13Cl6-00001",
+  "CdSe-Cd16Se10Cl12-00023",
+  "CdSe-Cd17Se3Cl28-00087",
+  "CdSe-Cd19Se8Cl22-00242",
+  "CdSe-Cd19Se8Cl22-00320",
+  "CdSe-Cd20Se9Cl22-00030",
+  "CdSe-Cd23Se16Cl14-00093",
+  "CdSe-Cd23Se8Cl30-00217",
+  "CdSe-Cd27Se16Cl22-00019",
+  "CdSe-Cd28Se19Cl18-00020",
+  "CdSe-Cd28Se19Cl18-00144",
+  "CdSe-Cd32Se13Cl38-00088",
+  "CdSe-Cd32Se13Cl38-00250",
+  "CdSe-Cd42Se40Cl4-00028",
+  "CdSe-Cd35Se18Cl34-00029",
+  "CdSe-Cd35Se18Cl34-00031",
+  "CdSe-Cd52Se43Cl18-00012",
+  "CdSe-Cd50Se28Cl44-00002",
+  "CdSe-Cd56Se32Cl48-00009",
+  "CdSe-Cd56Se32Cl48-00014",
+  "CdSe-Cd59Se32Cl54-00337",
+  "CdSe-Cd83Se81Cl4-00031",
+  "CdSe-Cd73Se46Cl54-00492",
+  "CdSe-Cd73Se46Cl54-00511",
+  "CdSe-Cd76Se46Cl60-00003",
+  "CdSe-Cd92Se85Cl14-00034",
+  "CdSe-Cd84Se56Cl56-00003",
+  "CdSe-Cd80Se41Cl78-00226",
+  "CdSe-Cd80Se41Cl78-00308",
+  "CdSe-Cd93Se80Cl26-00004",
+  "CdSe-Cd93Se80Cl26-00023",
+  "CdSe-Cd84Se52Cl64-00016",
+  "CdSe-Cd91Se64Cl54-00011",
+  "CdSe-Cd104Se83Cl42-00064",
+  "CdSe-Cd109Se98Cl22-00155",
+  "CdSe-Cd109Se96Cl26-00013",
+  "CdSe-Cd108Se91Cl34-00014",
+  "CdSe-Cd103Se68Cl70-00119",
+  "CdSe-Cd113Se94Cl38-00075",
+  "CdSe-Cd113Se92Cl42-00113",
+  "CdSe-Cd107Se68Cl78-00089",
+  "CdSe-Cd108Se71Cl74-00422",
+  "CdSe-Cd115Se87Cl56-00033",
+  "CdSe-Cd108Se63Cl90-00304",
+  "CdSe-Cd109Se64Cl90-00218",
+  "CdSe-Cd112Se73Cl78-00360",
+  "CdSe-Cd116Se83Cl66-00079",
+  "CdSe-Cd125Se110Cl30-00063",
+  "CdSe-Cd125Se110Cl30-00140",
+  "CdSe-Cd125Se110Cl30-00158",
+  "CdSe-Cd115Se78Cl74-00494",
+  "CdSe-Cd116Se78Cl76-00127",
+  "CdSe-Cd128Se113Cl30-00149",
+  "CdSe-Cd120Se87Cl66-00528",
+  "CdSe-Cd113Se64Cl98-00225",
+  "CdSe-Cd119Se82Cl74-00414",
+  "CdSe-Cd120Se84Cl72-00004",
+  "CdSe-Cd128Se107Cl42-00114",
+  "CdSe-Cd124Se93Cl62-00348",
+  "CdSe-Cd120Se79Cl82-00017",
+  "CdSe-Cd120Se79Cl82-00032",
+  "CdSe-Cd129Se106Cl46-00068",
+  "CdSe-Cd128Se101Cl54-00372",
+  "CdSe-Cd117Se64Cl106-00212",
+  "CdSe-Cd117Se64Cl106-00300",
+  "CdSe-Cd121Se76Cl90-00199",
+  "CdSe-Cd121Se76Cl90-00302",
+  "CdSe-Cd128Se95Cl66-00120",
+  "CdSe-Cd145Se144Cl2-00038",
+  "CdSe-Cd125Se80Cl90-00247",
+  "CdSe-Cd140Se125Cl30-00115",
+  "CdSe-Cd124Se75Cl98-00512",
+  "CdSe-Cd128Se87Cl82-00179",
+  "CdSe-Cd146Se140Cl12-00036",
+  "CdSe-Cd121Se64Cl114-00223",
+  "CdSe-Cd121Se64Cl114-00305",
+  "CdSe-Cd125Se76Cl98-00324",
+  "CdSe-Cd128Se85Cl86-00441",
+  "CdSe-Cd200Se177Cl46-00427",
+  "CdSe-Cd212Se199Cl26-00464",
+  "CdSe-Cd212Se191Cl42-00028",
+  "CdSe-Cd215Se200Cl30-00027",
+  "CdSe-Cd192Se121Cl142-00477",
+  "CdSe-Cd224Se217Cl14-00150",
+  "CdSe-Cd224Se217Cl14-00542",
+  "CdSe-Cd208Se155Cl106-00372",
+  "CdSe-Cd214Se153Cl122-00548",
+  "CdSe-Cd220Se165Cl110-00100",
+  "CdSe-Cd242Se189Cl106-00150",
+  "CdSe-Cd242Se189Cl106-00160",
+  "CdSe-Cd245Se195Cl100-00172",
+  "CdSe-Cd240Se171Cl138-00393",
+  "CdSe-Cd260Se223Cl74-00568",
+  "CdSe-Cd259Se212Cl94-00336",
+  "CdSe-Cd251Se187Cl128-00531",
+  "CdSe-Cd251Se184Cl134-00589",
+  "CdSe-Cd252Se185Cl134-00464",
+  "CdSe-Cd264Se219Cl90-00510",
+  "CdSe-Cd260Se203Cl114-00349",
+  "CdSe-Cd253Se180Cl146-00007",
+  "CdSe-Cd248Se163Cl170-00296",
+  "CdSe-Cd271Se224Cl94-00272",
+  "CdSe-Cd267Se211Cl112-00173",
+  "CdSe-Cd276Se237Cl78-00085",
+  "CdSe-Cd252Se163Cl178-00227",
+  "CdSe-Cd252Se163Cl178-00309",
+  "CdSe-Cd276Se233Cl86-00133",
+  "CdSe-Cd262Se188Cl148-00437"
+ ],
+ "strip": [
+  "CdSe-Cd80Se41Cl78-00226",
+  "CdSe-Cd80Se41Cl78-00308",
+  "CdSe-Cd27Se16Cl22-00019",
+  "CdSe-Cd93Se80Cl26-00023",
+  "CdSe-Cd32Se13Cl38-00088",
+  "CdSe-Cd84Se56Cl56-00003",
+  "CdSe-Cd28Se19Cl18-00144",
+  "CdSe-Cd92Se85Cl14-00034",
+  "CdSe-Cd35Se18Cl34-00029",
+  "CdSe-Cd84Se52Cl64-00016",
+  "CdSe-Cd32Se13Cl38-00250",
+  "CdSe-Cd73Se46Cl54-00511"
+ ],
+ "dots": [
+  {
+   "id": "CdSe-Cd16Se13Cl6-00001",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 35,
+   "m": 13,
+   "k": 3,
+   "shape": "110",
+   "reason": [
+    "binding pure 110"
+   ]
+  },
+  {
+   "id": "CdSe-Cd16Se10Cl12-00023",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 38,
+   "m": 10,
+   "k": 6,
+   "shape": "111A+111B",
+   "reason": [
+    "binding pure 111A+111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd17Se3Cl28-00087",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 48,
+   "m": 3,
+   "k": 14,
+   "shape": "111A",
+   "reason": [
+    "binding pure 111A"
+   ]
+  },
+  {
+   "id": "CdSe-Cd19Se8Cl22-00242",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 49,
+   "m": 8,
+   "k": 11,
+   "shape": "100+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd19Se8Cl22-00320",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 49,
+   "m": 8,
+   "k": 11,
+   "shape": "100+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd20Se9Cl22-00030",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 51,
+   "m": 9,
+   "k": 11,
+   "shape": "111B",
+   "reason": [
+    "fit tier 1",
+    "binding pure 111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd23Se16Cl14-00093",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 53,
+   "m": 16,
+   "k": 7,
+   "shape": "110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd23Se8Cl30-00217",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 61,
+   "m": 8,
+   "k": 15,
+   "shape": "100+110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd27Se16Cl22-00019",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 65,
+   "m": 16,
+   "k": 11,
+   "shape": "110",
+   "reason": [
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd28Se19Cl18-00020",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 65,
+   "m": 19,
+   "k": 9,
+   "shape": "110",
+   "reason": [
+    "binding pure 110"
+   ]
+  },
+  {
+   "id": "CdSe-Cd28Se19Cl18-00144",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 65,
+   "m": 19,
+   "k": 9,
+   "shape": "111A+111B",
+   "reason": [
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd32Se13Cl38-00088",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 83,
+   "m": 13,
+   "k": 19,
+   "shape": "111A",
+   "reason": [
+    "binding pure 111A",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd32Se13Cl38-00250",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 83,
+   "m": 13,
+   "k": 19,
+   "shape": "100+110+111B",
+   "reason": [
+    "fit tier 1",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd42Se40Cl4-00028",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 86,
+   "m": 40,
+   "k": 2,
+   "shape": "111A+111B",
+   "reason": [
+    "binding pure 111A+111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd35Se18Cl34-00029",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 87,
+   "m": 18,
+   "k": 17,
+   "shape": "111B",
+   "reason": [
+    "fit tier 1",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd35Se18Cl34-00031",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 87,
+   "m": 18,
+   "k": 17,
+   "shape": "111B",
+   "reason": [
+    "binding pure 111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd52Se43Cl18-00012",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 113,
+   "m": 43,
+   "k": 9,
+   "shape": "110",
+   "reason": [
+    "binding pure 110"
+   ]
+  },
+  {
+   "id": "CdSe-Cd50Se28Cl44-00002",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 122,
+   "m": 28,
+   "k": 22,
+   "shape": "111A",
+   "reason": [
+    "binding pure 111A"
+   ]
+  },
+  {
+   "id": "CdSe-Cd56Se32Cl48-00009",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 136,
+   "m": 32,
+   "k": 24,
+   "shape": "111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd56Se32Cl48-00014",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 136,
+   "m": 32,
+   "k": 24,
+   "shape": "111B",
+   "reason": [
+    "fit tier 1",
+    "binding pure 111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd59Se32Cl54-00337",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 145,
+   "m": 32,
+   "k": 27,
+   "shape": "100+110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd83Se81Cl4-00031",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 168,
+   "m": 81,
+   "k": 2,
+   "shape": "111A+111B",
+   "reason": [
+    "binding pure 111A+111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd73Se46Cl54-00492",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 173,
+   "m": 46,
+   "k": 27,
+   "shape": "100+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd73Se46Cl54-00511",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 173,
+   "m": 46,
+   "k": 27,
+   "shape": "100+110+111B",
+   "reason": [
+    "fit tier 1",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd76Se46Cl60-00003",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 182,
+   "m": 46,
+   "k": 30,
+   "shape": "111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd92Se85Cl14-00034",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 191,
+   "m": 85,
+   "k": 7,
+   "shape": "111A+111B",
+   "reason": [
+    "fit tier 1",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd84Se56Cl56-00003",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 196,
+   "m": 56,
+   "k": 28,
+   "shape": "111A",
+   "reason": [
+    "fit tier 1",
+    "binding pure 111A",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd80Se41Cl78-00226",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 199,
+   "m": 41,
+   "k": 39,
+   "shape": "100",
+   "reason": [
+    "fit tier 1",
+    "binding pure 100",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd80Se41Cl78-00308",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 199,
+   "m": 41,
+   "k": 39,
+   "shape": "100",
+   "reason": [
+    "binding pure 100",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd93Se80Cl26-00004",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 199,
+   "m": 80,
+   "k": 13,
+   "shape": "110",
+   "reason": [
+    "binding pure 110"
+   ]
+  },
+  {
+   "id": "CdSe-Cd93Se80Cl26-00023",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 199,
+   "m": 80,
+   "k": 13,
+   "shape": "110",
+   "reason": [
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd84Se52Cl64-00016",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 200,
+   "m": 52,
+   "k": 32,
+   "shape": "111B",
+   "reason": [
+    "fit tier 1",
+    "binding pure 111B",
+    "strip"
+   ]
+  },
+  {
+   "id": "CdSe-Cd91Se64Cl54-00011",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 209,
+   "m": 64,
+   "k": 27,
+   "shape": "110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd104Se83Cl42-00064",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 229,
+   "m": 83,
+   "k": 21,
+   "shape": "110+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd109Se98Cl22-00155",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 229,
+   "m": 98,
+   "k": 11,
+   "shape": "110+111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd109Se96Cl26-00013",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 231,
+   "m": 96,
+   "k": 13,
+   "shape": "110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd108Se91Cl34-00014",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 233,
+   "m": 91,
+   "k": 17,
+   "shape": "110",
+   "reason": [
+    "fit tier 1",
+    "binding pure 110"
+   ]
+  },
+  {
+   "id": "CdSe-Cd103Se68Cl70-00119",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 241,
+   "m": 68,
+   "k": 35,
+   "shape": "110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd113Se94Cl38-00075",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 245,
+   "m": 94,
+   "k": 19,
+   "shape": "110+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd113Se92Cl42-00113",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 247,
+   "m": 92,
+   "k": 21,
+   "shape": "110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd107Se68Cl78-00089",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 253,
+   "m": 68,
+   "k": 39,
+   "shape": "111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd108Se71Cl74-00422",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 253,
+   "m": 71,
+   "k": 37,
+   "shape": "100+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd115Se87Cl56-00033",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 258,
+   "m": 87,
+   "k": 28,
+   "shape": "111A+111B",
+   "reason": [
+    "binding pure 111A+111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd108Se63Cl90-00304",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 261,
+   "m": 63,
+   "k": 45,
+   "shape": "100+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd109Se64Cl90-00218",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 263,
+   "m": 64,
+   "k": 45,
+   "shape": "100+110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd112Se73Cl78-00360",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 263,
+   "m": 73,
+   "k": 39,
+   "shape": "100+111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd116Se83Cl66-00079",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 265,
+   "m": 83,
+   "k": 33,
+   "shape": "110+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd125Se110Cl30-00063",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 265,
+   "m": 110,
+   "k": 15,
+   "shape": "110+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd125Se110Cl30-00140",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 265,
+   "m": 110,
+   "k": 15,
+   "shape": "111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd125Se110Cl30-00158",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 265,
+   "m": 110,
+   "k": 15,
+   "shape": "111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd115Se78Cl74-00494",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 267,
+   "m": 78,
+   "k": 37,
+   "shape": "100+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd116Se78Cl76-00127",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 270,
+   "m": 78,
+   "k": 38,
+   "shape": "110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd128Se113Cl30-00149",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 271,
+   "m": 113,
+   "k": 15,
+   "shape": "110+111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd120Se87Cl66-00528",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 273,
+   "m": 87,
+   "k": 33,
+   "shape": "100+110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd113Se64Cl98-00225",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 275,
+   "m": 64,
+   "k": 49,
+   "shape": "100",
+   "reason": [
+    "fit tier 1",
+    "binding pure 100"
+   ]
+  },
+  {
+   "id": "CdSe-Cd119Se82Cl74-00414",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 275,
+   "m": 82,
+   "k": 37,
+   "shape": "100+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd120Se84Cl72-00004",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 276,
+   "m": 84,
+   "k": 36,
+   "shape": "111A",
+   "reason": [
+    "fit tier 1",
+    "binding pure 111A"
+   ]
+  },
+  {
+   "id": "CdSe-Cd128Se107Cl42-00114",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 277,
+   "m": 107,
+   "k": 21,
+   "shape": "110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd124Se93Cl62-00348",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 279,
+   "m": 93,
+   "k": 31,
+   "shape": "100+110+111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd120Se79Cl82-00017",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 281,
+   "m": 79,
+   "k": 41,
+   "shape": "111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd120Se79Cl82-00032",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 281,
+   "m": 79,
+   "k": 41,
+   "shape": "111B",
+   "reason": [
+    "binding pure 111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd129Se106Cl46-00068",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 281,
+   "m": 106,
+   "k": 23,
+   "shape": "110+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd128Se101Cl54-00372",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 283,
+   "m": 101,
+   "k": 27,
+   "shape": "100+110+111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd117Se64Cl106-00212",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 287,
+   "m": 64,
+   "k": 53,
+   "shape": "100+110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd117Se64Cl106-00300",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 287,
+   "m": 64,
+   "k": 53,
+   "shape": "100+110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd121Se76Cl90-00199",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 287,
+   "m": 76,
+   "k": 45,
+   "shape": "100+110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd121Se76Cl90-00302",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 287,
+   "m": 76,
+   "k": 45,
+   "shape": "100+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd128Se95Cl66-00120",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 289,
+   "m": 95,
+   "k": 33,
+   "shape": "110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd145Se144Cl2-00038",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 291,
+   "m": 144,
+   "k": 1,
+   "shape": "111A+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd125Se80Cl90-00247",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 295,
+   "m": 80,
+   "k": 45,
+   "shape": "100+111B",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd140Se125Cl30-00115",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 295,
+   "m": 125,
+   "k": 15,
+   "shape": "110+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd124Se75Cl98-00512",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 297,
+   "m": 75,
+   "k": 49,
+   "shape": "100+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd128Se87Cl82-00179",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 297,
+   "m": 87,
+   "k": 41,
+   "shape": "100+110",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd146Se140Cl12-00036",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_add",
+   "n_atoms": 298,
+   "m": 140,
+   "k": 6,
+   "shape": "111A+111B",
+   "reason": [
+    "binding pure 111A+111B"
+   ]
+  },
+  {
+   "id": "CdSe-Cd121Se64Cl114-00223",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 299,
+   "m": 64,
+   "k": 57,
+   "shape": "100",
+   "reason": [
+    "fit tier 1",
+    "binding pure 100"
+   ]
+  },
+  {
+   "id": "CdSe-Cd121Se64Cl114-00305",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 299,
+   "m": 64,
+   "k": 57,
+   "shape": "100",
+   "reason": [
+    "fit tier 1",
+    "binding pure 100"
+   ]
+  },
+  {
+   "id": "CdSe-Cd125Se76Cl98-00324",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 299,
+   "m": 76,
+   "k": 49,
+   "shape": "100+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd128Se85Cl86-00441",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 299,
+   "m": 85,
+   "k": 43,
+   "shape": "100+111A",
+   "reason": [
+    "fit tier 1"
+   ]
+  },
+  {
+   "id": "CdSe-Cd200Se177Cl46-00427",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 423,
+   "m": 177,
+   "k": 23,
+   "shape": "100+110+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd212Se199Cl26-00464",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 437,
+   "m": 199,
+   "k": 13,
+   "shape": "100+110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd212Se191Cl42-00028",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 445,
+   "m": 191,
+   "k": 21,
+   "shape": "110",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd215Se200Cl30-00027",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 445,
+   "m": 200,
+   "k": 15,
+   "shape": "110",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd192Se121Cl142-00477",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 455,
+   "m": 121,
+   "k": 71,
+   "shape": "100+110+111A",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd224Se217Cl14-00150",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 455,
+   "m": 217,
+   "k": 7,
+   "shape": "110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd224Se217Cl14-00542",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 455,
+   "m": 217,
+   "k": 7,
+   "shape": "100+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd208Se155Cl106-00372",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 469,
+   "m": 155,
+   "k": 53,
+   "shape": "100+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd214Se153Cl122-00548",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 489,
+   "m": 153,
+   "k": 61,
+   "shape": "100+110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd220Se165Cl110-00100",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 495,
+   "m": 165,
+   "k": 55,
+   "shape": "111A",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd242Se189Cl106-00150",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 537,
+   "m": 189,
+   "k": 53,
+   "shape": "111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd242Se189Cl106-00160",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 537,
+   "m": 189,
+   "k": 53,
+   "shape": "110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd245Se195Cl100-00172",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 540,
+   "m": 195,
+   "k": 50,
+   "shape": "110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd240Se171Cl138-00393",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 549,
+   "m": 171,
+   "k": 69,
+   "shape": "100+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd260Se223Cl74-00568",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 557,
+   "m": 223,
+   "k": 37,
+   "shape": "100+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd259Se212Cl94-00336",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 565,
+   "m": 212,
+   "k": 47,
+   "shape": "100+110+111A",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd251Se187Cl128-00531",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 566,
+   "m": 187,
+   "k": 64,
+   "shape": "100+110+111A",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd251Se184Cl134-00589",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 569,
+   "m": 184,
+   "k": 67,
+   "shape": "100+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd252Se185Cl134-00464",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 571,
+   "m": 185,
+   "k": 67,
+   "shape": "100+110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd264Se219Cl90-00510",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 573,
+   "m": 219,
+   "k": 45,
+   "shape": "100+110+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd260Se203Cl114-00349",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 577,
+   "m": 203,
+   "k": 57,
+   "shape": "100+110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd253Se180Cl146-00007",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_pure_remove",
+   "n_atoms": 579,
+   "m": 180,
+   "k": 73,
+   "shape": "111A",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd248Se163Cl170-00296",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 581,
+   "m": 163,
+   "k": 85,
+   "shape": "100+110+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd271Se224Cl94-00272",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 589,
+   "m": 224,
+   "k": 47,
+   "shape": "100+110+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd267Se211Cl112-00173",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 590,
+   "m": 211,
+   "k": 56,
+   "shape": "110+111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd276Se237Cl78-00085",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 591,
+   "m": 237,
+   "k": 39,
+   "shape": "110+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd252Se163Cl178-00227",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 593,
+   "m": 163,
+   "k": 89,
+   "shape": "100",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd252Se163Cl178-00309",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb",
+   "n_atoms": 593,
+   "m": 163,
+   "k": 89,
+   "shape": "100",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd276Se233Cl86-00133",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 595,
+   "m": 233,
+   "k": 43,
+   "shape": "111A+111B",
+   "reason": [
+    "fit tier 2"
+   ]
+  },
+  {
+   "id": "CdSe-Cd262Se188Cl148-00437",
+   "library": "/Users/ivaninfante/Documents/University/escience/qd-workflows/.claude/worktrees/cdse-grid/shape_library/cdse_zb_remove",
+   "n_atoms": 598,
+   "m": 188,
+   "k": 74,
+   "shape": "100+110+111A",
+   "reason": [
+    "fit tier 2"
+   ]
+  }
+ ]
+}

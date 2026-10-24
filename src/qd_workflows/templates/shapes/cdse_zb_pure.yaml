@@ -1,0 +1,38 @@
+# Pure shapes of zinc-blende CdSe in fine size steps (python -m qd_workflows.shapes): single-facet dots for facet-resolved
+# CdCl2 binding, and octahedra with both polar {111} terminations.
+material: CdSe
+phase: zinc-blende
+cif: /Users/ivaninfante/Documents/University/escience/QD_builder/examples/cifs/CdSe_zb.cif
+native_elements: [Cd, Se]
+centres:                            # Cd and Se sites, and the empty tetrahedral and octahedral holes (all Td): each
+  - Cd                              # centre gives its own series of tetrahedron/octahedron sizes (CIF: Cd at 0 0 0,
+  - Se                              # Se at 1/4 1/4 3/4)
+  - {fractional_shift: [0.25, 0.25, 0.25]}
+  - {fractional_shift: [0.5, 0.5, 0.5]}
+positive_q_mode: add
+sizes: {start: 0.5, stop: 4.5, step: 0.125}     # unit cells; tetrahedra need large cells for a given atom count
+aspects: [[1, 1, 1]]
+max_atoms: 600
+min_core_atoms: 20
+min_interatomic_distance: 1.8
+
+preset:
+  charges: {Cd: 2, Se: -2, Cl: -1}
+  passivation:
+    ligand: Cl
+    surf_tol: 2.0
+    prepass_mode: role-aware
+    prepass_min_cn_terrace: 3
+    prepass_min_cn_edge: 2
+    prepass_min_cn_vertex: 1
+  symmetry: {proper_rotations_only: true}
+
+facet_sets:                         # pure {100} cubes are left out: the builder cannot neutralise them (residual +6 to
+                                    # +32 with Cl added or Cd removed, any termination); {100}-dominated dots come from
+                                    # the gamma sweep
+  - name: tetrahedron_A
+    facets: [{hkl: "111", termination: cation_rich, gamma: 1.0}]
+  - name: tetrahedron_B
+    facets: [{hkl: "-1-1-1", termination: anion_rich, gamma: 1.0}]
+  - name: octahedron
+    facets: [{hkl: "111", termination: cation_rich, gamma: 1.0}, {hkl: "-1-1-1", termination: anion_rich, gamma: 1.0}]

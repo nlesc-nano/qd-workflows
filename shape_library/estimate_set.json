@@ -1,0 +1,776 @@
+{
+ "dots": 108,
+ "strip": 12,
+ "relaxations": {
+  "relax": 216,
+  "binding": 3402,
+  "adsorption": 3402,
+  "strip": 1300
+ },
+ "a100_hours": 15.2,
+ "core_hours_shared": 2280,
+ "assumptions": {
+  "sites_per_class": 3,
+  "candidates_per_step": 4,
+  "sec_per_atom_relax": 0.022,
+  "polish": "relax, binding and adsorption counted twice"
+ },
+ "per_dot": [
+  {
+   "id": "CdSe-Cd16Se13Cl6-00001",
+   "n_atoms": 35,
+   "k": 3,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd93Se80Cl26-00004",
+   "n_atoms": 199,
+   "k": 13,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd52Se43Cl18-00012",
+   "n_atoms": 113,
+   "k": 9,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd109Se96Cl26-00013",
+   "n_atoms": 231,
+   "k": 13,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd108Se91Cl34-00014",
+   "n_atoms": 233,
+   "k": 17,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd27Se16Cl22-00019",
+   "n_atoms": 65,
+   "k": 11,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd28Se19Cl18-00020",
+   "n_atoms": 65,
+   "k": 9,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd93Se80Cl26-00023",
+   "n_atoms": 199,
+   "k": 13,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd215Se200Cl30-00027",
+   "n_atoms": 445,
+   "k": 15,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd212Se191Cl42-00028",
+   "n_atoms": 445,
+   "k": 21,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd35Se18Cl34-00029",
+   "n_atoms": 87,
+   "k": 17,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd20Se9Cl22-00030",
+   "n_atoms": 51,
+   "k": 11,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd35Se18Cl34-00031",
+   "n_atoms": 87,
+   "k": 17,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd120Se79Cl82-00032",
+   "n_atoms": 281,
+   "k": 41,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd125Se110Cl30-00063",
+   "n_atoms": 265,
+   "k": 15,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd104Se83Cl42-00064",
+   "n_atoms": 229,
+   "k": 21,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd129Se106Cl46-00068",
+   "n_atoms": 281,
+   "k": 23,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd113Se94Cl38-00075",
+   "n_atoms": 245,
+   "k": 19,
+   "classes": 6,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd116Se83Cl66-00079",
+   "n_atoms": 265,
+   "k": 33,
+   "classes": 6,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd276Se237Cl78-00085",
+   "n_atoms": 591,
+   "k": 39,
+   "classes": 6,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd23Se16Cl14-00093",
+   "n_atoms": 53,
+   "k": 7,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd220Se165Cl110-00100",
+   "n_atoms": 495,
+   "k": 55,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd113Se92Cl42-00113",
+   "n_atoms": 247,
+   "k": 21,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd128Se107Cl42-00114",
+   "n_atoms": 277,
+   "k": 21,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd140Se125Cl30-00115",
+   "n_atoms": 295,
+   "k": 15,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd125Se110Cl30-00140",
+   "n_atoms": 265,
+   "k": 15,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd28Se19Cl18-00144",
+   "n_atoms": 65,
+   "k": 9,
+   "classes": 4,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd128Se113Cl30-00149",
+   "n_atoms": 271,
+   "k": 15,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd224Se217Cl14-00150",
+   "n_atoms": 455,
+   "k": 7,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd109Se98Cl22-00155",
+   "n_atoms": 229,
+   "k": 11,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd125Se110Cl30-00158",
+   "n_atoms": 265,
+   "k": 15,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd121Se76Cl90-00199",
+   "n_atoms": 287,
+   "k": 45,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd117Se64Cl106-00212",
+   "n_atoms": 287,
+   "k": 53,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd23Se8Cl30-00217",
+   "n_atoms": 61,
+   "k": 15,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd109Se64Cl90-00218",
+   "n_atoms": 263,
+   "k": 45,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd121Se64Cl114-00223",
+   "n_atoms": 299,
+   "k": 57,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd113Se64Cl98-00225",
+   "n_atoms": 275,
+   "k": 49,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd80Se41Cl78-00226",
+   "n_atoms": 199,
+   "k": 39,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd252Se163Cl178-00227",
+   "n_atoms": 593,
+   "k": 89,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd19Se8Cl22-00242",
+   "n_atoms": 49,
+   "k": 11,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd125Se80Cl90-00247",
+   "n_atoms": 295,
+   "k": 45,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd32Se13Cl38-00250",
+   "n_atoms": 83,
+   "k": 19,
+   "classes": 8,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd271Se224Cl94-00272",
+   "n_atoms": 589,
+   "k": 47,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd248Se163Cl170-00296",
+   "n_atoms": 581,
+   "k": 85,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd117Se64Cl106-00300",
+   "n_atoms": 287,
+   "k": 53,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd108Se63Cl90-00304",
+   "n_atoms": 261,
+   "k": 45,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd121Se64Cl114-00305",
+   "n_atoms": 299,
+   "k": 57,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd80Se41Cl78-00308",
+   "n_atoms": 199,
+   "k": 39,
+   "classes": 5,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd252Se163Cl178-00309",
+   "n_atoms": 593,
+   "k": 89,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd19Se8Cl22-00320",
+   "n_atoms": 49,
+   "k": 11,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd125Se76Cl98-00324",
+   "n_atoms": 299,
+   "k": 49,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd259Se212Cl94-00336",
+   "n_atoms": 565,
+   "k": 47,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd59Se32Cl54-00337",
+   "n_atoms": 145,
+   "k": 27,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd112Se73Cl78-00360",
+   "n_atoms": 263,
+   "k": 39,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd128Se101Cl54-00372",
+   "n_atoms": 283,
+   "k": 27,
+   "classes": 11,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd240Se171Cl138-00393",
+   "n_atoms": 549,
+   "k": 69,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd119Se82Cl74-00414",
+   "n_atoms": 275,
+   "k": 37,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd200Se177Cl46-00427",
+   "n_atoms": 423,
+   "k": 23,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd128Se85Cl86-00441",
+   "n_atoms": 299,
+   "k": 43,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd212Se199Cl26-00464",
+   "n_atoms": 437,
+   "k": 13,
+   "classes": 10,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd192Se121Cl142-00477",
+   "n_atoms": 455,
+   "k": 71,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd73Se46Cl54-00492",
+   "n_atoms": 173,
+   "k": 27,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd115Se78Cl74-00494",
+   "n_atoms": 267,
+   "k": 37,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd264Se219Cl90-00510",
+   "n_atoms": 573,
+   "k": 45,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd73Se46Cl54-00511",
+   "n_atoms": 173,
+   "k": 27,
+   "classes": 8,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd224Se217Cl14-00542",
+   "n_atoms": 455,
+   "k": 7,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd260Se223Cl74-00568",
+   "n_atoms": 557,
+   "k": 37,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd91Se64Cl54-00011",
+   "n_atoms": 209,
+   "k": 27,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd17Se3Cl28-00087",
+   "n_atoms": 48,
+   "k": 14,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd32Se13Cl38-00088",
+   "n_atoms": 83,
+   "k": 19,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd107Se68Cl78-00089",
+   "n_atoms": 253,
+   "k": 39,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd103Se68Cl70-00119",
+   "n_atoms": 241,
+   "k": 35,
+   "classes": 6,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd128Se95Cl66-00120",
+   "n_atoms": 289,
+   "k": 33,
+   "classes": 6,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd116Se78Cl76-00127",
+   "n_atoms": 270,
+   "k": 38,
+   "classes": 6,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd276Se233Cl86-00133",
+   "n_atoms": 595,
+   "k": 43,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd242Se189Cl106-00150",
+   "n_atoms": 537,
+   "k": 53,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd242Se189Cl106-00160",
+   "n_atoms": 537,
+   "k": 53,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd245Se195Cl100-00172",
+   "n_atoms": 540,
+   "k": 50,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd267Se211Cl112-00173",
+   "n_atoms": 590,
+   "k": 56,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd128Se87Cl82-00179",
+   "n_atoms": 297,
+   "k": 41,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd121Se76Cl90-00302",
+   "n_atoms": 287,
+   "k": 45,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd124Se93Cl62-00348",
+   "n_atoms": 279,
+   "k": 31,
+   "classes": 11,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd260Se203Cl114-00349",
+   "n_atoms": 577,
+   "k": 57,
+   "classes": 10,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd208Se155Cl106-00372",
+   "n_atoms": 469,
+   "k": 53,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd108Se71Cl74-00422",
+   "n_atoms": 253,
+   "k": 37,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd262Se188Cl148-00437",
+   "n_atoms": 598,
+   "k": 74,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd252Se185Cl134-00464",
+   "n_atoms": 571,
+   "k": 67,
+   "classes": 11,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd124Se75Cl98-00512",
+   "n_atoms": 297,
+   "k": 49,
+   "classes": 5,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd120Se87Cl66-00528",
+   "n_atoms": 273,
+   "k": 33,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd251Se187Cl128-00531",
+   "n_atoms": 566,
+   "k": 64,
+   "classes": 8,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd214Se153Cl122-00548",
+   "n_atoms": 489,
+   "k": 61,
+   "classes": 9,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd251Se184Cl134-00589",
+   "n_atoms": 569,
+   "k": 67,
+   "classes": 7,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd84Se56Cl56-00003",
+   "n_atoms": 196,
+   "k": 28,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd120Se84Cl72-00004",
+   "n_atoms": 276,
+   "k": 36,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd56Se32Cl48-00009",
+   "n_atoms": 136,
+   "k": 24,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd56Se32Cl48-00014",
+   "n_atoms": 136,
+   "k": 24,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd84Se52Cl64-00016",
+   "n_atoms": 200,
+   "k": 32,
+   "classes": 3,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd120Se79Cl82-00017",
+   "n_atoms": 281,
+   "k": 41,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd16Se10Cl12-00023",
+   "n_atoms": 38,
+   "k": 6,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd92Se85Cl14-00034",
+   "n_atoms": 191,
+   "k": 7,
+   "classes": 4,
+   "strip": true
+  },
+  {
+   "id": "CdSe-Cd146Se140Cl12-00036",
+   "n_atoms": 298,
+   "k": 6,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd50Se28Cl44-00002",
+   "n_atoms": 122,
+   "k": 22,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd76Se46Cl60-00003",
+   "n_atoms": 182,
+   "k": 30,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd253Se180Cl146-00007",
+   "n_atoms": 579,
+   "k": 73,
+   "classes": 3,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd42Se40Cl4-00028",
+   "n_atoms": 86,
+   "k": 2,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd83Se81Cl4-00031",
+   "n_atoms": 168,
+   "k": 2,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd115Se87Cl56-00033",
+   "n_atoms": 258,
+   "k": 28,
+   "classes": 4,
+   "strip": false
+  },
+  {
+   "id": "CdSe-Cd145Se144Cl2-00038",
+   "n_atoms": 291,
+   "k": 1,
+   "classes": 5,
+   "strip": false
+  }
+ ]
+}
