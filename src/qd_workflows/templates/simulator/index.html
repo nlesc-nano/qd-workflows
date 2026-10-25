@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Growth Simulator</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
+<style>
+/* Workflow: set the conditions and read the grid's grand potential live (pre-nucleation pool at a time after
+   injection); then run the kinetic growth for those conditions, whose results appear below; the structure panel
+   shows a grid cluster (m <= m0) or a dot built with QD_builder. */
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #8a8984;
+  --grid: #ecebe7; --accent: #2a78d6; --accent-ink: #ffffff;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --seq-1: #cde2fb; --seq-3: #86b6ef; --seq-5: #3987e5; --seq-7: #1c5cab; --seq-9: #0d366b;
+  --div-neg-2: #1c5cab; --div-neg-1: #86b6ef; --div-mid: #f0efec; --div-pos-1: #f2a09f; --div-pos-2: #b8302f;
+  --warn-bg: #fff4d6; --warn-ink: #6b4a00; --err-ink: #b42323;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --seq-1: #1d2633; --seq-3: #184f95; --seq-5: #256abf; --seq-7: #3987e5; --seq-9: #cde2fb;
+    --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835; --div-pos-1: #9e3534; --div-pos-2: #e66767;
+    --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --seq-1: #1d2633; --seq-3: #184f95; --seq-5: #256abf; --seq-7: #3987e5; --seq-9: #cde2fb;
+  --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835; --div-pos-1: #9e3534; --div-pos-2: #e66767;
+  --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 18px 24px 8px; }
+h1 { font-size: 20px; margin: 0 0 2px; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0; max-width: 110ch; }
+.badge { display: inline-block; background: var(--warn-bg); color: var(--warn-ink); border-radius: 999px;
+  padding: 1px 10px; font-size: 12px; margin-left: 6px; }
+main { display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(0, 0.75fr); gap: 16px; padding: 8px 24px 24px; align-items: start; }
+.col { display: grid; gap: 16px; min-width: 0; }
+.sticky { position: sticky; top: 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary);
+  margin: 0 0 10px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
+.card h3 { font-size: 12px; color: var(--text-secondary); margin: 14px 0 8px; font-weight: 600; border-top: 1px solid var(--border); padding-top: 12px; }
+.ctl { margin-bottom: 13px; }
+.ctl label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.ctl .num { display: inline-flex; align-items: center; gap: 4px; }
+.ctl .num i { font-style: normal; font-size: 11.5px; color: var(--text-muted); min-width: 3.2em; }
+.num input, .ptable input { width: 6.2em; font: inherit; font-size: 13px; font-weight: 600; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--text-primary); background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+.num input:focus, .ptable input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.num input.bad, .ptable input.bad { border-color: var(--err-ink); color: var(--err-ink); }
+.ctl .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; min-height: 1em; }
+.ctl .hint:empty { min-height: 0; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ptable th, .ptable td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: right; }
+.ptable th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+.ptable td:first-child, .ptable th:first-child { text-align: left; }
+.ptable input[disabled] { background: transparent; border-color: transparent; color: var(--text-primary); }
+.edit-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0 4px; font-size: 12.5px; }
+.edit-row label { display: flex; gap: 6px; align-items: center; color: var(--text-secondary); }
+.warnbox { background: var(--warn-bg); color: var(--warn-ink); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; margin: 6px 0; }
+.modbadge { display: inline-block; background: var(--warn-bg); color: var(--warn-ink); border-radius: 999px; padding: 1px 9px; font-size: 11.5px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+button { font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
+  color: var(--text-primary); padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .55; cursor: progress; }
+.status { font-size: 12px; color: var(--text-muted); margin-top: 8px; min-height: 1.4em; white-space: pre-line; }
+.status.err { color: var(--err-ink); }
+.stale { background: var(--warn-bg); color: var(--warn-ink); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; margin-bottom: 10px; }
+.readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(122px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.ro { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; }
+.ro span { display: block; font-size: 11px; color: var(--text-secondary); }
+.ro b { font-size: 14px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.chart { height: 190px; }
+.chart.tall { height: 240px; }
+.chart.short { height: 170px; }
+.chart-title { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0 4px; }
+.cap { font-size: 11.5px; color: var(--text-muted); margin: 2px 4px 6px; }
+.runrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; }
+.timebar { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.timebar input { flex: 1; }
+.timebar b { font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; font-size: 15px; }
+.poolline { font-size: 12px; color: var(--text-secondary); margin: 2px 0 8px; }
+#dist { height: 210px; }
+.pick { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 4px; }
+.pick button { font-size: 12px; padding: 4px 9px; }
+.pick button.on { border-color: var(--accent); color: var(--accent); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+.kv span:nth-child(odd) { color: var(--text-secondary); }
+.kv span:nth-child(even) { font-variant-numeric: tabular-nums; }
+.what { font-size: 13px; margin-bottom: 8px; min-height: 2.8em; }
+.what b { font-weight: 600; }
+#viewer { position: relative; width: 100%; height: 400px; border-radius: 8px; overflow: hidden;
+  background: var(--surface-0); border: 1px solid var(--border); }
+#viewer .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.row label { font-size: 12px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; }
+details { margin-top: 10px; font-size: 12px; }
+pre { background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; max-height: 220px; font-size: 11px; }
+@media (max-width: 1250px) { main { grid-template-columns: 250px minmax(0, 1fr); } .col3 { grid-column: 1 / -1; } .sticky { position: static; } }
+@media (max-width: 780px) { main { grid-template-columns: minmax(0, 1fr); padding: 8px 16px 16px; } header { padding: 14px 16px 6px; }
+  .charts, .two, .runrow { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Nucleation and growth simulator</h1>
+  <p class="sub">1. Set the conditions and look at the grid's grand potential live as the precursor converts.
+    2. When the conditions look right, run the kinetic growth for them: nuclei form from the same Ω, consume the
+    monomer and grow past m0. 3. Look at any grid cluster or build any dot.
+    <span class="badge" id="solvBadge">implicit solvent only: explicit solvent and ligands (oleic acid, amines, phosphines) come later</span></p>
+</header>
+<main>
+  <div class="col">
+    <section class="card sticky">
+      <h2>Conditions</h2>
+      <div id="controls"></div>
+      <h3>Look at Ω at</h3>
+      <div id="tcontrol"></div>
+      <div class="status" id="liveStatus"></div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <h2>1 · Nucleation: grand potential of the grid <small id="nucWhen"></small></h2>
+      <div class="readouts" id="nucRO"></div>
+      <div class="two">
+        <div>
+          <div class="chart-title">ΔΩ(m) = Ω(m) − Ω(1), with Ω(m) = −kT ln Σ<sub>k</sub> e<sup>−Ω(m,k)/kT</sup>, grid up to m0</div>
+          <div class="chart tall" id="cOmega"></div>
+          <div class="cap">Click a point to show the lowest cluster of that m.</div>
+        </div>
+        <div>
+          <div class="chart-title">Shell distribution P(k | m)</div>
+          <div class="chart tall" id="cHeat"></div>
+          <div class="cap">Click a cell for that cluster [CdSe]m(CdCl₂)k; k* of each m outlined.</div>
+        </div>
+      </div>
+      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* along the time after injection, for these conditions (precursor conversion only, no nuclei)</div>
+      <div class="chart short" id="cBarLive"></div>
+      <div class="cap">Click the curve to move the time after injection there.</div>
+      <div class="chart-title" style="margin-top:6px">ΔΩ(m, t) = Ω(m) − Ω(1) along the time after injection (red uphill, blue downhill, gray zero)</div>
+      <div class="chart tall" id="cOmegaT"></div>
+      <div class="cap">The solid line follows the barrier top m*(t), the thin contour is ΔΩ = 0, the dotted line is the time
+        shown above. Click the map to move the time there.</div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Kinetic growth <small>nucleation from Ω, monomer consumption, size-law growth of Wulff dots</small></h2>
+      <div class="runrow">
+        <div id="durcontrol"></div>
+        <div><button class="primary" id="run">Run kinetic growth</button></div>
+      </div>
+      <div class="cap">Uses the conditions on the left. Growth duration is how long the kinetics is integrated after
+        injection; it is independent of the time you look at Ω above. Each dot grows or dissolves by
+        dm/dt = A·N<sub>A</sub>(C − C<sub>eq</sub>(m)) / (A/4πDr + 1/k<sub>r</sub>(1 − θ)) (diffusion in series with the
+        surface reaction), C<sub>eq</sub> from the Gibbs–Thomson chemical potential of its Wulff shape at γ(C); facets set
+        the shape and the surface energy, not the rate.</div>
+      <div class="status" id="runStatus"></div>
+      <div id="growth" hidden>
+        <div class="stale" id="stale" hidden>The conditions changed since this run: press Run kinetic growth again to update it.</div>
+        <div class="chart-title">Time in the growth run</div>
+        <div class="timebar"><input type="range" id="tslider" min="0" max="0" value="0"><b id="tval">–</b></div>
+        <div class="poolline" id="poolLine"></div>
+        <div class="charts">
+          <div><div class="chart-title">Concentrations (M)</div><div class="chart" id="cConc"></div></div>
+          <div><div class="chart-title">Dots (M)</div><div class="chart" id="cDots"></div></div>
+          <div><div class="chart-title">Mean diameter (nm)</div><div class="chart" id="cSize"></div></div>
+          <div><div class="chart-title">Barrier ΔΩ* with the monomer the dots leave (eV)</div><div class="chart" id="cBar"></div></div>
+        </div>
+        <div class="cap">Click any chart to move to that time.</div>
+        <div class="chart-title" style="margin-top:8px">Size distribution at this time: one stem per cohort (dots born in the same interval)</div>
+        <div id="dist"></div>
+        <div class="pick">
+          <button data-which="mode" class="on">Most numerous</button>
+          <button data-which="mass">Most material</button>
+          <button data-which="mean">Mean size</button>
+          <span class="cap" style="align-self:center">or click a stem</span>
+        </div>
+        <div class="kv" id="dotInfo"></div>
+        <div class="row">
+          <button class="primary" id="build" disabled>Build this dot</button>
+          <label><input type="checkbox" id="full"> full layer search (slower, closer to m)</label>
+        </div>
+        <div class="status" id="buildStatus"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Facet parameters of the growth model <small id="surfSource"></small></h2>
+      <div class="cap" style="margin:0 0 6px">They enter only the kinetic growth (Wulff shape, Gibbs–Thomson, CdCl₂ coverage); the
+        nucleation panel uses the grid's own energies. Coverage: K c = θ/(1 − θ) e<sup>wθ/kT</sup>, K = e<sup>−ΔG<sub>bind</sub>/kT</sup>,
+        ΔG<sub>bind</sub> = −ε₀ + ΔG<sub>th</sub>(T) (thermal part from the grid's Hessians);
+        γ(C) = γ⁰ + Γ<sup>max</sup>[kT ln(1 − θ) − wθ²/2], at the free CdCl₂ c of the time shown.</div>
+      <div class="tbl" style="overflow-x:auto">
+        <table class="ptable">
+          <thead><tr><th>facet</th><th>γ⁰ (meV/Å²)</th><th>ε₀ (eV)</th><th>ΔG<sub>bind</sub>(T) (eV)</th>
+            <th>Γ<sup>max</sup> (nm⁻²)</th><th>w (eV)</th><th>coverage θ</th><th>γ(C) (meV/Å²)</th></tr></thead>
+          <tbody id="surfRows"></tbody>
+        </table>
+      </div>
+      <div class="edit-row">
+        <label><input type="checkbox" id="surfEdit"> Edit facet parameters (advanced)</label>
+        <button id="surfReset" hidden>Reset to computed values</button>
+        <span class="modbadge" id="surfMod" hidden>this run used edited values</span>
+      </div>
+      <div class="warnbox" id="surfWarn" hidden>Edited values replace the fitted ones for your own runs only and are used as
+        typed; each run made with them is marked as edited. The fitted values carry their own uncertainty (γ⁰ about
+        ±2 meV/Å²). Press Run kinetic growth to apply edits.</div>
+      <div class="status" id="surfStatus"></div>
+    </section>
+  </div>
+
+  <div class="col col3">
+    <section class="card sticky">
+      <h2>3 · Structure</h2>
+      <div class="what" id="what">A grid cluster (click the nucleation charts) or a built dot (Build this dot).</div>
+      <div id="viewer"><div class="empty">Nothing shown yet.</div></div>
+      <div class="kv" id="sInfo" style="margin-top:10px"></div>
+      <div class="row" id="dl" hidden><button id="dlxyz">Download .xyz</button></div>
+      <details id="recipeBox" hidden><summary>Builder recipe</summary><pre id="recipe"></pre></details>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (x, d = 3) => (x == null || !isFinite(x) ? "–" : x === 0 ? "0" : Math.abs(x) >= 1e4 || Math.abs(x) < 1e-2 ? x.toExponential(2) : (+x.toPrecision(d)).toString());
+// the conditions block of the growth parameters (growth.PARAMS) and of qdw nucleation's Omega page
+const CTLS = [
+  { key: "T", label: "Temperature", unit: "K", log: false, step: 5 },
+  { key: "c_P0", label: "Se precursor c_P,0", unit: "M", log: true },
+  { key: "c_MX0", label: "CdCl₂ c_MX,0", unit: "M", log: true },
+  { key: "k_conv_500K", label: "Conversion k (500 K)", unit: "M⁻¹ s⁻¹", log: true },
+  { key: "Ea_conv", label: "Conversion Ea", unit: "eV", log: false, step: 0.01 },
+  { key: "eps", label: "Solvent ε", unit: "", log: true, hint: "implicit solvent; 1 = gas phase, otherwise 1.8 and up (octadecene ≈ 2)" },
+];
+const TCTL = { key: "t", label: "Time after injection", unit: "s", log: true, hint: "the precursor converted by then sets μ" };
+const DCTL = { key: "t_end", label: "Growth duration", unit: "s", log: true };
+const KCTL = { key: "k_r", label: "Surface reaction k_r", unit: "Å/s", log: true,
+  hint: "attachment rate constant (placeholder); 1e10 ≈ the diffusion limit" };
+const OM = 6.202964 ** 3 / 4;
+let D = null, L0 = null, R = null, runConds = null, snapIdx = 0, which = "mode", cohort = null, viewer = null, lastXyz = null, lastName = "structure";
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || r.statusText));
+  return j;
+}
+
+// ---------- sliders ----------
+// every control holds its exact value in VALS: the slider sets it coarsely, the box exactly (typed, 1e-3 accepted)
+const VALS = {};
+function addSlider(box, c, onInput) {
+  const [lo, hi] = D.limits[c.key];
+  const el = document.createElement("div");
+  el.className = "ctl";
+  el.innerHTML = `<label for="n_${c.key}">${c.label}<span class="num"><input type="text" inputmode="decimal" id="n_${c.key}"
+      autocomplete="off" spellcheck="false" aria-label="${c.label} (${c.unit})"><i>${c.unit}</i></span></label>
+    <input type="range" id="s_${c.key}" aria-label="${c.label}">
+    <div class="hint" id="h_${c.key}">${c.hint || ""}</div>`;
+  box.appendChild(el);
+  const s = $(`s_${c.key}`), n = $(`n_${c.key}`), h = $(`h_${c.key}`);
+  if (c.log) { s.min = Math.log10(lo); s.max = Math.log10(hi); s.step = "any"; }
+  else { s.min = lo; s.max = hi; s.step = c.step; }
+  s.addEventListener("input", () => { setVal(c, c.log ? 10 ** +s.value : +s.value, "slider"); onInput && onInput(); });
+  n.addEventListener("change", () => {
+    const x = Number(n.value.replace(",", ".").trim());
+    if (!Number.isFinite(x) || x < lo || x > hi) {
+      n.classList.add("bad");
+      h.textContent = `Enter a number between ${fmt(lo)} and ${fmt(hi)} ${c.unit}.`;
+      return;
+    }
+    setVal(c, x, "box"); onInput && onInput();
+  });
+  n.addEventListener("keydown", (e) => { if (e.key === "Enter") n.blur(); });
+  setVal(c, D.conditions[c.key] ?? lo);
+}
+const val = (c) => VALS[c.key];
+function setVal(c, x, from) {
+  VALS[c.key] = x;
+  const s = $(`s_${c.key}`), n = $(`n_${c.key}`), h = $(`h_${c.key}`);
+  if (from !== "slider") s.value = c.log ? Math.log10(x) : x;
+  if (from !== "box") n.value = fmt(x, 4);
+  n.classList.remove("bad");
+  h.textContent = c.hint || "";
+}
+const conds = () => Object.fromEntries(CTLS.map((c) => [c.key, val(c)]));
+
+// ---------- charts ----------
+const PCONF = { displayModeBar: false, responsive: true };
+function layout(ytype, extra = {}) {
+  const ink = css("--text-secondary"), grid = css("--grid");
+  return Object.assign({
+    margin: { l: 50, r: 8, t: 6, b: 32 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    font: { family: "system-ui, sans-serif", size: 11, color: ink }, showlegend: false, hovermode: "x unified",
+    xaxis: { type: "log", gridcolor: grid, zeroline: false, title: { text: "t (s)", standoff: 4 }, exponentformat: "power" },
+    yaxis: { type: ytype, gridcolor: grid, zeroline: false, exponentformat: "power" }, shapes: [],
+  }, extra);
+}
+const line = (x, y, name, color, extra = {}) => ({ x, y, name, type: "scatter", mode: "lines", line: { color, width: 2 }, ...extra });
+const vline = (x) => ({ type: "line", xref: "x", yref: "paper", x0: x, x1: x, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } });
+function onClick(id, fn) { $(id).removeAllListeners?.("plotly_click"); $(id).on("plotly_click", fn); }
+
+// ---------- 1. nucleation, live ----------
+let liveTok = 0, liveTimer = null;
+function requestLive() {
+  clearTimeout(liveTimer);
+  if (R) $("stale").hidden = sameConds(conds(), runConds);
+  liveTimer = setTimeout(async () => {
+    const tok = ++liveTok;
+    try {
+      const o = await api("/api/omega_live", { ...conds(), t: val(TCTL) });
+      if (tok === liveTok) { L0 = o; $("liveStatus").textContent = ""; $("liveStatus").className = "status"; drawNucleation(o); }
+    } catch (e) { $("liveStatus").className = "status err"; $("liveStatus").textContent = e.message; }
+  }, 30);
+}
+const sameConds = (a, b) => b && CTLS.every((c) => Math.abs(a[c.key] - b[c.key]) <= 1e-9 * Math.max(1, Math.abs(b[c.key])));
+
+function drawNucleation(o) {
+  const c1 = css("--series-1"), grid = css("--grid");
+  const ro = (l, v) => `<div class="ro"><span>${l}</span><b>${v}</b></div>`;
+  $("nucWhen").textContent = `at ${fmt(o.t)} s after injection, ${fmt(100 * o.alpha)} % converted`;
+  $("nucRO").innerHTML = ro("barrier ΔΩ* (eV)", o.barrier.toFixed(3)) + ro("critical m*", o.m_star)
+    + ro(`k* at m0 = ${o.m0}`, o.k_star_m0)
+    + (o.handover ? ro("grid → continuum at m0", `${o.handover.m0} (Δμ ${o.handover.mismatch_eV >= 0 ? "+" : ""}${o.handover.mismatch_eV.toFixed(3)} eV)`) : "") + ro("J, Becker–Döring (M/s)", fmt(o.J)) + ro("J₀ = J e^(ΔΩ*/kT) (M/s)", fmt(o.J0))
+    + ro("CdSe supply (M)", fmt(o.C_M)) + ro("CdCl₂ left / free (M)", `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
+    + ro("μ CdSe / μ CdCl₂ (eV)", `${o.mu_MA.toFixed(3)} / ${o.mu_MX.toFixed(3)}`) + ro("⟨n⟩ in Cd(Se)(CdCl₂)ₙ", o.mean_n.toFixed(2));
+  // Delta Omega(m) = Omega(m) - Omega(1) on the grid, m = 1..m0: its maximum is the barrier of the time curve and the map
+  const rows = o.per_m.filter((r) => r.m <= o.m0), om1 = rows[0].Omega_m;
+  const tr = { x: rows.map((r) => r.m), y: rows.map((r) => r.Omega_m - om1), type: "scatter", mode: "lines+markers", name: "ΔΩ(m)",
+    line: { color: c1, width: 2 }, marker: { size: 9, color: c1, line: { color: css("--surface-1"), width: 2 } },
+    customdata: rows.map((r) => [r.k_star, r.formula, r.Omega_m]),
+    hovertemplate: "m = %{x}: ΔΩ = %{y:.3f} eV (Ω = %{customdata[2]:.3f} eV)<br>k* = %{customdata[0]} (%{customdata[1]})<extra></extra>" };
+  const star = rows.find((r) => r.m === o.m_star);
+  const top = { x: [o.m_star], y: [star.Omega_m - om1], type: "scatter", mode: "markers", hoverinfo: "skip",
+    marker: { size: 16, symbol: "circle-open", color: css("--series-2"), line: { width: 2.5 } } };
+  const L = layout("linear", { hovermode: "closest" });
+  L.xaxis = { dtick: 1, gridcolor: grid, zeroline: false, title: { text: "m (CdSe units)", standoff: 4 }, range: [0.5, o.m0 + 0.5] };
+  L.yaxis = { gridcolor: grid, zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
+  L.annotations = o.barrier > 0 ? [{ x: o.m_star, y: o.barrier, text: `ΔΩ* = ${o.barrier.toFixed(2)} eV`, showarrow: false,
+    yshift: 16, font: { size: 11, color: css("--text-primary") } }] : [];
+  Plotly.react("cOmega", [tr, top], L, PCONF);
+  onClick("cOmega", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) showCluster(p.x, p.customdata[0], o); });
+  // P(k | m)
+  const z = o.ks.map((_, j) => o.ms.map((_, i) => (o.Omega[i][j] == null ? null : o.P_k[i][j])));
+  const om = o.ks.map((_, j) => o.ms.map((_, i) => o.Omega[i][j]));
+  const scale = [[0, css("--seq-1")], [0.25, css("--seq-3")], [0.5, css("--seq-5")], [0.75, css("--seq-7")], [1, css("--seq-9")]];
+  const heat = { x: o.ms, y: o.ks, z, customdata: om, type: "heatmap", colorscale: scale, zmin: 0, zmax: 1, xgap: 2, ygap: 2,
+    colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 } },
+    hovertemplate: "m = %{x}, k = %{y}<br>P(k|m) = %{z:.3f}<br>Ω = %{customdata:.3f} eV<extra></extra>", hoverongaps: false };
+  const ks = { x: o.per_m.map((r) => r.m), y: o.per_m.map((r) => r.k_star), type: "scatter", mode: "markers", hoverinfo: "skip",
+    marker: { symbol: "square-open", size: 13, color: css("--series-2"), line: { width: 2 } } };
+  const H = layout("linear", { hovermode: "closest", margin: { l: 40, r: 8, t: 6, b: 32 } });
+  H.xaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
+  H.yaxis = { dtick: 2, title: { text: "k", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
+  Plotly.react("cHeat", [heat, ks], H, PCONF);
+  onClick("cHeat", (ev) => { const p = ev.points[0]; if (p.data.type !== "heatmap" || p.z != null) showCluster(p.x, p.y, o); });
+  // barrier along the time after injection
+  const B = layout("linear", { hovermode: "x unified" });
+  B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4 };
+  B.xaxis.title = { text: "time after injection (s)", standoff: 4 };
+  B.shapes = [vline(o.t)];
+  Plotly.react("cBarLive", [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "barrier", c1,
+    { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" })], B, PCONF);
+  onClick("cBarLive", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
+  // Delta Omega(m, t): diverging around zero, saturated at +-1 eV so the barrier region (tenths of an eV) stays
+  // visible next to the deep downhill of late times (-10 eV at m0)
+  const hm = o.heat, ink = css("--text-primary"), Z = 1.0;
+  const div = [[0, css("--div-neg-2")], [0.25, css("--div-neg-1")], [0.5, css("--div-mid")], [0.75, css("--div-pos-1")], [1, css("--div-pos-2")]];
+  const map = { x: hm.t, y: hm.m, z: hm.dOmega, type: "heatmap", colorscale: div, zmin: -Z, zmax: Z,
+    colorbar: { thickness: 8, len: 0.9, title: { text: "ΔΩ (eV)", side: "right" }, tickfont: { size: 10 },
+                tickvals: [-Z, -Z / 2, 0, Z / 2, Z], ticktext: [`≤ −${Z}`, `−${Z / 2}`, "0", `${Z / 2}`, `≥ ${Z}`] },
+    hovertemplate: "t = %{x:.3g} s, m = %{y}<br>ΔΩ = %{z:.3f} eV<extra></extra>" };
+  const zero = { x: hm.t, y: hm.m, z: hm.dOmega, type: "contour", showscale: false, hoverinfo: "skip",
+    contours: { start: 0, end: 0, size: 1, coloring: "none" }, line: { color: css("--text-muted"), width: 1 } };
+  const path = { x: o.curve.map((r) => r.t), y: o.curve.map((r) => r.m_star), type: "scatter", mode: "lines", line: { color: ink, width: 2, shape: "hv" },
+    hovertemplate: "m* = %{y} at %{x:.3g} s<extra></extra>" };
+  const M = layout("linear", { hovermode: "closest", margin: { l: 44, r: 8, t: 6, b: 32 } });
+  M.xaxis = { type: "log", title: { text: "time after injection (s)", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, exponentformat: "power" };
+  M.yaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, range: [0.5, o.m0 + 0.5] };
+  M.shapes = [vline(o.t)];
+  Plotly.react("cOmegaT", [map, zero, path], M, PCONF);
+  onClick("cOmegaT", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
+}
+
+async function showCluster(m, k, o) {
+  $("what").innerHTML = `Loading the grid cluster m = ${m}, k = ${k}…`;
+  try {
+    const s = await api(`/api/structure?m=${m}&k=${k}`);
+    lastXyz = s.xyz; lastName = `grid_m${m}_k${k}`; render(s.xyz);
+    const om = o && o.Omega[o.ms.indexOf(m)]?.[o.ks.indexOf(k)];
+    $("what").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(CdCl₂)<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE).`;
+    $("sInfo").innerHTML = `<span>Ω here</span><span>${om == null ? "–" : om.toFixed(3) + " eV"}</span>
+      <span>E</span><span>${s.E_eV.toFixed(3)} eV</span><span>Source</span><span>${s.source}</span><span>File</span><span>${s.file}</span>`;
+    $("dl").hidden = false; $("recipeBox").hidden = true;
+  } catch (e) { $("what").innerHTML = `<span class="status err">${e.message}</span>`; }
+}
+
+// ---------- 2. kinetic growth ----------
+const TIME_CHARTS = ["cConc", "cDots", "cSize", "cBar"];
+async function run() {
+  const fams = surfaceOverrides();
+  if (fams === null) {
+    $("runStatus").className = "status err";
+    $("runStatus").textContent = "A facet parameter is out of range: correct it, or switch editing off.";
+    return;
+  }
+  const body = { ...conds(), t_end: val(DCTL), k_r: val(KCTL), families: fams };
+  $("run").disabled = true; $("runStatus").className = "status"; $("runStatus").textContent = "Integrating nucleation and growth…";
+  try {
+    R = await api("/api/run", body); runConds = conds();
+    $("growth").hidden = false; $("stale").hidden = true;
+    const s = $("tslider"); s.max = R.snapshots.length - 1;
+    snapIdx = R.snapshots.length - 1; s.value = snapIdx;
+    drawSeries(); onTime();
+    const nEnd = R.series[R.series.length - 1].N_dots;
+    $("runStatus").textContent = (R.modified ? "Edited facet parameters · " : "") + `${R.seconds} s · ${fmt(nEnd)} M dots in ${R.snapshots[snapIdx].cohorts.length} cohorts at ${fmt(R.snapshots[snapIdx].t)} s · mass balance ${fmt(R.conservation.MA)} (CdSe), ${fmt(R.conservation.MX)} (CdCl₂)`;
+    $("growth").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
+  $("run").disabled = false;
+}
+
+function drawSeries() {
+  const S = R.series, t = S.map((r) => r.t);
+  const c1 = css("--series-1"), c2 = css("--series-2"), c3 = css("--series-3");
+  const floor = (y) => (y > 1e-6 ? y : null);          // below a micromolar the pools are spent
+  const L = layout("log", { showlegend: true, legend: { orientation: "h", y: 1.02, yanchor: "bottom", x: 0, font: { size: 10 } }, margin: { l: 50, r: 8, t: 22, b: 32 } });
+  L.yaxis.range = [-6, 0.2];
+  Plotly.react("cConc", [line(t, S.map((r) => floor(r.P)), "Se precursor", c1), line(t, S.map((r) => floor(r.C_M)), "CdSe in solution", c2),
+                         line(t, S.map((r) => floor(r.c_MX_free)), "free CdCl₂", c3)], L, PCONF);
+  Plotly.react("cDots", [line(t, S.map((r) => r.N_dots || null), "dots", c1)], layout("log"), PCONF);
+  Plotly.react("cSize", [line(t, S.map((r) => (r.m_mean > 0 ? Math.cbrt(6 * r.m_mean * OM / Math.PI) / 10 : null)), "number-mean d", c1)], layout("log"), PCONF);
+  Plotly.react("cBar", [line(t, S.map((r) => r.barrier), "barrier", c1)], layout("linear"), PCONF);
+  for (const id of TIME_CHARTS) onClick(id, (ev) => setTimeTo(ev.points[0].x));
+}
+
+function setTimeTo(t) {
+  let best = 0;
+  R.snapshots.forEach((s, i) => { if (Math.abs(Math.log(s.t / t)) < Math.abs(Math.log(R.snapshots[best].t / t))) best = i; });
+  snapIdx = best; $("tslider").value = best; onTime();
+}
+
+function onTime() {
+  const t = R.snapshots[snapIdx].t;
+  for (const id of TIME_CHARTS) Plotly.relayout(id, { shapes: [vline(t)] });
+  $("tval").textContent = `${fmt(t)} s`;
+  const row = R.series.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
+  $("poolLine").textContent = `Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier.toFixed(3)} eV`;
+  drawDist();
+  fillSurface(row);
+}
+
+// ---------- facet parameters ----------
+const FAM_LABEL = { "100": "{100}", "110": "{110}", "111A": "{111}A (Cd)", "111B": "{111}B (Se)" };
+function buildSurface() {
+  const S = D.surface, ed = S.editable;
+  $("surfSource").textContent = S.source === "placeholder"
+    ? "placeholder values, until the fit of the builder dots replaces them" : `from ${S.source}`;
+  $("surfRows").innerHTML = Object.entries(S.families).map(([f, p]) => `<tr>
+    <td>${FAM_LABEL[f] || f}</td>
+    <td><input id="g_${f}" type="text" inputmode="decimal" value="${p.gamma0}" disabled aria-label="gamma0 of ${f}"
+        data-min="${ed.gamma0.min}" data-max="${ed.gamma0.max}"></td>
+    <td><input id="b_${f}" type="text" inputmode="decimal" value="${p.eps0}" disabled aria-label="binding energy of ${f}"
+        data-min="${ed.eps0.min}" data-max="${ed.eps0.max}"></td>
+    <td id="gu_${f}">–</td><td>${p.Gamma_max ?? "–"}</td><td>${p.w ?? "–"}</td>
+    <td id="th_${f}">–</td><td id="gc_${f}">–</td></tr>`).join("");
+  document.querySelectorAll(".ptable input").forEach((el) => el.addEventListener("change", () => {
+    const x = Number(el.value.replace(",", ".").trim());
+    const ok = Number.isFinite(x) && x >= +el.dataset.min && x <= +el.dataset.max;
+    el.classList.toggle("bad", !ok);
+    $("surfStatus").className = ok ? "status" : "status err";
+    $("surfStatus").textContent = ok ? (R ? "Press Run kinetic growth to use the edited values." : "")
+      : `Enter a value between ${el.dataset.min} and ${el.dataset.max}.`;
+  }));
+  $("surfEdit").addEventListener("change", (e) => {
+    const on = e.target.checked;
+    document.querySelectorAll(".ptable input").forEach((el) => (el.disabled = !on));
+    $("surfWarn").hidden = !on; $("surfReset").hidden = !on;
+  });
+  $("surfReset").addEventListener("click", () => {
+    for (const [f, p] of Object.entries(D.surface.families)) {
+      $(`g_${f}`).value = p.gamma0; $(`b_${f}`).value = p.eps0;
+      $(`g_${f}`).classList.remove("bad"); $(`b_${f}`).classList.remove("bad");
+    }
+    $("surfStatus").className = "status"; $("surfStatus").textContent = "Computed values restored.";
+  });
+}
+
+function surfaceOverrides() {
+  // only when editing is on, only the values that differ from the computed ones; null if any entry is invalid
+  if (!$("surfEdit").checked) return {};
+  const out = {};
+  for (const [f, p] of Object.entries(D.surface.families)) {
+    for (const [key, id] of [["gamma0", `g_${f}`], ["eps0", `b_${f}`]]) {
+      const el = $(id), x = Number(el.value.replace(",", ".").trim());
+      if (el.classList.contains("bad") || !Number.isFinite(x)) return null;
+      if (x !== p[key]) (out[f] = out[f] || {})[key] = x;
+    }
+  }
+  return out;
+}
+
+function fillSurface(row) {
+  if (!R) return;
+  for (const f of Object.keys(D.surface.families)) {
+    const u = R.surface_used[f];
+    $(`gu_${f}`).textContent = u ? u.dG_bind.toFixed(2) : "–";
+    $(`th_${f}`).textContent = row && row.theta ? row.theta[f].toFixed(3) : "–";
+    $(`gc_${f}`).textContent = row && row.gamma ? (1000 * row.gamma[f]).toFixed(1) : "–";
+  }
+  $("surfMod").hidden = !R.modified;
+}
+
+function pickCohort() {
+  const cos = R.snapshots[snapIdx].cohorts;
+  if (!cos.length) return null;
+  if (which === "pick" && cohort !== null && cos[cohort]) return cos[cohort];
+  if (which === "mass") return cos.reduce((a, b) => (b.N * b.m > a.N * a.m ? b : a));
+  if (which === "mean") {
+    const N = cos.reduce((s, c) => s + c.N, 0), mean = cos.reduce((s, c) => s + c.N * c.m, 0) / N;
+    return cos.reduce((a, b) => (Math.abs(b.m - mean) < Math.abs(a.m - mean) ? b : a));
+  }
+  return cos.reduce((a, b) => (b.N > a.N ? b : a));
+}
+
+function drawDist() {
+  const cos = R.snapshots[snapIdx].cohorts, sel = pickCohort();
+  const c1 = css("--series-1"), c2 = css("--series-2");
+  const ys = cos.map((c) => c.N).filter((y) => y > 0), base = ys.length ? Math.min(...ys) / 10 : 1e-12;
+  const sx = [], sy = [];
+  for (const c of cos) sx.push(c.d_nm, c.d_nm, null), sy.push(base, c.N, null);
+  const stems = { x: sx, y: sy, type: "scatter", mode: "lines", line: { color: css("--text-muted"), width: 1 }, hoverinfo: "skip" };
+  const tr = { x: cos.map((c) => c.d_nm), y: cos.map((c) => c.N), type: "scatter", mode: "markers",
+    marker: { size: cos.map((c) => (sel && c.i === sel.i ? 13 : 9)), color: cos.map((c) => (sel && c.i === sel.i ? c2 : c1)),
+              line: { color: css("--surface-1"), width: 2 } },
+    customdata: cos.map((c) => [c.i, c.m, c.k, c.t_b, c.n_atoms]),
+    hovertemplate: "d = %{x:.2f} nm<br>%{y:.2e} M of dots<br>m = %{customdata[1]:.0f}, k = %{customdata[2]:.0f}<br>born at %{customdata[3]:.3g} s<br>~%{customdata[4]} atoms<extra></extra>" };
+  const L = layout("log", { hovermode: "closest" });
+  L.xaxis = { type: "log", gridcolor: css("--grid"), title: { text: "equivalent diameter (nm)", standoff: 4 }, exponentformat: "power" };
+  L.yaxis.range = [Math.log10(base), Math.log10(Math.max(...ys, base * 10)) + 0.3];
+  L.yaxis.title = { text: "dots (M)", standoff: 4 };
+  Plotly.react("dist", [stems, tr], L, PCONF);
+  onClick("dist", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) { cohort = p.customdata[0]; setWhich("pick"); } });
+  showDot(sel);
+}
+
+function showDot(co) {
+  const box = $("dotInfo");
+  if (!co) { box.innerHTML = "<span>No dots at this time</span><span></span>"; $("build").disabled = true; return; }
+  const fac = Object.entries(co.facets).map(([f, a]) => `{${f}} ${(100 * a).toFixed(0)}%`).join(", ");
+  box.innerHTML = `<span>Born at</span><span>${fmt(co.t_b)} s</span><span>Dots</span><span>${fmt(co.N)} M</span>
+    <span>m (CdSe), k (CdCl₂)</span><span>${co.m.toFixed(1)}, ${co.k.toFixed(1)}</span>
+    <span>Diameter</span><span>${co.d_nm.toFixed(2)} nm (equivalent sphere), ~${co.n_atoms} atoms</span>
+    <span>Facets</span><span>${fac}</span>`;
+  const big = co.n_atoms > D.max_atoms;
+  $("build").disabled = big;
+  $("buildStatus").className = "status";
+  $("buildStatus").textContent = big ? `This dot has ~${co.n_atoms} atoms, above the page's ${D.max_atoms}-atom limit.` : "";
+}
+
+function setWhich(w) {
+  which = w;
+  document.querySelectorAll(".pick button").forEach((b) => b.classList.toggle("on", b.dataset.which === w));
+  drawDist();
+}
+
+function ztext(z) {
+  if (!z || z.target_total == null) return "not run";
+  if (z.error) return `skipped (${z.error})`;
+  const fam = Object.entries(z.per_family || {}).map(([f, v]) => `${f} ${v.added ?? v.removed ?? 0}/${v.requested ?? "?"}`).join(", ");
+  return `k_X ${z.k_X} → target ${z.target_total}: ${z.direction} ${z.units}` + (z.shortfall ? `, ${z.shortfall} short (no site left)` : "") + (fam ? ` · ${fam}` : "");
+}
+
+async function build() {
+  const co = pickCohort(); if (!co) return;
+  $("build").disabled = true; $("buildStatus").className = "status";
+  $("buildStatus").textContent = `Building m ≈ ${co.m.toFixed(0)}, k ≈ ${co.k.toFixed(0)} with QD_builder…`;
+  try {
+    const b = await api("/api/build", { run_id: R.run_id, t: R.snapshots[snapIdx].t, cohort: co.i, full: $("full").checked });
+    lastXyz = b.xyz; lastName = `dot_t${fmt(b.t)}s`; render(b.xyz);
+    const comp = Object.entries(b.built.composition).map(([e, n]) => `${e}${n}`).join("");
+    $("what").innerHTML = `<b>Built dot</b> of the cohort born at ${fmt(b.cohort_born)} s, at ${fmt(b.t)} s of the growth run (QD_builder on the model's facet distances).`;
+    $("sInfo").innerHTML = `<span>Built</span><span>${comp} (${b.built.n_atoms} atoms)</span>
+      <span>m built / model</span><span>${b.built.m} / ${b.model.m.toFixed(1)}</span>
+      <span>k built / model</span><span>${b.built.k} / ${b.model.k.toFixed(1)}</span>
+      <span>Z-type</span><span>${ztext(b.z_type)}</span>
+      <span>Builder</span><span>${b.seconds} s${b.search ? `, centre ${b.search.centre}` : ""}</span>`;
+    $("recipe").textContent = JSON.stringify(b.recipe, null, 1);
+    $("recipeBox").hidden = false; $("dl").hidden = false;
+    $("buildStatus").textContent = "";
+  } catch (e) { $("buildStatus").className = "status err"; $("buildStatus").textContent = e.message; }
+  $("build").disabled = false;
+}
+
+// ---------- 3. structure ----------
+function render(xyz) {
+  const el = $("viewer"); el.innerHTML = "";
+  viewer = $3Dmol.createViewer(el, { backgroundColor: css("--surface-0"), orthographic: true });
+  viewer.addModel(xyz, "xyz");
+  viewer.setStyle({}, { sphere: { colorscheme: "Jmol", scale: 0.9 } });
+  const n = parseInt(xyz, 10) || 0;                     // small grid clusters fill the view, large dots keep a margin
+  viewer.zoomTo(); viewer.zoom(n > 200 ? 0.8 : 1.4); viewer.render();
+}
+
+$("tslider").addEventListener("input", (e) => { snapIdx = +e.target.value; onTime(); });
+document.querySelectorAll(".pick button").forEach((b) => b.addEventListener("click", () => setWhich(b.dataset.which)));
+$("run").addEventListener("click", run);
+$("build").addEventListener("click", build);
+$("dlxyz").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lastXyz], { type: "chemical/x-xyz" }));
+  a.download = `${lastName}.xyz`; a.click();
+});
+
+(async () => {
+  D = await api("/api/defaults");
+  if (D.material) $("title").textContent = `${D.material} nucleation and growth simulator`;
+  for (const c of CTLS) addSlider($("controls"), c, requestLive);
+  addSlider($("tcontrol"), TCTL, requestLive);
+  addSlider($("durcontrol"), DCTL);
+  addSlider($("durcontrol"), KCTL);
+  buildSurface();
+  requestLive();
+})();
+</script>
+</body>
+</html>

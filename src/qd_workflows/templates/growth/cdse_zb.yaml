@@ -1,0 +1,110 @@
+# Growth-model parameters: every value is a PLACEHOLDER until the shape-library fits replace it.
+conditions:
+  T: 500.0
+  c_P0: 0.1
+  c_MX0: 0.2
+  k_conv_500K: 1.0
+  Ea_conv: 0.0
+  t_end: 600.0
+  t_start: 0.001
+  n_out: 60
+material:
+  Omega_m: 59.667492978136295
+  g_bulk: -5.4903
+  omega_E_cm1: 150.0
+  atoms_per_unit: 2
+  m0: auto
+  m0_min: 10
+  m_dissolve: 4
+  N_min: 1.0e-15
+  match_m0: false
+nucleation:
+  flux: becker_doring
+  attach_barrier_eV: 0.0
+  J0: 1.0e-06
+kinetics:
+  mu_small: grid
+  D: 1.0e-05
+  k_r: 10000.0
+families:
+  '100':
+    gamma0: 11.3
+    eps0: 1.38
+    Gamma_max: 3.05
+    w: 0.738
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 19.238381192648
+  111A:
+    gamma0: 25.3
+    eps0: 1.06
+    Gamma_max: 1.26
+    w: 0.305
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 16.660926840521935
+  111B:
+    gamma0: 21.9
+    eps0: 1.08
+    Gamma_max: 0.66
+    w: 0.16
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 16.660926840521935
+  '110':
+    gamma0: 21.5
+    eps0: 1.28
+    Gamma_max: 1.21
+    w: 0.293
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 27.20717960074628
+provenance:
+  families: fit of 108 QD_builder dots (MACE-MH-1)
+solvation:
+  eps: 2.0
+  vdw_scale: 1.4
+  e_el_eV_A2: -0.00106
+  monomers:
+    CdSe:
+      E_inf_eV: -0.327178
+      S_A2: 117.799
+    CdCl2:
+      E_inf_eV: -0.198261
+      S_A2: 135.843
+  complexes:
+    '1':
+      E_inf_eV: -0.279721
+      S_A2: 208.647
+    '2':
+      E_inf_eV: -0.461963
+      S_A2: 287.318
+    '3':
+      E_inf_eV: -0.51139
+      S_A2: 351.68
+  note: implicit solvent only; explicit solvent and ligands (oleic acid, amines, phosphines)
+    come later
+units:
+  gamma0: meV/A^2 (bare facet)
+  tau: meV/A
+  eps0: 'eV per Z-type MX_q on the empty facet (> 0: bound)'
+  dG_bind: eV per Z-type MX_q at 1 M (if given instead of eps0)
+  Gamma_max: Z-type MX_q per nm^2
+  w: eV (lateral interaction at full coverage)
+  k0: A/s
+  k_r: A/s
+  D: cm^2/s
+  x_X: X-type MX_q per surface site (electron counting)
+  site_area: A^2
+  J0: M/s
+  attach_barrier_eV: eV
+  T: K
+  c_P0: M
+  c_MX0: M
+  k_conv_500K: 1/(M s)
+  Ea_conv: eV
+  t_end: s

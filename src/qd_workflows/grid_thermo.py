@@ -81,11 +81,18 @@ def unit_names(nodes):
 
 
 # ---------------- hessians ----------------
-def hessians(grid_dir, settings, refs=None, temperatures=TEMPERATURES, log=print, vibrations=True, out_path=None):
+def hessians(grid_dir, settings, refs=None, temperatures=TEMPERATURES, log=print, vibrations=True, out_path=None,
+              only=None):
     """vibrations=False: no Hessian, G° = E + translation + rotation (+ pV) for clusters and monomers alike
-    (a first look before the Hessians; CPU only)."""
+    (a first look before the Hessians; CPU only). only: the (m, k) nodes to treat (nucleation: those the row anneal
+    selected); the others are left out of thermo.json and listed under `skipped`."""
     grid_dir = Path(grid_dir)
     g = json.loads((grid_dir / "grid.json").read_text())
+    ref_names = unit_names(g["nodes"])
+    if only is not None:
+        only = {tuple(x) for x in only}
+        g = g | {"nodes": [n for n in g["nodes"] if (n["m"], n["k"]) in only],
+                 "skipped": [[n["m"], n["k"]] for n in g["nodes"] if (n["m"], n["k"]) not in only]}
     if vibrations:
         from orchestr_ai.qd.steps import detachment as dt
         work = grid_dir / "thermo"
@@ -95,7 +102,6 @@ def hessians(grid_dir, settings, refs=None, temperatures=TEMPERATURES, log=print
     old = json.loads(out_path.read_text()) if out_path.is_file() else {}
     done = {(n["m"], n["k"]): n for n in old.get("nodes", [])}
     nodes = []
-    ref_names = unit_names(g["nodes"])
     t0 = time.time()
     for n in g["nodes"]:
         key = (n["m"], n["k"])
@@ -125,7 +131,8 @@ def hessians(grid_dir, settings, refs=None, temperatures=TEMPERATURES, log=print
 
 def _write(path, grid_dir, temperatures, nodes, references, complete, g, vibrations=True):
     out = {"grid": str(grid_dir), "grid_complete": g.get("complete"), "complete": complete,
-           "vibrations": vibrations, "temperatures": temperatures, "references": references or {}, "nodes": nodes}
+           "vibrations": vibrations, "temperatures": temperatures, "references": references or {}, "nodes": nodes,
+           **({"skipped": g["skipped"]} if g.get("skipped") else {})}
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(out))
     os.replace(tmp, path)
@@ -136,20 +143,24 @@ def _at(t, temperatures, values):
     return float(np.interp(t, temperatures, values))
 
 
-def node_g(node, t, temperatures):
+def node_g(node, t, temperatures, solv=None):
     """G(m,k;T) = -kT ln sum_i exp(-G_i/kT) over the node's isomers: those with a Hessian, and the other
-    evaluated configurations with the thermal part of the best one."""
+    evaluated configurations with the thermal part of the best one. solv(node, state) -> dG_solv adds the
+    implicit solvation of each state (the other configurations take the best state's)."""
     kt = KB_EV * t
-    gs = {s["fingerprint"]: _at(t, temperatures, s["G_eV"]) for s in node["states"]}
+    dsol = (lambda st: solv(node, st)) if solv else (lambda st: 0.0)
+    # one term per state: the states are distinct minima already (merged by energy), and two of them can share a
+    # lattice fingerprint (the lattice and relaxed starts, or two grids), so they are not keyed by it
+    gs = [_at(t, temperatures, s["G_eV"]) + dsol(s) for s in node["states"]]
     best = min(node["states"], key=lambda s: s["E_eV"])
-    shift = _at(t, temperatures, best["G_eV"]) - best["E_eV"]
+    shift = _at(t, temperatures, best["G_eV"]) - best["E_eV"] + dsol(best)
     known = sorted(s["E_eV"] for s in node["states"])
     extra = list(node["ensemble_E_eV"])
     for e in known:                                    # the states are in the ensemble too: drop one copy each
         j = int(np.argmin([abs(x - e) for x in extra])) if extra else None
         if j is not None and abs(extra[j] - e) < 1e-4:
             extra.pop(j)
-    allg = np.array(list(gs.values()) + [e + shift for e in extra])
+    allg = np.array(gs + [e + shift for e in extra])
     g0 = allg.min()
     return float(g0 - kt * np.log(np.exp(-(allg - g0) / kt).sum()))
 
@@ -184,32 +195,42 @@ def _speciation(g_n, mu_mx, kt):
     return lse, x, sum(n * v for n, v in x.items())
 
 
-def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
-    """Sections 4-6 of grand_potential.md. Concentrations in mol/L (c0 = 1 M standard state).
-    c_p0: initial MA precursor (e.g. the Se precursor); c_mx0: initial MX_q; alpha: precursor-to-monomer conversion
-    (from the conversion kinetics: alpha = converted(time, k_conv, c_p0, c_mx0) / c_p0).
-    Monomer formation MX_q + P=A -> MA + P X_q supplies c_MA = alpha c_p0 and consumes as much MX_q; the MX_q left is
-    shared between the free (or ligand-bound) MX_q and the MA(MX_q)_n complexes: the free MX_q solves that balance.
-    bare=True: the whole supply is the uncomplexed MA monomer and all the MX_q left is free (no complexes), the
-    limit of the pre-nucleation formula Omega = G_f - m kT ln(c_MA/c0) - k kT ln(c_MX,left/c0)."""
+def thermo_at(thermo, t, solvation: dict | None = None):
+    """Free energies at one temperature: G(m,k) of every node, G of the MX_q monomer, G of the MA(MX_q)_n precursor
+    complexes (the grid's m = 1 row; n = 0 from the library monomer when the row lacks it). solvation: the
+    grid_solvation block (eps, ...): every species gets its implicit solvation free energy (none at eps = 1)."""
     temps = thermo["temperatures"]
-    kt = KB_EV * t
     nodes = {(n["m"], n["k"]): n for n in thermo["nodes"]}
-    G = {key: node_g(n, t, temps) for key, n in nodes.items()}
-    refs = thermo["references"]
+    eps = float((solvation or {}).get("eps", 1.0))
     mx_name, ma_name = unit_names(thermo["nodes"])
+    solv, d_mx, d_ma = None, 0.0, 0.0
+    if eps > 1.0:
+        from . import grid_solvation as gs_
+        names = (ma_name, mx_name)
+        solv = lambda node, st: gs_.state_shift(node, st, eps, solvation, names)  # noqa: E731
+        d_mx = gs_.monomer(mx_name, eps, solvation) if mx_name in solvation["monomers"] else 0.0
+        d_ma = gs_.monomer(ma_name, eps, solvation) if ma_name in solvation["monomers"] else 0.0
+    G = {key: node_g(n, t, temps, solv) for key, n in nodes.items()}
+    refs = thermo["references"]
     ma_name = ma_name if ma_name in refs else None
     if mx_name not in refs:
         raise ValueError("thermo.json has no MX_q monomer reference (run hessians with --refs)")
-    g_mx = _at(t, temps, refs[mx_name]["G_eV"])
-    # MA precursor complexes MA(MX_q)_n: the grid's m = 1 row; n = 0 from the library monomer if the row lacks it
     g_n = {k: G[(1, k)] for (m, k) in G if m == 1}
     if 0 not in g_n and ma_name:
-        g_n[0] = _at(t, temps, refs[ma_name]["G_eV"])
+        g_n[0] = _at(t, temps, refs[ma_name]["G_eV"]) + d_ma
     if not g_n:
         raise ValueError("no MA precursor: the grid has no m = 1 row and thermo.json no MA monomer")
-    c_ma = alpha * c_p0
-    avail = c_mx0 - c_ma
+    return {"t": t, "nodes": nodes, "G": G, "g_mx": _at(t, temps, refs[mx_name]["G_eV"]) + d_mx, "g_n": g_n,
+            "eps": eps, "dG_solv_mx": d_mx}
+
+
+def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
+    """Chemical potentials of the precursor pool (grand_potential.md section 4b) for any MA supply c_ma and MX_q left
+    in solution `avail` (mol/L): the MX_q left is shared between the free (or ligand-bound) MX_q and the MA(MX_q)_n
+    complexes, and the free MX_q solves that balance. bare=True: the supply is the uncomplexed MA monomer and all
+    the MX_q left is free. th: thermo_at(). Returns mu_MA, mu_MX, c_MX_free, speciation, mean_n."""
+    kt = KB_EV * th["t"]
+    g_n, g_mx = th["g_n"], th["g_mx"]
     if c_ma <= 0 or avail <= 0:
         raise ValueError(f"no monomer or no MX_q left: c_MA = {c_ma:g} M, MX_q left = {avail:g} M")
     bind = 1.0 + k_l * (c_l / c0) ** 2
@@ -218,23 +239,41 @@ def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
             raise ValueError("bare monomer: no MA monomer (m = 1, k = 0 node or library reference)")
         c_mx_free = avail / bind
         mu_mx = g_mx + kt * np.log(c_mx_free / c0)
-        speciation, mean_n = {0: 1.0}, 0.0
-        mu_ma = g_n[0] + kt * np.log(c_ma / c0)
-    else:
-        def excess(ln_x):                               # MX_q balance of the precursor pool, increasing in ln_x
-            mu = g_mx + kt * (ln_x - np.log(c0))
-            return np.exp(ln_x) * bind + c_ma * _speciation(g_n, mu, kt)[2] - avail
+        return {"mu_MA": float(g_n[0] + kt * np.log(c_ma / c0)), "mu_MX": float(mu_mx), "c_MX_free": float(c_mx_free),
+                "speciation": {0: 1.0}, "mean_n": 0.0}
 
-        lo, hi = np.log(avail) - 80.0, np.log(avail / bind)
-        if excess(lo) > 0:
-            raise ValueError("the MA complexes need more MX_q than is left (no free MX_q solves the balance)")
-        for _ in range(200):
-            mid = 0.5 * (lo + hi)
-            lo, hi = (mid, hi) if excess(mid) < 0 else (lo, mid)
-        c_mx_free = float(np.exp(0.5 * (lo + hi)))
-        mu_mx = g_mx + kt * np.log(c_mx_free / c0)
-        lse, speciation, mean_n = _speciation(g_n, mu_mx, kt)
-        mu_ma = kt * np.log(c_ma / c0) - kt * lse
+    def excess(ln_x):                                   # MX_q balance of the precursor pool, increasing in ln_x
+        mu = g_mx + kt * (ln_x - np.log(c0))
+        return np.exp(ln_x) * bind + c_ma * _speciation(g_n, mu, kt)[2] - avail
+
+    lo, hi = np.log(avail) - 80.0, np.log(avail / bind)
+    if excess(lo) > 0:
+        raise ValueError("the MA complexes need more MX_q than is left (no free MX_q solves the balance)")
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if excess(mid) < 0 else (lo, mid)
+    c_mx_free = float(np.exp(0.5 * (lo + hi)))
+    mu_mx = g_mx + kt * np.log(c_mx_free / c0)
+    lse, speciation, mean_n = _speciation(g_n, mu_mx, kt)
+    return {"mu_MA": float(kt * np.log(c_ma / c0) - kt * lse), "mu_MX": float(mu_mx), "c_MX_free": c_mx_free,
+            "speciation": speciation, "mean_n": mean_n}
+
+
+def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
+    """Sections 4-6 of grand_potential.md. Concentrations in mol/L (c0 = 1 M standard state).
+    c_p0: initial MA precursor (e.g. the Se precursor); c_mx0: initial MX_q; alpha: precursor-to-monomer conversion
+    (from the conversion kinetics: alpha = converted(time, k_conv, c_p0, c_mx0) / c_p0).
+    Monomer formation MX_q + P=A -> MA + P X_q supplies c_MA = alpha c_p0 and consumes as much MX_q; the MX_q left is
+    shared between the free (or ligand-bound) MX_q and the MA(MX_q)_n complexes: the free MX_q solves that balance.
+    bare=True: the whole supply is the uncomplexed MA monomer and all the MX_q left is free (no complexes), the
+    limit of the pre-nucleation formula Omega = G_f - m kT ln(c_MA/c0) - k kT ln(c_MX,left/c0)."""
+    kt = KB_EV * t
+    th = thermo_at(thermo, t)
+    nodes, G = th["nodes"], th["G"]
+    c_ma = alpha * c_p0
+    avail = c_mx0 - c_ma
+    pl = pool(th, c_ma, avail, k_l, c_l, c0, bare)
+    mu_ma, mu_mx, c_mx_free, speciation, mean_n = pl["mu_MA"], pl["mu_MX"], pl["c_MX_free"], pl["speciation"], pl["mean_n"]
     Om = {key: G[key] - key[0] * mu_ma - key[1] * mu_mx for key in G}
     ms = sorted({m for m, _ in Om}, reverse=True)
     per_m = {}
