@@ -32,7 +32,7 @@ from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
 
 PAGE = Path(__file__).parent / "templates" / "simulator" / "index.html"
 LIMITS = {                                  # slider ranges of the page (the grid thermo spans its own T range)
-    "T": [300.0, 700.0], "c_P0": [0.005, 0.5], "c_MX0": [0.01, 1.0], "k_conv_500K": [0.01, 100.0],
+    "T": [300.0, 700.0], "c_P0": [0.005, 0.5], "c_MX0": [0.01, 1.0], "k_conv_500K": [1e-8, 1e6],
     "t_end": [1.0, 36000.0], "Ea_conv": [0.0, 2.0], "t": [1e-3, 1e5], "eps": [1.0, 40.0],
     "k_r": [1.0, 1e10],                     # A/s, surface reaction of the size law (1e10: the diffusion limit)
     # calibration factors (tuned to target experiments): activity coefficients and the island step scale
@@ -86,10 +86,12 @@ class Simulator:
         k_r = self.params["kinetics"].get("k_r")
         kin = self.params["kinetics"]
         return {"conditions": {**{k: c[k] for k in SETTINGS}, "t": 10.0, "eps": eps,
-                               "k_r": float(k_r) if k_r is not None else LIMITS["k_r"][1],
+                               "k_r": (None if k_r == "facets" else
+                                       float(k_r) if k_r is not None else LIMITS["k_r"][1]),
                                **PAGE_DEFAULTS, "T_growth": c["T"],
                                "beta_scale": float(kin.get("beta_scale", 1.0))},
                 "growth_law": kin.get("growth_law", "size"), "facet_kinetics": kin.get("facets") or {},
+                "k_r_mode": "facets" if k_r == "facets" else "set",
                 "m0": self._m0({**c, "eps": eps})[0],
                 "solvation_note": self.params.get("solvation", {}).get("note", ""),
                 "limits": self.limits, "families": list(F), "max_atoms": self.max_atoms,
@@ -142,8 +144,8 @@ class Simulator:
                 c[k] = self._clip(cond, k)
         if cond.get("eps") is not None and "solvation" in P:
             P["solvation"]["eps"] = solvent_eps(cond["eps"])
-        if cond.get("k_r") is not None:
-            P["kinetics"]["k_r"] = self._clip(cond, "k_r")
+        if cond.get("k_r") is not None and P["kinetics"].get("k_r") != "facets":
+            P["kinetics"]["k_r"] = self._clip(cond, "k_r")      # only where k_r is a set number, not computed
         for k in ("gamma_MA", "gamma_MX"):
             c[k] = self._clip(cond, k, 1.0)
         P["kinetics"]["beta_scale"] = self._clip(cond, "beta_scale", P["kinetics"].get("beta_scale", 1.0))
@@ -190,7 +192,7 @@ class Simulator:
                             "facets": {f: a / A for f, a in co["area"].items() if a > 0}})
             snaps.append({"t": s["t"], "cohorts": cos})
         keep = ("t", "T", "V_L", "P", "C_M", "C_X", "c_MX_free", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots",
-                "m_mean", "m_std", "theta", "theta_eq", "gamma")
+                "m_mean", "m_std", "theta", "theta_eq", "gamma", "k_eff")
         used = g.F                                           # derived: solvation, binding at T, match_m0 rescaling
         return {"run_id": rid, "seconds": round(time.time() - t0, 2), "conditions": P["conditions"],
                 "growth_law": P["kinetics"].get("growth_law", "size"),

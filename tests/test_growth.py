@@ -320,6 +320,25 @@ def test_activity_coefficients_shift_the_potentials_and_keep_the_balance():
     assert all(fam[f]["theta"] <= fam_ref[f]["theta"] + 1e-12 for f in fam)
 
 
+def test_surface_reaction_from_the_facet_rates():
+    facets = {"100": {"k_f": 2e4}, "111A": {"k_f": 3e5}, "111B": {"k_f": 1e3}, "110": {"k_f": 7e4}}
+    g = gr.Growth(_thermo(), _params(kinetics={"k_r": "facets", "facets": facets}))
+    g._arrays()
+    _pl, fam = g.chem(1e-3, 0.1)
+    h = g.shape.wulff({f: fam[f]["gamma"] for f in g.F}, 500 * g.Om)
+    m, k, area, _s = g.dot(h, fam)
+    th = {f: fam[f]["theta"] for f in g.F}
+    A, r, _dmu, thb = g.size_state([{"m": m, "area": area}], fam, th)
+    want = sum(facets[f]["k_f"] * (1 - th[f]) * area[f] for f in g.F) / A[0]
+    assert math.isclose(g._keff[0], want, rel_tol=1e-12)
+    res_d, res_r = g.resistances(A, r, thb)
+    assert math.isclose(res_r[0], 1.0 / want, rel_tol=1e-12)
+    res = g.run()
+    assert res["series"][-1]["N_dots"] > 0 and res["series"][-1]["k_eff"] > 0
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
 def test_growth_does_not_change_its_params():
     P = _params()
     before = copy.deepcopy(P)

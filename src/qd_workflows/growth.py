@@ -817,9 +817,18 @@ class Growth:
     def size_state(self, cohorts, fam, th):
         """Per cohort: total area A (A^2), equivalent radius r (A), the dot's chemical potential mu_dot - g_bulk (eV)
         of its Wulff shape at gamma(C), mu_dot = g_bulk + (2/3) Omega_m sum_f gamma_f A_f / V, and the area-weighted
-        Z-type coverage of its facets (th: the dots' coverage per family)."""
+        Z-type coverage of its facets (th: the dots' coverage per family). With kinetics.k_r = "facets" also each
+        dot's surface reaction from the facet rates, k_eff = sum_f A_f k_f (1 - theta_f) / A (self._keff, A/s)."""
         n = len(cohorts)
         A, r, dmu_dot, th_bar = (np.zeros(n) for _ in range(4))
+        facets_kr = self.P["kinetics"].get("k_r") == "facets"
+        if facets_kr:
+            FK = self.P["kinetics"].get("facets") or {}
+            missing = [f for f in self.F if "k_f" not in FK.get(f, {})]
+            if missing:
+                raise ValueError(f"k_r = 'facets' needs kinetics.facets with k_f for every family (missing {missing})")
+            kf = {f: float(FK[f]["k_f"]) for f in self.F}
+        self._keff = np.zeros(n) if facets_kr else None
         for i, co in enumerate(cohorts):
             area = co["area"]
             a = sum(area.values())
@@ -828,7 +837,26 @@ class Growth:
             dmu_dot[i] = (2.0 / 3.0) * sum(fam[f]["gamma"] * area[f] for f in self.F) / max(co["m"], 1e-12) \
                 + self.junction(co["m"])
             th_bar[i] = sum(th[f] * area[f] for f in self.F) / a if a > 0 else 0.0
+            if facets_kr:
+                self._keff[i] = sum(kf[f] * (1.0 - th[f]) * area[f] for f in self.F) / a if a > 0 else 0.0
         return A, r, dmu_dot, th_bar
+
+    def mean_keff(self, cohorts, th):
+        """Number-weighted surface reaction rate of the dots (A/s): k_r, or with k_r = "facets" each dot's
+        sum_f A_f k_f (1 - theta_f) / A; None without dots."""
+        N = sum(co["N"] for co in cohorts)
+        if N <= 0:
+            return None
+        k_r = self.P["kinetics"].get("k_r")
+        if k_r != "facets":
+            return float(k_r) if k_r is not None else None
+        FK = self.P["kinetics"]["facets"]
+        tot = 0.0
+        for co in cohorts:
+            a = sum(co["area"].values())
+            if a > 0:
+                tot += co["N"] * sum(float(FK[f]["k_f"]) * (1.0 - th[f]) * co["area"][f] for f in self.F) / a
+        return tot / N
 
     def _merge(self, cohorts: list):
         """Merge neighbouring cohorts (in ln m) that are within material.merge_tol (1 %) of each other, and the
@@ -858,6 +886,7 @@ class Growth:
             area = self.shape(h)[0]
             a.update(N=n, m=m, k=(a["N"] * a["k"] + b["N"] * b["k"]) / n, h=h, area=area,
                      t_b=min(a["t_b"], b["t_b"]))
+            a.pop("_speeds", None)                         # a new shape: its facet speeds are computed again
 
     def junction(self, m: float) -> float:
         """The continuum's mu past the grid's top joined to the grid's (nucleation): delta m_top / m (eV), 0 within
@@ -895,7 +924,14 @@ class Growth:
         else:
             res_d = A / (4.0 * math.pi * self.D * r)                                     # s/A
         k_r = self.P["kinetics"].get("k_r")                                             # A/s
-        res_r = 1.0 / (float(k_r) * np.maximum(1.0 - th_bar, 1e-6)) if k_r is not None else 0.0 * res_d
+        if k_r == "facets":
+            # each dot's own surface reaction from the facet incorporation rates (size_state): computed, not set
+            keff = getattr(self, "_keff", None)
+            if keff is None or len(keff) != np.size(res_d):
+                raise ValueError("k_r = 'facets': size_state must run first for these dots")
+            res_r = 1.0 / np.maximum(keff, 1e-30)
+        else:
+            res_r = 1.0 / (float(k_r) * np.maximum(1.0 - th_bar, 1e-6)) if k_r is not None else 0.0 * res_d
         return res_d, res_r
 
     # -- facet shape within the size law (kinetics.growth_law = "shape") --
@@ -907,6 +943,11 @@ class Growth:
         e^(-dG*_f/kT), dG*_f = dG(min(n_face, N*_f)), dG(n) = beta_f sqrt(n) - n kT ln S_f, N*_f = (beta_f /
         (2 kT ln S_f))^2: the critical island, or the whole face when it is smaller (continuous in the face's size)."""
         FK = self.P["kinetics"].get("facets") or {}
+        # the speeds change slowly: reused while the dot's m moves < 5 % and mu_s < 2 meV (the facet potentials
+        # take nine polyhedron evaluations a dot)
+        c = co.get("_speeds")
+        if c and abs(math.log(co["m"] / c[0])) < 0.05 and abs(dmu_s - c[1]) < 2e-3 and c[2] == self.T:
+            return c[3]
         dmu = self.facet_mu(co["h"], co["area"], fam)
         v = {}
         for f in self.F:
@@ -925,6 +966,7 @@ class Growth:
                 n = min(n_face, (beta / (2.0 * self.kt * drive)) ** 2)
                 barrier = max(beta * math.sqrt(n) - n * self.kt * drive, 0.0)
                 v[f] *= math.exp(-min(barrier / self.kt, 700.0))
+        co["_speeds"] = (co["m"], dmu_s, self.T, v)
         return v
 
     def shape_step(self, co, m_new, v):
@@ -1285,6 +1327,7 @@ class Growth:
                 row = {"t": t, "P": P_, "C_M": C_M, "C_X": C_X, "c_MX_free": pl["c_MX_free"], "mu_MA": mu,
                        "mu_MX": mu_mx, "S_bulk": math.exp(min((mu - self.gb) / self.kt, 700)),
                        "T": self.T, "V_L": V, "n_inj_mol": n_inj, "n_conv_mol": n_conv,
+                       "k_eff": self.mean_keff(cohorts, th_dots),
                        "barrier": barrier, "J": J, "J0": J * math.exp(min(barrier / self.kt, 700)), "k_star": k_star,
                        "m_birth": m_b,
                        "N_dots": N, "m_mean": mean, "m_std": std,

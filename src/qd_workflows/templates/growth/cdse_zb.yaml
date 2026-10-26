@@ -25,7 +25,7 @@ nucleation:
 kinetics:
   mu_small: grid
   D: 1.0e-05
-  k_r: 10000.0
+  k_r: facets
   growth_law: shape
   beta_scale: 1.0
   facets:
@@ -111,7 +111,7 @@ units:
   Gamma_max: Z-type MX_q per nm^2
   w: eV (lateral interaction at full coverage)
   k0: A/s
-  k_r: A/s
+  k_r: 'A/s, or "facets": each dot''s surface reaction from the facet rates, sum_f A_f k_f (1 - theta_f) / A'
   k_f: A/s (facet incorporation rate, relative speeds of the shape rule)
   island_beta_eV: eV (step term of the island ladder, dG(N) = g N + beta sqrt(N))
   D: cm^2/s

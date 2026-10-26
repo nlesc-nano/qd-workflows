@@ -142,6 +142,9 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
     <section class="card sticky">
       <h2>Conditions</h2>
       <div id="controls"></div>
+      <h3>Look at Ω at</h3>
+      <div id="tcontrol"></div>
+      <div class="status" id="liveStatus"></div>
       <h3><label class="tog"><input type="checkbox" id="inject"> Inject the Se precursor with a syringe</label></h3>
       <div id="injControls" hidden></div>
       <div class="hint" id="injInfo"></div>
@@ -149,9 +152,6 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
       <div id="tprogControls" hidden></div>
       <h3>Calibration (tune to target experiments)</h3>
       <div id="calControls"></div>
-      <h3>Look at Ω at</h3>
-      <div id="tcontrol"></div>
-      <div class="status" id="liveStatus"></div>
     </section>
   </div>
 
@@ -193,11 +193,12 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
       </div>
       <div class="cap">Uses the conditions on the left. Growth duration is how long the kinetics is integrated after
         injection; it is independent of the time you look at Ω above. Each dot grows or dissolves by
-        dm/dt = A·N<sub>A</sub>(C − C<sub>eq</sub>(m)) / (A/4πDr + 1/k<sub>r</sub>(1 − θ)) (diffusion in series with the
-        surface reaction), C<sub>eq</sub> from the Gibbs–Thomson chemical potential of its shape. With the facet shape
-        rule the growth is shared among the facets by their relative speeds ρ<sub>f</sub>k<sub>f</sub>(1 − θ<sub>f</sub>)[1 − e<sup>−(μ<sub>s</sub>−μ<sub>f</sub>)/kT</sup>]P<sub>f</sub>
-        (P<sub>f</sub>: layer nucleation from the island step β<sub>f</sub>); otherwise every dot keeps the Wulff shape.
-        Facets set the shape and the surface energy, not the overall rate.</div>
+        dm/dt = A·N<sub>A</sub>(C − C<sub>eq</sub>(m)) / (A/4πDr + 1/k<sub>eff</sub>) (diffusion in series with the
+        surface reaction), C<sub>eq</sub> from the Gibbs–Thomson chemical potential of its shape. The surface reaction is
+        computed from the facet incorporation rates of the NEB pilot, k<sub>eff</sub> = Σ<sub>f</sub> A<sub>f</sub>k<sub>f</sub>(1 − θ<sub>f</sub>)/A
+        over the dot's exposed facets. With the facet shape rule the growth is shared among the facets by their
+        relative speeds ρ<sub>f</sub>k<sub>f</sub>(1 − θ<sub>f</sub>)[1 − e<sup>−(μ<sub>s</sub>−μ<sub>f</sub>)/kT</sup>]P<sub>f</sub>
+        (P<sub>f</sub>: layer nucleation from the island step β<sub>f</sub>); otherwise every dot keeps the Wulff shape.</div>
       <div class="status" id="runStatus"></div>
       <div id="growth" hidden>
         <div class="stale" id="stale" hidden>The conditions changed since this run: press Run kinetic growth again to update it.</div>
@@ -486,7 +487,8 @@ async function run() {
     $("runStatus").textContent = "A facet parameter is out of range: correct it, or switch editing off.";
     return;
   }
-  const body = { ...conds(), t_end: val(DCTL), k_r: val(KCTL), families: fams };
+  // k_r is sent only where it is a set number; normally it is computed from the facet rates
+  const body = { ...conds(), t_end: val(DCTL), ...(D.k_r_mode === "facets" ? {} : { k_r: val(KCTL) }), families: fams };
   $("run").disabled = true; $("runStatus").className = "status"; $("runStatus").textContent = body.inject ? "Integrating nucleation and growth over the injection (about a minute)…" : "Integrating nucleation and growth…";
   try {
     R = await api("/api/run", body); runConds = conds();
@@ -526,7 +528,7 @@ function onTime() {
   for (const id of TIME_CHARTS) Plotly.relayout(id, { shapes: [vline(t)] });
   $("tval").textContent = `${fmt(t)} s`;
   const row = R.series.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
-  $("poolLine").textContent = `${row.T != null ? row.T.toFixed(0) + " K · " : ""}${row.V_L != null && R.conditions.injection ? fmt(1000 * row.V_L) + " mL · " : ""}Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier == null ? "none (no supersaturation)" : row.barrier.toFixed(3) + " eV"}`;
+  $("poolLine").textContent = `${row.T != null ? row.T.toFixed(0) + " K · " : ""}${row.V_L != null && R.conditions.injection ? fmt(1000 * row.V_L) + " mL · " : ""}Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier == null ? "none (no supersaturation)" : row.barrier.toFixed(3) + " eV"}${row.k_eff != null ? ` · surface reaction k_eff ${fmt(row.k_eff)} Å/s${D.k_r_mode === "facets" ? " (from the facet rates)" : ""}` : ""}`;
   drawDist();
   fillSurface(row);
 }
@@ -714,7 +716,7 @@ $("dlxyz").addEventListener("click", () => {
   }));
   addSlider($("tcontrol"), TCTL, requestLive);
   addSlider($("durcontrol"), DCTL);
-  addSlider($("durcontrol"), KCTL);
+  if (D.k_r_mode !== "facets") addSlider($("durcontrol"), KCTL);
   buildSurface();
   syncToggles();
   requestLive();
