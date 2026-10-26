@@ -128,17 +128,53 @@ def capacitance_spheres(symbols, positions, n: int = 40000, seed: int = 0, scale
     return _wos(dist, R, n, 1e-3 * R, np.random.default_rng(seed))
 
 
-def capacitance_polyhedron(normals, distances, n: int = 40000, seed: int = 0) -> tuple[float, float]:
-    """Capacitance (A) of the convex polyhedron {x: n_i.x <= h_i} (origin inside)."""
+def capacitance_polyhedron(normals, distances, n: int = 40000, seed: int = 0, dilate: float = 0.0) -> tuple[float, float]:
+    """Capacitance (A) of the convex polyhedron P = {x: n_i.x <= h_i} (origin inside), or with dilate = R > 0 of its
+    parallel body P + B(R) (every point within R of P: the contact surface of a monomer of radius R on the dot).
+    The parallel body needs the exact distance to P: the plane distance where x projects into the face of the
+    farthest plane, else the distance to the nearest edge."""
     N = np.asarray(normals, float)
     N = N / np.linalg.norm(N, axis=1)[:, None]
     h = np.asarray(distances, float)
     from scipy.spatial import HalfspaceIntersection
     verts = HalfspaceIntersection(np.hstack([N, -h[:, None]]), np.zeros(3)).intersections
-    R = float(np.linalg.norm(verts, axis=1).max()) * 1.05
+    R = (float(np.linalg.norm(verts, axis=1).max()) + dilate) * 1.05
+    if dilate <= 0:
+        def dist(x):
+            return (x @ N.T - h[None, :]).max(1)
+        return _wos(dist, R, n, 1e-3 * R, np.random.default_rng(seed))
+    # vertices (merged) and edges: two vertices on two common planes
+    tol = 1e-6 * R
+    vs = []
+    for v in verts:
+        if not any(np.linalg.norm(v - w) < 10 * tol for w in vs):
+            vs.append(v)
+    V = np.array(vs)
+    act = np.abs(V @ N.T - h[None, :]) < 1e-5 * R
+    ea, eb = [], []
+    for a in range(len(V)):
+        for b in range(a + 1, len(V)):
+            if (act[a] & act[b]).sum() >= 2:
+                ea.append(V[a])
+                eb.append(V[b])
+    ea, eb = np.array(ea), np.array(eb)
+    ed = eb - ea
+    el2 = np.maximum((ed * ed).sum(1), 1e-30)
 
     def dist(x):
-        return (x @ N.T - h[None, :]).max(1)
+        s = x @ N.T - h[None, :]
+        i = s.argmax(1)
+        si = s[np.arange(len(x)), i]
+        p = x - si[:, None] * N[i]                                  # projection on the farthest plane
+        inside = ((p @ N.T - h[None, :]) <= 1e-9 * R).all(1)
+        d = si.copy()
+        out = ~inside & (si > 0)
+        if out.any():
+            xo = x[out]
+            t = np.clip(((xo[:, None, :] - ea[None]) * ed[None]).sum(2) / el2[None], 0.0, 1.0)
+            q = ea[None] + t[..., None] * ed[None]
+            d[out] = np.sqrt(((xo[:, None, :] - q) ** 2).sum(2)).min(1)
+        return d - dilate
     return _wos(dist, R, n, 1e-3 * R, np.random.default_rng(seed))
 
 

@@ -339,6 +339,68 @@ def test_surface_reaction_from_the_facet_rates():
         assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
 
 
+def test_each_dot_has_its_own_capacitance():
+    g = gr.Growth(_thermo(), _params())
+    g._arrays()
+    _pl, fam = g.chem(1e-3, 0.1)
+    g._R1 = 3.0
+    h = {"100": 20.0, "111A": 19.0, "111B": 21.0, "110": 23.0}                 # all four families: near round
+    m, _k, area, _s = g.dot(h, fam)
+    cube = {f: (1.0 if f == "100" else 10.0) * 30.0 for f in g.F}             # only {100}: a cube
+    mc, _kc, area_c, _sc = g.dot(cube, fam)
+    c, con = g.dot_capacitance({"m": mc, "h": cube, "area": area_c})
+    assert abs(c / 60.0 - 0.6607) < 0.01                                      # cube of edge 60 A
+    assert con > c + 3.0                                                      # a cube's grown body beats C + R_1
+    c, con = g.dot_capacitance({"m": m, "h": h, "area": area})
+    c2, _ = g.dot_capacitance({"m": 8 * m, "h": {f: 2 * h[f] for f in g.F}, "area": area})
+    assert len(g._shape_caps) == 2 and math.isclose(c2, 2 * c)               # one entry per shape, C ~ size
+    r = (3 * m * g.Om / (4 * math.pi)) ** (1 / 3)
+    assert 1.0 < c / r < 1.1 and abs(con - (c + 3.0)) / con < 0.02              # near-round: C + R_1 within 2 %
+    # the shell: R_h grows by a + b k / A, the contact surface by R_1 + a' + b' k / A
+    g.P["kinetics"]["shell_offset"] = {"R_h_A": [0.5, 80.0], "R_se_A": [0.2, 80.0]}
+    k = 0.03 * sum(area.values())
+    ch, cc = g.dot_capacitance({"m": m, "h": h, "area": area, "k": k})
+    assert math.isclose(ch, c + 0.5 + 80.0 * 0.03) and abs(cc - (con + 0.2 + 2.4)) / cc < 0.02
+
+
+def test_bulk_free_energy_table_replaces_the_einstein_estimate():
+    g = gr.Growth(_thermo(), _params(material={"g_bulk_T": {"T": [300.0, 700.0], "G_eV": [-5.3, -5.7]}}))
+    assert math.isclose(g.gb, -5.3 + (g.T - 300.0) / 400.0 * -0.4)
+    g.set_temperature(500.0)
+    assert math.isclose(g.gb, -5.5)
+
+
+def test_ideal_growth_keeps_the_nucleation_and_grows_spheres():
+    full = gr.Growth(_thermo(), _params())
+    ideal = gr.Growth(_thermo(), _params(kinetics={"growth_law": "sphere", "sphere": {"k_r_A_s": 5e3}}))
+    for g in (full, ideal):
+        g._arrays()
+        pl, _fam = g.chem(1e-3, 0.1)                                        # sets sigma at this pool
+    J_full, b_full = full.nucleation(pl["mu_MA"], pl["mu_MX"])[:2]
+    J_ideal, b_ideal = ideal.nucleation(pl["mu_MA"], pl["mu_MX"])[:2]
+    assert math.isclose(J_full, J_ideal, rel_tol=1e-12) and math.isclose(b_full, b_ideal, rel_tol=1e-12)
+    full.chem(*full.ref_pool())                                             # default gamma: the Wulff dot's at the reference pool
+    sigma_w = full._sigma / ((36 * math.pi) ** (1 / 3) * full.Om ** (2 / 3)) / 0.0624150907
+    assert math.isclose(ideal.sphere_used["gamma_J_m2"], sigma_w, rel_tol=1e-9) and ideal.sphere_used["k_r_A_s"] == 5e3
+    ideal = gr.Growth(_thermo(), _params(kinetics={"growth_law": "sphere", "sphere": {"k_r_A_s": 5e3, "gamma_J_m2": 0.2}}))
+    ideal._arrays()
+    used = ideal.sphere_used
+    assert math.isclose(used["gamma_J_m2"], 0.2)
+    _pl, fam = ideal.chem(1e-3, 0.1)
+    h = ideal.shape.wulff({f: fam[f]["gamma"] for f in ideal.F}, 2000 * ideal.Om)
+    m, k, area, _s = ideal.dot(h, fam)
+    assert k == 0.0                                                         # no MX_q shell on an ideal dot
+    A, r, dmu, _th = ideal.size_state([{"m": m, "area": area}], fam, {f: 0.0 for f in ideal.F})
+    assert math.isclose(r[0], (3 * m * ideal.Om / (4 * math.pi)) ** (1 / 3)) and math.isclose(A[0], 4 * math.pi * r[0] ** 2)
+    gam = used["gamma_J_m2"] * 0.0624150907
+    assert math.isclose(dmu[0] - ideal.junction(m), 2 * gam * ideal.Om / r[0], rel_tol=1e-12)
+    assert math.isclose(ideal.resistances(A, r, _th)[1][0], 1 / 5e3)
+    res = ideal.run()
+    assert res["sphere"] == used and res["series"][-1]["N_dots"] > 0
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
 def test_growth_control_and_nucleation_window():
     g = gr.Growth(_thermo(), _params())
     A, r, th = np.array([400.0]), np.array([8.0]), np.array([0.3])

@@ -24,7 +24,8 @@ dots per L) and a size m (CdSe units); its shape is the Wulff construction at th
     hand-over   m0 = "auto": the size where the grid's two-step chemical potential meets the continuum (_handover)
     dot mu      mu_dot = g_bulk(T) + (2/3) Omega_m sum_f gamma_f A_f / V   (Gibbs-Thomson of the Wulff dot: one
                 chemical potential per dot, = g_bulk + 2 gamma_f Omega_m / h_f on every facet of the Wulff shape)
-                g_bulk(T) = E_bulk + 3 n_at [hw_E/2 + kT ln(1 - e^-hw_E/kT)]  (free energy, like the grid's G)
+                g_bulk(T) = E_bulk + F_vib(T) of the bulk phonons (material.g_bulk_T, free energy like the grid's
+                G), or the Einstein estimate E_bulk + 3 n_at [hw_E/2 + kT ln(1 - e^-hw_E/kT)] without that table
                 C_eq(m) = C_M e^((mu_dot - mu_MA)/kT)  (the monomer level in equilibrium with the dot, at fixed mu_MX)
                 with grid nucleation, a dot within the grid's sizes takes the grid's step instead,
                 mu_dot(m) = [G~(m) - G~(m - 2)] / 2, G~(m) = -kT ln sum_k e^-(G(m,k) - k mu_MX)/kT  (grid_mu)
@@ -368,6 +369,7 @@ class Growth:
         self._R1 = 0.0                                   # the monomer's transport is set again at this T
         classical = self.P["nucleation"].get("omega", "grid") == "continuum"
         self.handover = self._handover() if m0 == "auto" and not classical else None
+        self.sphere_used = self.sphere_setup() if self.sphere else None
 
     def ref_pool(self):
         """Monomer supply and MX_q left of the reference pool (half of all the precursor converted): with an
@@ -457,9 +459,13 @@ class Growth:
         return {"m0": self.m0, "mismatch_eV": best["diff_eV"], "rows": rows}
 
     def g_bulk(self):
-        """Bulk free energy per MA unit at T: the 0 K energy plus an Einstein estimate of the bulk phonons
-        (3 x atoms-per-unit modes at omega_E), PLACEHOLDER until a bulk phonon calculation replaces it."""
+        """Bulk free energy per MA unit at T: material.g_bulk_T = {"T": [...], "G_eV": [...]} (the bulk phonon free
+        energy, interpolated in T), else the 0 K energy plus an Einstein estimate of the bulk phonons (3 x
+        atoms-per-unit modes at omega_E)."""
         mat = self.P["material"]
+        tab = mat.get("g_bulk_T")
+        if tab:
+            return float(np.interp(self.T, tab["T"], tab["G_eV"]))
         hw = float(mat.get("omega_E_cm1", 0.0)) * 1.239841984e-4                       # eV
         if hw <= 0:
             return float(mat["g_bulk"])
@@ -552,6 +558,8 @@ class Growth:
         self._R1, self._D1 = 0.0, self.D
         self._capf_cache = {}
         self._capf = 1.0
+        self._shape_caps = {}                            # each dot shape's capacitances (dot_capacitance)
+        self._cdot = self._ccon = None
         self.m_top = int(self.ms.max())
         # grid nucleation: dots within the grid's sizes take the grid's chemical potential (grid_mu), and the
         # nucleation chain runs on the grid up to its top before the continuum takes over
@@ -611,6 +619,48 @@ class Growth:
             self._capf_cache[key] = c / (3.0 * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
         return self._capf_cache[key]
 
+    CAP_RHO = 0.1                                       # grid in R_1 / r_eq of the contact capacitance (linear between)
+
+    def dot_capacitance(self, co):
+        """The dot's hydrodynamic radius R_h = C(P) + dR_h and its contact capacitance C(P + B(R_1 + dR_se)) (A): P the
+        polyhedron of its facet distances h, grown by the monomer's contact radius R_1 and the dot's own shell dR_se
+        (where a monomer centre touches the dot). Scale-free: per shape (h_f / r_eq of the exposed families, to 0.01)
+        one walk-on-spheres run for C(P) and one per point of the (R_1 + dR_se) / r_eq grid, cached for the run."""
+        from .transport import capacitance_polyhedron
+        r = (3.0 * max(co["m"], 1e-12) * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+        # the dot's CdCl2 shell and van der Waals skin beyond the CdSe polyhedron (kinetics.shell_offset, a + b sigma
+        # in A with sigma = k / A the MX_q per A^2, fitted on the shape library's dots): R_h = C(P) + dR_h, and the
+        # monomer's contact surface P + B(R_1 + dR_se)
+        so = self.P["kinetics"].get("shell_offset") or {}
+        area = sum(co["area"].values())
+        sig = co.get("k", 0.0) / area if area > 0 else 0.0
+        d_h = (so["R_h_A"][0] + so["R_h_A"][1] * sig) if "R_h_A" in so else 0.0
+        d_se = (so["R_se_A"][0] + so["R_se_A"][1] * sig) if "R_se_A" in so else 0.0
+        key = tuple(round(co["h"][f] / r, 2) if co["area"].get(f, 0.0) > 0 else None for f in self.F)
+        e = self._shape_caps.get(key)
+        if e is None:
+            normals, dists = [], []
+            for f, hf in zip(self.F, key):
+                if hf is not None:
+                    for nrm in ZB_NORMALS.get(f, []):
+                        normals.append(np.asarray(nrm, float) / np.linalg.norm(nrm))
+                        dists.append(hf)
+            e = {"planes": (normals, dists), "c0": capacitance_polyhedron(normals, dists, n=10000)[0], "dil": {}}
+            self._shape_caps[key] = e
+        rho = (self._R1 + d_se) / r
+        if rho <= 0:
+            return r * e["c0"] + d_h, r * e["c0"]
+
+        def at(i):
+            if i == 0:
+                return e["c0"]
+            if i not in e["dil"]:
+                e["dil"][i] = capacitance_polyhedron(*e["planes"], n=10000, dilate=i * self.CAP_RHO)[0]
+            return e["dil"][i]
+        j = int(rho / self.CAP_RHO)
+        w = rho / self.CAP_RHO - j
+        return r * e["c0"] + d_h, r * ((1.0 - w) * at(j) + w * at(j + 1))
+
     # -- facet-resolved growth (kinetics.growth_law = "facet") --
     def facet_mu(self, h, area, fam):
         """mu_f - g_bulk (eV) of each facet: the variational facet potential Omega_m (dE_s/dh_f) / (dV/dh_f),
@@ -665,9 +715,9 @@ class Growth:
         r = (3.0 * co["m"] * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
         if self.stokes:
             from .transport import KB
-            cap = self._capf * r
+            cap, con = self.dot_capacitance(co)
             d_dot = KB * self.T / (self.c_st * math.pi * self.eta * 1e-3 * cap * 1e-10) * 1e20
-            g_diff = 4.0 * math.pi * (self._D1 + d_dot) * (cap + self._R1) * n
+            g_diff = 4.0 * math.pi * (self._D1 + d_dot) * con * n
         else:
             g_diff = 4.0 * math.pi * self.D * r * n
         kt = self.kt
@@ -743,6 +793,11 @@ class Growth:
             mg, mug = self.grid_mu(mu_mx)
             if len(mg) and mg[-1] == m_e:
                 self._delta = float(mug[-1] - self.gb - (2.0 / 3.0) * sigma * m_e ** (-1.0 / 3.0))
+                if self.sphere and hasattr(self, "sph_gam"):
+                    # the growth's own mu at the junction: the sphere's 2 gamma Omega / r (the nucleation tail keeps
+                    # sigma, the nucleation is the full model's)
+                    r_e = (3.0 * m_e * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+                    self._delta_sph = float(mug[-1] - self.gb - 2.0 * self.sph_gam * self.Om / r_e)
         if sigma is not None:
             if dmu <= 0 or (2.0 * sigma / (3.0 * dmu)) ** 3 > self.M_CLASSICAL:
                 self._m_birth = m0
@@ -809,10 +864,33 @@ class Growth:
         return J, barrier, None, {}
 
     def dot(self, h, fam):
-        """m, k and the areas of a dot with facet distances h."""
+        """m, k and the areas of a dot with facet distances h (ideal spheres carry no MX_q: k = 0)."""
         area, vol, support = self.shape(h)
-        k = sum((fam[f]["theta"] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"]) * area[f] for f in self.F)
+        k = 0.0 if self.sphere else sum((fam[f]["theta"] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"])
+                                        * area[f] for f in self.F)
         return vol / self.Om, k, area, support
+
+    # -- ideal growth (kinetics.growth_law = "sphere") --
+    @property
+    def sphere(self) -> bool:
+        return self.P["kinetics"].get("growth_law") == "sphere"
+
+    def sphere_setup(self):
+        """The ideal-growth constants: the same nucleation, hand-over and pool as the full model, but every dot a
+        sphere of one surface energy gamma (kinetics.sphere.gamma_J_m2; default: the facets' Wulff surface energy of
+        the reference pool, sigma_W / ((36 pi)^(1/3) Omega^(2/3))), no MX_q shell on the dots, and one surface
+        reaction rate k_r (kinetics.sphere.k_r_A_s; default: the facet rates over that Wulff dot)."""
+        sp = self.P["kinetics"].get("sphere") or {}
+        pl, fam = self.chem(*self.ref_pool())
+        g_ref = self._sigma / ((36.0 * math.pi) ** (1.0 / 3.0) * self.Om ** (2.0 / 3.0))     # eV/A^2
+        self.sph_gam = float(sp["gamma_J_m2"]) * 0.0624150907 if sp.get("gamma_J_m2") is not None else g_ref
+        if sp.get("k_r_A_s") is not None:
+            self.sph_kr = float(sp["k_r_A_s"])
+        else:
+            h = self.shape.wulff({f: fam[f]["gamma"] for f in self.F}, self.Om)
+            k = self.mean_keff([{"N": 1.0, "area": self.shape(h)[0]}], {f: fam[f]["theta"] for f in self.F})
+            self.sph_kr = float(k) if k is not None and math.isfinite(k) else 1e4
+        return {"gamma_J_m2": self.sph_gam / 0.0624150907, "k_r_A_s": self.sph_kr}
 
     def size_state(self, cohorts, fam, th):
         """Per cohort: total area A (A^2), equivalent radius r (A), the dot's chemical potential mu_dot - g_bulk (eV)
@@ -829,6 +907,17 @@ class Growth:
                 raise ValueError(f"k_r = 'facets' needs kinetics.facets with k_f for every family (missing {missing})")
             kf = {f: float(FK[f]["k_f"]) for f in self.F}
         self._keff = np.zeros(n) if facets_kr else None
+        if self.sphere:                                   # ideal growth: spheres of one gamma, no shell
+            m = np.array([max(co["m"], 1e-12) for co in cohorts])
+            r = (3.0 * m * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+            dmu = 2.0 * self.sph_gam * self.Om / r + np.array([self.junction(x) for x in m])
+            self._keff = None
+            self._cdot, self._ccon = r, r + self._R1                  # a sphere's capacitance is its radius
+            return 4.0 * math.pi * r * r, r, dmu, np.zeros(n)
+        if self.stokes:                                   # each dot's own polyhedron (dot_capacitance)
+            caps = [self.dot_capacitance(co) for co in cohorts]
+            self._cdot = np.array([c[0] for c in caps])
+            self._ccon = np.array([c[1] for c in caps])
         for i, co in enumerate(cohorts):
             area = co["area"]
             a = sum(area.values())
@@ -892,6 +981,8 @@ class Growth:
         """The continuum's mu past the grid's top joined to the grid's (nucleation): delta m_top / m (eV), 0 within
         the grid or without grid mu."""
         d, mj = getattr(self, "_delta", 0.0), getattr(self, "_m_join", None)
+        if self.sphere:
+            d = getattr(self, "_delta_sph", 0.0)
         return d * mj / m if (d and mj and m > mj) else 0.0
 
     def size_rates(self, A, r, c_eq, th_bar, C):
@@ -906,9 +997,9 @@ class Growth:
 
     def conductance(self, A, r, th_bar):
         """dm/dt per M of driving concentration, A n / (A / (4 pi D r) + 1 / k_eff) (size_rates). With the atomistic
-        transport (self.stokes) the sphere becomes the dot's polyhedron: 4 pi (D_1 + D_dot)(C_dot + R_1), C_dot its
-        capacitance (self._capf x the equal-volume radius), D_dot by Stokes-Einstein on C_dot, R_1 and D_1 the
-        monomer complexes'."""
+        transport (self.stokes) the sphere becomes the dot's polyhedron: 4 pi (D_1 + D_dot) C(P + B(R_1)), the
+        capacitance of each dot's own polyhedron grown by the monomer's contact radius (dot_capacitance), D_dot by
+        Stokes-Einstein on the dot's capacitance C_dot, R_1 and D_1 the monomer complexes'."""
         res_d, res_r = self.resistances(A, r, th_bar)
         return A * 6.02214076e-4 / (res_d + res_r)
 
@@ -918,13 +1009,19 @@ class Growth:
         r = np.maximum(r, 1e-6)
         if self.stokes:
             from .transport import KB
-            cap = self._capf * r
+            if self._cdot is not None and np.size(self._cdot) == np.size(r):
+                cap, con = self._cdot, self._ccon                  # the dots' own polyhedra (size_state)
+            else:
+                cap = self._capf * r                              # the Wulff shape's factor on the equal-volume sphere
+                con = cap + self._R1
             d_dot = KB * self.T / (self.c_st * math.pi * self.eta * 1e-3 * cap * 1e-10) * 1e20     # A^2/s
-            res_d = A / (4.0 * math.pi * (self._D1 + d_dot) * (cap + self._R1))
+            res_d = A / (4.0 * math.pi * (self._D1 + d_dot) * con)
         else:
             res_d = A / (4.0 * math.pi * self.D * r)                                     # s/A
         k_r = self.P["kinetics"].get("k_r")                                             # A/s
-        if k_r == "facets":
+        if self.sphere:
+            res_r = 0.0 * res_d + 1.0 / self.sph_kr                                       # ideal: one k_r, no shell
+        elif k_r == "facets":
             # each dot's own surface reaction from the facet incorporation rates (size_state): computed, not set
             keff = getattr(self, "_keff", None)
             if keff is None or len(keff) != np.size(res_d):
@@ -1087,7 +1184,7 @@ class Growth:
             pl, fam = self.chem(C_M, C_X)
             mu0, mu_mx = pl["mu_MA"], pl["mu_MX"]
             if self.stokes:
-                self._capf = self._cap_factor(fam)                                   # the dot's shape factor
+                self._capf = 1.0 if self.sphere else self._cap_factor(fam)          # the dot's shape factor
                 if cohorts and not self._R1:
                     self.nucleation(mu0, mu_mx)                                       # sets the monomer's R_1, D_1
             if th_dots is None:
@@ -1220,7 +1317,8 @@ class Growth:
                 vs = {}                                                    # facet velocities at the solved C
                 while True:
                     th_eff = {f: th_dots[f] + lam * (fam[f]["theta"] - th_dots[f]) for f in self.F}
-                    k_area = {f: th_eff[f] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"] for f in self.F}
+                    k_area = {f: 0.0 if self.sphere else th_eff[f] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"]
+                              for f in self.F}
                     new, up_m, up_k = [], 0.0, 0.0
                     for i, co in enumerate(cohorts):
                         if fmask[i]:                                       # facet law: each facet moves by v_f dt
@@ -1360,6 +1458,7 @@ class Growth:
                 outs.pop(0)
         return {"params": self.P, "match_m0": self.match, "handover": self.handover, "m0": self.m0, "series": series,
                 "snapshots": snaps, "seeded": seeded, "V0_L": V0, "nucleation_window": nucleation_window(track),
+                "sphere": getattr(self, "sphere_used", None),
                 "survivor_window": survivor_window(cohorts)}
 
 

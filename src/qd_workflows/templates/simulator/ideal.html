@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideal Growth Comparison</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+/* Workflow: one set of synthesis conditions, two runs of the same atomistic model. Both nucleate on the grid's
+   Omega(m) with the Becker-Doring flux, hand over at the same size and draw on the same pool; the ideal run grows
+   spheres of one surface energy and one surface reaction rate, the full run the facets with their coverage. */
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #8a8984;
+  --grid: #ecebe7; --accent: #2a78d6; --accent-ink: #ffffff;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #8a63c9;
+  --warn-bg: #fff4d6; --warn-ink: #6b4a00; --err-ink: #b42323;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #9b7ad6;
+    --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #9b7ad6;
+  --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 18px 24px 8px; display: grid; gap: 4px; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0; max-width: 115ch; }
+.sub a { color: var(--accent); }
+main { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; padding: 8px 24px 24px; align-items: start; }
+.col { display: grid; gap: 16px; min-width: 0; }
+.sticky { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary);
+  margin: 0 0 10px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
+.card h3 { font-size: 12px; color: var(--text-secondary); margin: 14px 0 8px; font-weight: 600; border-top: 1px solid var(--border); padding-top: 12px; }
+.ctl { margin-bottom: 12px; }
+.ctl.off { opacity: 0.45; }
+.ctl label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.ctl .num { display: inline-flex; align-items: center; gap: 4px; }
+.ctl .num i { font-style: normal; font-size: 11.5px; color: var(--text-muted); min-width: 3.4em; }
+.num input { width: 6.4em; font: inherit; font-size: 13px; font-weight: 600; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--text-primary); background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+.num input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.num input.bad { border-color: var(--err-ink); color: var(--err-ink); }
+.ctl .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.ctl .hint:empty { display: none; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.tog { display: flex; align-items: center; gap: 7px; cursor: pointer; color: var(--text-secondary); }
+.tog input { margin: 0; }
+.ctl label.tog { justify-content: flex-start; }
+button { font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
+  color: var(--text-primary); padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .55; cursor: progress; }
+.status { font-size: 12px; color: var(--text-muted); margin-top: 6px; min-height: 1.3em; white-space: pre-line; }
+.status.err { color: var(--err-ink); }
+.stale { background: var(--warn-bg); color: var(--warn-ink); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; margin: 8px 0; }
+.readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.ro { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; display: grid; gap: 1px; }
+.ro span { font-size: 11px; color: var(--text-secondary); }
+.ro b { font-size: 14px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.ro em { font-style: normal; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.chart { height: 200px; }
+.chart-title { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0 4px; }
+.cap { font-size: 11.5px; color: var(--text-muted); margin: 2px 4px 6px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pick { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--text-secondary); align-items: center; }
+.pick label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+.timebar { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.timebar input { flex: 1; }
+.timebar b { font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin: 2px 4px 8px; }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--series-1); vertical-align: middle; margin-right: 6px; }
+.legend i.full { border-top: 2px dashed var(--series-2); }
+table.src { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.src th { text-align: left; font-weight: 600; color: var(--text-secondary); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+table.src td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.src td:first-child { color: var(--text-secondary); white-space: nowrap; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } .sticky { position: static; max-height: none; } .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Ideal growth against the full atomistic model</h1>
+  <p class="sub">Two runs of the <a href="/">atomistic simulator</a> at the same conditions. Both nucleate on the grid's Ω(m, k)
+    (Becker–Döring flux, the same birth size and hand-over) and draw on the same precursor pool with the computed
+    equilibria. They differ only in how the dots grow: the <b>ideal</b> run grows spheres of one surface energy γ, with no
+    CdCl₂ shell and one surface reaction rate k<sub>r</sub>; the <b>full</b> run grows the facets with their CdCl₂ coverage,
+    their surface energies and their NEB incorporation rates. The <a href="/cnt">textbook CNT model</a> stays available.</p>
+</header>
+<main>
+  <div class="col">
+    <section class="card sticky">
+      <h2>Conditions</h2>
+      <div id="controls"></div>
+      <h3><label class="tog"><input type="checkbox" id="inject"> Inject the Se precursor with a syringe</label></h3>
+      <div id="injControls" hidden></div>
+      <div class="ctl"><div class="hint" id="injInfo"></div></div>
+      <h3><label class="tog"><input type="checkbox" id="twoT"> Grow at another temperature</label></h3>
+      <div id="tprogControls" hidden></div>
+      <h3>Calibration (both runs)</h3>
+      <div id="calControls"></div>
+      <div class="ctl">
+        <label>Growth control (both runs)</label>
+        <div class="pick" role="radiogroup" aria-label="Growth control">
+          <label><input type="radio" name="gctl" value="mixed" id="gc_mixed" checked> mixed</label>
+          <label><input type="radio" name="gctl" value="diffusion" id="gc_diff"> diffusion-limited</label>
+          <label><input type="radio" name="gctl" value="reaction" id="gc_react"> reaction-limited</label>
+        </div>
+        <div class="hint">mixed: transport in series with the surface reaction, r/D + 1/k_r</div>
+      </div>
+      <h3>Ideal growth</h3>
+      <div class="ctl"><label class="tog"><input type="checkbox" id="fromFacets" checked><span>γ and k<sub>r</sub> from the facets</span></label>
+        <div class="hint">the Wulff dot's surface energy and mean facet rate at the reference pool (half of the precursor converted)</div></div>
+      <div id="idealControls"></div>
+      <h3>Full model</h3>
+      <div class="ctl">
+        <label>Dot shape</label>
+        <div class="pick">
+          <label><input type="radio" name="shape" value="shape" id="shape_rule" checked> facet shape rule</label>
+          <label><input type="radio" name="shape" value="size" id="shape_wulff"> Wulff shape</label>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card">
+      <h2>Runs <small id="runInfo"></small></h2>
+      <div class="row"><div id="durcontrol" style="flex:1;min-width:220px"></div></div>
+      <div class="row">
+        <button class="primary" id="runBoth">Run both</button>
+        <button id="runIdeal">Ideal growth only <small>(~5 s)</small></button>
+        <button id="runFull">Full model only <small>(~1 min)</small></button>
+      </div>
+      <div class="stale" id="stale" hidden></div>
+      <div class="status" id="status"></div>
+      <div class="readouts" id="ro"></div>
+      <div class="cap" id="nucWin" style="font-size:12px;color:var(--text-secondary)"></div>
+      <div class="legend"><span><i></i>ideal growth (spheres, one γ, one k<sub>r</sub>)</span>
+        <span><i class="full"></i>full model (facets, CdCl₂ coverage, facet rates)</span></div>
+      <div class="charts">
+        <div><div class="chart-title">CdSe monomer supply C (M) and the Se precursor</div><div class="chart" id="cC"></div></div>
+        <div><div class="chart-title">Supersaturation S and nucleation rate J (M/s)</div><div class="chart" id="cSJ"></div></div>
+        <div><div class="chart-title">Dots (M)</div><div class="chart" id="cN"></div></div>
+        <div><div class="chart-title">Mean diameter (nm), equimolar CdSe sphere</div><div class="chart" id="cD"></div></div>
+        <div><div class="chart-title">Nucleation barrier on the grid's Ω (eV, shown up to 10 eV)</div><div class="chart" id="cG"></div></div>
+        <div><div class="chart-title">Surface reaction rate k (Å/s)</div><div class="chart" id="cK"></div></div>
+      </div>
+      <div class="cap">Bands: when the nuclei formed (10 % to 90 % of all nuclei, line at the peak rate), ideal upper half, full
+        lower half; the dark strip on each is the birth window of the dots left at the end. Click a chart to move the time of
+        the two charts below.</div>
+      <div class="timebar"><span class="chart-title" style="margin:0">Time</span><input type="range" id="tslider" min="0" max="0" value="0" aria-label="Time of the free energy and the size distribution"><b id="tval">–</b></div>
+      <div class="charts" style="margin-top:6px">
+        <div>
+          <div class="chart-title">The grid's grand potential at each run's pool, ΔΩ(m) = Ω(m) − Ω(1) (eV)</div>
+          <div class="pick" style="margin:2px 4px 0">
+            <span>Size axis:</span>
+            <label><input type="radio" name="dgx" value="eq" id="dgx_eq" checked> equimolar radius</label>
+            <label><input type="radio" name="dgx" value="r" id="dgx_r"> solvent-excluded radius</label>
+            <label><input type="radio" name="dgx" value="n" id="dgx_n"> CdSe units</label>
+          </div>
+          <div class="chart" id="cDG" style="height:240px"></div>
+          <div class="cap" id="dgCap"></div>
+        </div>
+        <div>
+          <div class="chart-title">Size distribution at this time: one stem per cohort</div>
+          <div class="chart" id="cPSD" style="height:240px"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>What the two runs share and where they differ</h2>
+      <table class="src">
+        <thead><tr><th></th><th>Ideal growth</th><th>Full model</th></tr></thead>
+        <tbody>
+          <tr><td>Nucleation</td><td colspan="2">the same: the grid's Ω(m, k) from the computed clusters, Becker–Döring flux, births past the last hump, the same hand-over size m0</td></tr>
+          <tr><td>Pool</td><td colspan="2">the same: precursor conversion, CdSe monomer and complexes, free CdCl₂, activity coefficients</td></tr>
+          <tr><td>Transport</td><td colspan="2">the same Stokes–Einstein D from the computed radii; growth control as set</td></tr>
+          <tr><td>Dot shape</td><td>sphere</td><td>Wulff shape or the facet shape rule</td></tr>
+          <tr><td>Surface energy</td><td id="tGam">one γ</td><td>per facet, lowered by the CdCl₂ coverage of the moment</td></tr>
+          <tr><td>CdCl₂ on the dots</td><td>none</td><td>θ<sub>f</sub> Γ<sub>max</sub> per facet, taken from the pool</td></tr>
+          <tr><td>Surface reaction</td><td id="tKr">one k<sub>r</sub></td><td>Σ A<sub>f</sub> k<sub>f</sub>(1 − θ<sub>f</sub>) / A from the NEB facet rates</td></tr>
+          <tr><td>Solubility</td><td>μ<sub>dot</sub> = g<sub>bulk</sub> + 2γΩ/r</td><td>μ<sub>dot</sub> = g<sub>bulk</sub> + (2/3)Ω Σ γ<sub>f</sub>A<sub>f</sub>/V</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (x, d = 3) => (x == null || !isFinite(x) ? "–" : x === 0 ? "0" : Math.abs(x) >= 1e4 || Math.abs(x) < 1e-2 ? x.toExponential(2) : (+x.toPrecision(d)).toString());
+const OM = 6.202964 ** 3 / 4;                         // A^3 per CdSe (zinc blende)
+const CTLS = [
+  { key: "T", label: "Temperature", unit: "K", log: false, step: 5 },
+  { key: "c_P0", label: "Se precursor c_P,0", unit: "M", log: true },
+  { key: "c_MX0", label: "CdCl₂ c_MX,0", unit: "M", log: true },
+  { key: "k_conv_500K", label: "Conversion k (500 K)", unit: "M⁻¹ s⁻¹", log: true },
+  { key: "Ea_conv", label: "Conversion Ea", unit: "eV", log: false, step: 0.01 },
+  { key: "eps", label: "Solvent ε", unit: "", log: true },
+];
+const INJ = [
+  { key: "c_syringe_M", label: "Se in the syringe", unit: "M", log: true },
+  { key: "rate_mL_h", label: "Infusion rate", unit: "mL/h", log: true },
+  { key: "V0_mL", label: "Flask volume at the start", unit: "mL", log: true },
+  { key: "inj_duration_s", label: "Injection time", unit: "s", log: true },
+];
+const TPROG = [
+  { key: "T_growth", label: "Growth temperature", unit: "K", log: false, step: 5 },
+  { key: "t_switch_s", label: "Switch at", unit: "s", log: false, step: 1 },
+  { key: "ramp_s", label: "Ramp over", unit: "s", log: false, step: 1, hint: "0 = a step" },
+];
+const CAL = [
+  { key: "gamma_MA", label: "Activity coefficient CdSe", unit: "", log: true },
+  { key: "gamma_MX", label: "Activity coefficient CdCl₂", unit: "", log: true },
+  { key: "beta_scale", label: "Island step scale β", unit: "", log: false, step: 0.01, hint: "full model only (layer barrier of the shape rule)" },
+];
+const IDEAL = [
+  { key: "gamma_J_m2", label: "Surface energy γ", unit: "J/m²", log: true },
+  { key: "k_r_A_s", label: "Surface reaction k_r", unit: "Å/s", log: true },
+];
+const DCTL = { key: "t_end", label: "Duration", unit: "s", log: true };
+const VALS = {};
+let D = null, I = null, F = null, iConds = null, fConds = null, snapIdx = -1;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || r.statusText));
+  return j;
+}
+
+// ---------- controls: the slider sets a value coarsely, the box exactly ----------
+function addSlider(box, c, lim, init, onInput) {
+  const [lo, hi] = lim;
+  const el = document.createElement("div");
+  el.className = "ctl";
+  el.innerHTML = `<label for="n_${c.key}">${c.label}<span class="num"><input type="text" inputmode="decimal" id="n_${c.key}"
+      autocomplete="off" spellcheck="false" aria-label="${c.label} (${c.unit})"><i>${c.unit}</i></span></label>
+    <input type="range" id="s_${c.key}" aria-label="${c.label}"><div class="hint" id="h_${c.key}">${c.hint || ""}</div>`;
+  box.appendChild(el);
+  const s = $(`s_${c.key}`), n = $(`n_${c.key}`), h = $(`h_${c.key}`);
+  c.lim = lim;
+  if (c.log) { s.min = Math.log10(lo); s.max = Math.log10(hi); s.step = "any"; } else { s.min = lo; s.max = hi; s.step = c.step; }
+  s.addEventListener("input", () => { setVal(c, c.log ? 10 ** +s.value : +s.value, "slider"); onInput && onInput(c); });
+  n.addEventListener("change", () => {
+    const x = Number(n.value.replace(",", ".").trim());
+    if (!Number.isFinite(x) || x < lo || x > hi) { n.classList.add("bad"); h.textContent = `Enter a number between ${fmt(lo)} and ${fmt(hi)} ${c.unit}.`; return; }
+    setVal(c, x, "box"); onInput && onInput(c);
+  });
+  n.addEventListener("keydown", (e) => { if (e.key === "Enter") n.blur(); });
+  setVal(c, init ?? lo);
+}
+function setVal(c, x, from) {
+  const [lo, hi] = c.lim;
+  x = Math.min(Math.max(x, lo), hi);
+  VALS[c.key] = x;
+  const s = $(`s_${c.key}`), n = $(`n_${c.key}`), h = $(`h_${c.key}`);
+  if (from !== "slider") s.value = c.log ? Math.log10(x) : x;
+  if (from !== "box") n.value = fmt(x, 4);
+  n.classList.remove("bad"); h.textContent = c.hint || "";
+}
+const val = (c) => VALS[c.key];
+const gctl = () => ($("gc_diff").checked ? "diffusion" : $("gc_react").checked ? "reaction" : "mixed");
+// the conditions both runs share
+const shared = () => ({ ...Object.fromEntries([...CTLS, ...INJ, ...TPROG, ...CAL].map((c) => [c.key, val(c)])),
+  inject: $("inject").checked, two_T: $("twoT").checked, t_end: val(DCTL), growth_control: gctl(), nucleation_omega: "grid" });
+const idealBody = () => ({ ...shared(), growth_law: "sphere",
+  ...($("fromFacets").checked ? {} : Object.fromEntries(IDEAL.map((c) => [c.key, val(c)]))) });
+const fullBody = () => ({ ...shared(), growth_law: $("shape_wulff").checked ? "size" : "shape" });
+const same = (a, b) => !!b && JSON.stringify(a) === JSON.stringify(b);
+
+function syncToggles() {
+  const inj = $("inject").checked;
+  $("injControls").hidden = !inj; $("tprogControls").hidden = !$("twoT").checked;
+  for (const id of ["s_c_P0", "n_c_P0"]) $(id).disabled = inj;
+  $("s_c_P0").closest(".ctl").classList.toggle("off", inj);
+  $("h_c_P0").textContent = inj ? "not used: the flask starts without Se" : "";
+  if (inj) {
+    const n = val(INJ[0]) * val(INJ[1]) * 1e-3 / 3600 * val(INJ[3]), vEnd = val(INJ[2]) + val(INJ[1]) * val(INJ[3]) / 3600;
+    $("injInfo").textContent = `delivers ${fmt(n * 1e6)} µmol Se over ${fmt(val(INJ[3]) / 60)} min: ${fmt(1e6 * n / vEnd)} mM in the final ${fmt(vEnd)} mL`;
+  } else $("injInfo").textContent = "";
+  for (const c of IDEAL) $(`s_${c.key}`).closest(".ctl").classList.toggle("off", $("fromFacets").checked);
+  markStale();
+}
+function markStale() {
+  const msgs = [];
+  if (I && !same(idealBody(), iConds)) msgs.push("ideal");
+  if (F && !same(fullBody(), fConds)) msgs.push("full");
+  $("stale").hidden = !msgs.length;
+  $("stale").textContent = `The settings changed since the ${msgs.join(" and the ")} run: run again to compare at these settings.`;
+}
+
+// ---------- runs: the same /api/run, growth_law "sphere" for the ideal one ----------
+let busy = false;
+async function runIdeal() {
+  const body = idealBody();
+  $("status").className = "status"; $("status").textContent = "Running the ideal growth…";
+  I = await api("/api/run", body); iConds = body;
+  if (I.sphere && $("fromFacets").checked) for (const c of IDEAL) setVal(c, I.sphere[c.key]);
+  $("tGam").textContent = I.sphere ? `one γ = ${fmt(I.sphere.gamma_J_m2)} J/m²${$("fromFacets").checked ? " (the Wulff dot's at the reference pool)" : ""}` : "one γ";
+  $("tKr").textContent = I.sphere ? `one k_r = ${fmt(I.sphere.k_r_A_s)} Å/s${$("fromFacets").checked ? " (mean facet rate of the Wulff dot)" : ""}` : "one k_r";
+  newRuns();
+}
+async function runFull() {
+  const body = fullBody();
+  $("status").className = "status"; $("status").textContent = "Running the full model (about a minute)…";
+  F = await api("/api/run", body); fConds = body;
+  newRuns();
+}
+async function go(which) {
+  if (busy) return;
+  busy = true;
+  for (const id of ["runBoth", "runIdeal", "runFull"]) $(id).disabled = true;
+  try {
+    if (which !== "full") await runIdeal();
+    if (which !== "ideal") await runFull();
+    $("status").textContent = [I ? `ideal ${I.seconds} s` : null, F ? `full ${F.seconds} s (${F.growth_law === "shape" ? "facet shape rule" : "Wulff shape"})` : null].filter(Boolean).join(" · ");
+  } catch (e) { $("status").className = "status err"; $("status").textContent = e.message; }
+  for (const id of ["runBoth", "runIdeal", "runFull"]) $(id).disabled = false;
+  busy = false;
+}
+// the time slider runs over the union of both runs' snapshot times
+let TIMES = [];
+function newRuns() {
+  const ts = new Set();
+  for (const r of [I, F]) if (r) r.snapshots.forEach((s) => ts.add(s.t));
+  TIMES = [...ts].sort((a, b) => a - b);
+  const s = $("tslider"); s.max = TIMES.length - 1;
+  if (snapIdx < 0 || snapIdx > s.max) snapIdx = +s.max;
+  s.value = snapIdx;
+  markStale(); nucText(); draw();
+}
+
+// ---------- charts ----------
+const PCONF = { displayModeBar: false, responsive: true };
+function layout(ytype, extra = {}) {
+  const ink = css("--text-secondary"), grid = css("--grid");
+  return Object.assign({ margin: { l: 52, r: 8, t: 6, b: 32 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    font: { family: "system-ui, sans-serif", size: 11, color: ink }, showlegend: false, hovermode: "x unified",
+    xaxis: { type: "log", gridcolor: grid, zeroline: false, title: { text: "t (s)", standoff: 4 }, exponentformat: "power" },
+    yaxis: { type: ytype, gridcolor: grid, zeroline: false, exponentformat: "power" } }, extra);
+}
+const LEG = { showlegend: true, legend: { orientation: "h", y: 1.02, yanchor: "bottom", x: 0, font: { size: 10 } }, margin: { l: 52, r: 8, t: 22, b: 32 } };
+const ln = (x, y, name, color, dash) => ({ x, y, name, type: "scatter", mode: "lines", line: { color, width: 2, dash: dash || "solid" } });
+const pos = (y, floor = 0) => (y != null && y > floor ? y : null);
+const cap = (y, top) => (y != null && y <= top ? y : null);
+const vline = (x) => ({ type: "line", xref: "x", yref: "paper", x0: x, x1: x, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } });
+const diam = (r) => (r.m_mean > 0 ? Math.cbrt(6 * r.m_mean * OM / Math.PI) / 10 : null);
+const RUNS = () => [I && { r: I, name: "ideal", color: css("--series-1"), dash: "solid", half: [0.5, 1] },
+                    F && { r: F, name: "full", color: css("--series-2"), dash: "dash", half: [0, 0.5] }].filter(Boolean);
+
+function nucShapes() {
+  const out = [];
+  for (const { r, color, dash, half } of RUNS()) {
+    const w = r.nucleation_window, s = r.survivor_window;
+    if (!w) continue;
+    out.push({ type: "rect", xref: "x", yref: "paper", x0: w.t10, x1: w.t90, y0: half[0], y1: half[1], fillcolor: color, opacity: 0.15, line: { width: 0 }, layer: "below" },
+             { type: "line", xref: "x", yref: "paper", x0: w.t_peak, x1: w.t_peak, y0: half[0], y1: half[1], line: { color, width: 1.5, dash } });
+    if (s) out.push({ type: "rect", xref: "x", yref: "paper", x0: s.t10, x1: Math.max(s.t90, s.t10 * 1.02), y0: half[1] - 0.06, y1: half[1], fillcolor: color, opacity: 0.6, line: { width: 0 } });
+  }
+  return out;
+}
+function nucText() {
+  const parts = [];
+  for (const { r, name } of RUNS()) {
+    const w = r.nucleation_window, s = r.survivor_window, last = r.series[r.series.length - 1];
+    if (!w) { parts.push(`<b>Nucleation, ${name}</b>: no nuclei`); continue; }
+    let t = `<b>Nucleation, ${name}</b> (${name === "ideal" ? "upper" : "lower"} half): 10 % of the nuclei by ${fmt(w.t10)} s, peak rate at ${fmt(w.t_peak)} s, 90 % by ${fmt(w.t90)} s`;
+    if (s) t += `; the dots left at the end (${fmt(100 * s.dots_M / (w.nuclei_mol / (last.V_L ?? 1)))} % of all nuclei) were born between ${fmt(s.t10)} and ${fmt(s.t90)} s`;
+    parts.push(t);
+  }
+  $("nucWin").innerHTML = parts.join("<br>");
+}
+
+function draw() {
+  const runs = RUNS();
+  if (!runs.length) return;
+  const tNow = TIMES[snapIdx];
+  const C = [], SJ = [], N = [], Dm = [], G = [], K = [];
+  for (const { r, name, color, dash } of runs) {
+    const t = r.series.map((x) => x.t);
+    C.push(ln(t, r.series.map((x) => pos(x.C_M)), `C (${name})`, color, dash));
+    SJ.push(ln(t, r.series.map((x) => pos(x.S_bulk)), `S (${name})`, color, dash),
+            { ...ln(t, r.series.map((x) => pos(x.J, 1e-20)), `J (${name})`, color, dash), line: { color, width: 1.2, dash: "dot" } });
+    N.push(ln(t, r.series.map((x) => pos(x.N_dots)), `dots (${name})`, color, dash));
+    Dm.push(ln(t, r.series.map(diam), `d (${name})`, color, dash));
+    G.push(ln(t, r.series.map((x) => cap(x.barrier, 10)), `barrier (${name})`, color, dash));
+    K.push(ln(t, r.series.map((x) => pos(r === I && I.sphere ? I.sphere.k_r_A_s : x.k_eff)), `k (${name})`, color, dash));
+  }
+  const r0 = runs[0].r;
+  C.push(ln(r0.series.map((x) => x.t), r0.series.map((x) => pos(x.P, 1e-9)), "Se precursor", css("--series-4"), "dot"));
+  Plotly.react("cC", C, layout("log", LEG), PCONF);
+  Plotly.react("cSJ", SJ, layout("log", LEG), PCONF);
+  Plotly.react("cN", N, layout("log"), PCONF);
+  Plotly.react("cD", Dm, layout("linear"), PCONF);
+  const GL = layout("linear"); GL.yaxis.rangemode = "tozero";
+  Plotly.react("cG", G, GL, PCONF);
+  Plotly.react("cK", K, layout("log"), PCONF);
+  for (const id of ["cC", "cSJ", "cN", "cD", "cG", "cK"]) {
+    Plotly.relayout(id, { shapes: [vline(tNow), ...nucShapes()] });
+    $(id).removeAllListeners?.("plotly_click"); $(id).on("plotly_click", (ev) => setTimeTo(ev.points[0].x));
+  }
+  readouts(); drawDG(); drawPSD();
+}
+
+function readouts() {
+  const runs = RUNS();
+  const lastOf = (r) => r.series[r.series.length - 1];
+  const ro = (l, f) => `<div class="ro"><span>${l}</span>${runs.map(({ r, name }) => `<em>${name}: <b>${f(r)}</b></em>`).join("")}</div>`;
+  $("ro").innerHTML = ro("dots at the end (M)", (r) => fmt(lastOf(r).N_dots))
+    + ro("mean diameter (nm)", (r) => fmt(diam(lastOf(r))))
+    + ro("spread σ/⟨m⟩", (r) => fmt(lastOf(r).m_std / lastOf(r).m_mean, 2))
+    + ro("supersaturation at the end", (r) => fmt(lastOf(r).S_bulk))
+    + ro("peak nucleation rate (M/s)", (r) => fmt(Math.max(...r.series.map((x) => x.J))))
+    + ro("nuclei formed (M)", (r) => fmt(lastOf(r).nucleated_M));
+}
+
+const nearest = (arr, t, key = (x) => x) => arr.reduce((a, b) => (Math.abs(Math.log(key(b) / t)) < Math.abs(Math.log(key(a) / t)) ? b : a));
+
+// the grid's Delta Omega(m) at the pool each run leaves at this time: the nucleation both runs share, seen at
+// their own monomer levels
+function drawDG() {
+  const tNow = TIMES[snapIdx];
+  const mode = $("dgx_r").checked ? "se" : $("dgx_n").checked ? "n" : "eq";
+  const rn = (n) => Math.cbrt(3 * n * OM / (4 * Math.PI)) / 10;                        // nm
+  const tr = [], notes = [];
+  for (const { r, name, color, dash } of RUNS()) {
+    const om = r.omega_run && r.omega_run.t.length ? r.omega_run : null;
+    if (!om) continue;
+    let j = 0;
+    om.t.forEach((tt, i) => { if (Math.abs(Math.log(tt / tNow)) < Math.abs(Math.log(om.t[j] / tNow))) j = i; });
+    const rr = om.R_se_A ? om.R_se_A.map((x) => (x[j] != null ? x[j] / 10 : null)) : om.m.map(() => null);
+    const req = om.m.map(rn);
+    const xa = mode === "se" ? rr : mode === "eq" ? req : om.m;
+    tr.push({ x: xa, y: om.dOmega.map((x) => x[j]), type: "scatter", mode: "lines+markers", name,
+      line: { color, width: 2, dash }, marker: { size: 6, color },
+      customdata: om.m.map((m, i) => [m, req[i], rr[i]]),
+      hovertemplate: `m = %{customdata[0]}, equimolar r = %{customdata[1]:.3f} nm, solvent-excluded R = %{customdata[2]:.3f} nm: ΔΩ = %{y:.3f} eV<extra>${name}</extra>` });
+    notes.push(`${name} at ${fmt(om.t[j])} s: barrier ${fmt(om.barrier[j])} eV at m* = ${om.m_star[j]}`);
+  }
+  const L = layout("linear", { hovermode: "closest", ...LEG });
+  L.xaxis = { type: "log", title: { text: { eq: "equimolar radius (3mV_m/4π)^(1/3) (nm)", se: "solvent-excluded radius (nm)", n: "cluster size (CdSe units)" }[mode], standoff: 4 },
+    gridcolor: css("--grid"), zeroline: false, exponentformat: "power" };
+  L.yaxis.zeroline = true; L.yaxis.zerolinecolor = css("--text-muted");
+  Plotly.react("cDG", tr, L, PCONF);
+  $("dgCap").textContent = (notes.length ? notes.join(" · ") + ". " : "")
+    + "Both runs nucleate on this Ω: they differ only through the monomer their dots leave in the pool.";
+}
+
+function drawPSD() {
+  const tNow = TIMES[snapIdx];
+  $("tval").textContent = `${fmt(tNow)} s`;
+  const tr = [];
+  for (const { r, name, color } of RUNS()) {
+    const s = nearest(r.snapshots, tNow, (x) => x.t);
+    tr.push(name === "ideal"
+      ? { x: s.cohorts.map((c) => c.d_nm), y: s.cohorts.map((c) => c.N), type: "bar", width: 0.04, marker: { color }, name,
+          hovertemplate: "d = %{x:.2f} nm, %{y:.2e} M<extra>ideal</extra>" }
+      : { x: s.cohorts.map((c) => c.d_nm), y: s.cohorts.map((c) => c.N), type: "scatter", mode: "markers", name,
+          marker: { color, size: 8, symbol: "diamond-open" }, hovertemplate: "d = %{x:.2f} nm, %{y:.2e} M<extra>full</extra>" });
+  }
+  const L = layout("log", { hovermode: "closest", ...LEG });
+  L.xaxis = { type: "linear", title: { text: "diameter (nm)", standoff: 4 }, gridcolor: css("--grid"), zeroline: false };
+  Plotly.react("cPSD", tr, L, PCONF);
+}
+
+function setTimeTo(t) {
+  let best = 0;
+  TIMES.forEach((x, i) => { if (Math.abs(Math.log(x / t)) < Math.abs(Math.log(TIMES[best] / t))) best = i; });
+  snapIdx = best; $("tslider").value = best; draw();
+}
+
+$("tslider").addEventListener("input", (e) => { snapIdx = +e.target.value; draw(); });
+$("runBoth").addEventListener("click", () => go("both"));
+$("runIdeal").addEventListener("click", () => go("ideal"));
+$("runFull").addEventListener("click", () => go("full"));
+
+(async () => {
+  D = await api("/api/defaults");
+  if (D.material) $("title").textContent = `${D.material}: ideal growth against the full atomistic model`;
+  const c0 = D.conditions;
+  for (const c of CTLS) addSlider($("controls"), c, D.limits[c.key], c0[c.key], syncToggles);
+  for (const c of INJ) addSlider($("injControls"), c, D.limits[c.key], c0[c.key], syncToggles);
+  for (const c of TPROG) addSlider($("tprogControls"), c, D.limits[c.key], c0[c.key], syncToggles);
+  for (const c of CAL) addSlider($("calControls"), c, D.limits[c.key], c0[c.key] ?? 1.0, syncToggles);
+  for (const c of IDEAL) addSlider($("idealControls"), c, { gamma_J_m2: [0.01, 2.0], k_r_A_s: [1e-2, 1e12] }[c.key],
+                                   { gamma_J_m2: 0.15, k_r_A_s: 1e4 }[c.key], () => { $("fromFacets").checked = false; syncToggles(); });
+  addSlider($("durcontrol"), DCTL, D.limits.t_end, c0.t_end, syncToggles);
+  $(`gc_${{ mixed: "mixed", diffusion: "diff", reaction: "react" }[D.growth_control] || "mixed"}`).checked = true;
+  if (D.growth_law === "size") $("shape_wulff").checked = true;
+  document.querySelectorAll('input[name="gctl"], input[name="shape"]').forEach((r) => r.addEventListener("change", syncToggles));
+  for (const id of ["twoT", "fromFacets"]) $(id).addEventListener("change", syncToggles);
+  $("inject").addEventListener("change", () => {
+    if ($("inject").checked && val(DCTL) < 1.5 * val(INJ[3])) setVal(DCTL, Math.min(1.5 * val(INJ[3]), D.limits.t_end[1]));
+    syncToggles();
+  });
+  document.querySelectorAll('input[name="dgx"]').forEach((r) => r.addEventListener("change", () => RUNS().length && drawDG()));
+  syncToggles();
+  go("ideal");                                     // the ideal run is quick: show it at once, the full one on request
+})();
+</script>
+</body>
+</html>

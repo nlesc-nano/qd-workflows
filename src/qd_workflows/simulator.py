@@ -32,6 +32,7 @@ from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
 
 PAGE = Path(__file__).parent / "templates" / "simulator" / "index.html"
 CLASSICAL_PAGE = Path(__file__).parent / "templates" / "simulator" / "classical.html"
+IDEAL_PAGE = Path(__file__).parent / "templates" / "simulator" / "ideal.html"
 CLASSICAL_LIMITS = {                        # material sliders of the classical twin
     "gamma_J_m2": [0.01, 2.0], "Vm_A3": [20.0, 200.0], "C_inf_M": [1e-15, 1.0], "dH_sol_eV": [0.0, 3.0],
     "D_cm2_s": [1e-8, 1e-2], "k_r_A_s": [1e-2, 1e12], "J0_M_s": [1e-10, 1e40],
@@ -148,7 +149,8 @@ class Simulator:
         """The growth parameters for the page's conditions: T, concentrations, conversion, solvent, k_r; the
         calibration factors (gamma_MA, gamma_MX, beta_scale); the syringe (inject: c_syringe_M, rate_mL_h, V0_mL,
         inj_duration_s; the flask's own precursor is then c_P0, 0 for a pure injection) and the temperature program
-        (two_T: T_growth, t_switch_s, ramp_s); growth_law "shape" or "size"."""
+        (two_T: T_growth, t_switch_s, ramp_s); growth_law "shape", "size" or "sphere" (ideal growth, with
+        gamma_J_m2 and k_r_A_s; left out, both come from the facets)."""
         P = copy.deepcopy(self.params)
         c = P["conditions"]
         for k in SETTINGS:
@@ -165,8 +167,11 @@ class Simulator:
             P["kinetics"]["growth_control"] = cond["growth_control"]   # transport and surface reaction, or one of them
         if cond.get("nucleation_omega") in ("grid", "continuum"):
             P["nucleation"]["omega"] = cond["nucleation_omega"]   # continuum: CNT with the Wulff sigma (comparison)
-        if cond.get("growth_law") in ("shape", "size"):
+        if cond.get("growth_law") in ("shape", "size", "sphere"):
             P["kinetics"]["growth_law"] = cond["growth_law"]
+        if P["kinetics"].get("growth_law") == "sphere":     # ideal growth: one gamma, one k_r (None: from the facets)
+            P["kinetics"]["sphere"] = {k: (min(max(float(cond[k]), CLASSICAL_LIMITS[k][0]), CLASSICAL_LIMITS[k][1])
+                                           if cond.get(k) is not None else None) for k in ("gamma_J_m2", "k_r_A_s")}
         if cond.get("inject"):
             c["c_P0"] = float(cond.get("c_P0_flask", 0.0) or 0.0)
             c["injection"] = {"c_syringe_M": self._clip(cond, "c_syringe_M", PAGE_DEFAULTS["c_syringe_M"]),
@@ -212,7 +217,7 @@ class Simulator:
         used = g.F                                           # derived: solvation, binding at T, match_m0 rescaling
         return {"run_id": rid, "seconds": round(time.time() - t0, 2), "conditions": P["conditions"],
                 "growth_law": P["kinetics"].get("growth_law", "size"),
-                "growth_control": P["kinetics"].get("growth_control", "mixed"),
+                "growth_control": P["kinetics"].get("growth_control", "mixed"), "sphere": res.get("sphere"),
                 "nucleation_window": res.get("nucleation_window"), "survivor_window": res.get("survivor_window"),
                 "match_m0": res["match_m0"], "modified": modified,
                 "surface_used": {f: {"gamma0": used[f]["gamma0"], "eps0": used[f].get("eps0"),
@@ -572,8 +577,12 @@ def make_app(sim: Simulator):
         return PAGE.read_text()
 
     @app.get("/classical", response_class=HTMLResponse)
+    def ideal_page():
+        return IDEAL_PAGE.read_text()                # the same nucleation, ideal growth, against the full model
+
+    @app.get("/cnt", response_class=HTMLResponse)
     def classical_page():
-        return CLASSICAL_PAGE.read_text()
+        return CLASSICAL_PAGE.read_text()            # textbook CNT and LaMer with their own parameters
 
     @app.get("/api/classical/defaults")
     def classical_defaults():

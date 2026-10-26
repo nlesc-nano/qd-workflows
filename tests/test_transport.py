@@ -20,6 +20,17 @@ def test_capacitance_of_a_cube():
     assert abs(c / 2.0 - 0.6607) < 3 * se / 2.0 + 0.005                # Hwang & Mascagni: 0.66068 a
 
 
+def test_capacitance_of_a_grown_polyhedron():
+    # a point-like cube grown by R is the sphere of radius R
+    c, se = tr.capacitance_polyhedron(CUBE, [1e-3] * 6, n=20000, dilate=1.0)
+    assert abs(c - 1.0) < 3 * se + 0.01
+    # the cube grown by R lies between C + R (exact for a sphere) and the cube of planes moved out by R
+    c0, _ = tr.capacitance_polyhedron(CUBE, [1.0] * 6, n=20000)
+    cd, se = tr.capacitance_polyhedron(CUBE, [1.0] * 6, n=20000, dilate=0.5)
+    cs, _ = tr.capacitance_polyhedron(CUBE, [1.5] * 6, n=20000)
+    assert c0 + 0.5 < cd - 2 * se and cd + 2 * se < cs
+
+
 def test_two_touching_spheres():
     # two equal touching spheres: C = 2 a ln 2 = 1.3863 a (exact)
     a = 1.75

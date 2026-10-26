@@ -13,6 +13,9 @@ material:
   g_bulk: -5.4903
   omega_E_cm1: 150.0
   atoms_per_unit: 2
+  g_bulk_T:
+    T: [50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 425, 450, 475, 500, 525, 550, 575, 600, 625, 650, 675, 700, 725, 750, 775, 800]
+    G_eV: [-5.45069, -5.45680, -5.46574, -5.47717, -5.49078, -5.50631, -5.52352, -5.54224, -5.56232, -5.58364, -5.60610, -5.62959, -5.65406, -5.67943, -5.70564, -5.73264, -5.76040, -5.78887, -5.81800, -5.84778, -5.87816, -5.90913, -5.94065, -5.97271, -6.00528, -6.03834, -6.07188, -6.10588, -6.14033, -6.17520, -6.21049]
   m0: auto
   m0_min: 10
   m_dissolve: 4
@@ -28,6 +31,9 @@ kinetics:
   k_r: facets
   growth_law: shape
   beta_scale: 1.0
+  shell_offset:
+    R_h_A: [0.32, 77.4]
+    R_se_A: [0.18, 79.3]
   facets:
     '100':
       k_f: 11000.0
@@ -78,6 +84,13 @@ families:
     site_area: 27.20717960074628
 provenance:
   families: fit of 108 QD_builder dots (MACE-MH-1)
+  shell_offset: 'the same 108 dots (builder geometries): R_h = capacitance of the van der Waals body (CdCl2 included),
+    R_se = solvent-excluded radius (2 A probe), against the convex hull of the Cd/Se core scaled to m Omega_m;
+    dR = a + b sigma (A), sigma = k / A_P (MX_q per A^2), rms 0.37 A (R_h) and 0.32 A (R_se), 3 % of R_h'
+  g_bulk_T: 'MACE-MH-1 omat_pbe float64 zinc blende (a = 6.2030 A): E_bulk + harmonic phonon F_vib, 6x6x6 supercell,
+    DOS on 24^3 q (supercell 4-6 within 1.6 meV, quasi-harmonic within 1 meV at 500 K). CP2K PBE/DZVP check (2026-10-26):
+    a = 6.216 A; CdCl2-capped clusters vs bulk within 0.02 eV per CdSe, the pool complex CdSe.CdCl2 0.11 eV higher in CP2K
+    (single points at MACE geometries). g_bulk and omega_E_cm1 above are used only without this table.'
   facets: 'k_f: single-unit NEB + Hessians on builder dots (500 K, geometric mean of the sites, collision-capped);
     island_beta_eV: island ladders N = 1-9 with CdCl2 released to the pool (facet_kinetics, island_release)' 
 solvation:
