@@ -95,6 +95,10 @@ def test_injection_temperature_program_and_activities_reach_the_model():
     last = out["series"][-1]
     assert abs(last["V_L"] - 0.012) < 1e-12 and abs(last["T"] - 480.0) < 1.0
     assert abs(out["conservation"]["MA"]) < 1e-9 and abs(out["conservation"]["MX"]) < 1e-9
+    om = out["omega_run"]                                          # the grid's Omega along the run, for the live panel
+    assert len(om["t"]) == len(om["barrier"]) == len(om["m_star"]) > 0
+    assert len(om["dOmega"]) == len(om["m"]) and len(om["dOmega"][0]) == len(om["t"])
+    json.dumps(om, allow_nan=False)
     live = sim.omega_live({**cond, "t": 45.0})
     assert live["injection"] and abs(live["T_now"] - 480.0) < 1e-9 and 0 < live["alpha"] <= 1.0
     with pytest.raises(ValueError):                                                    # more Se than CdCl2

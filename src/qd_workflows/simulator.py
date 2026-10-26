@@ -201,7 +201,35 @@ class Simulator:
                                      "dG_bind": used[f]["dG_bind"]} for f in used},
                 "dG_thermal": g.dg_th, "m0": res["m0"], "handover": res["handover"],
                 "series": [{k: _finite(r[k]) for k in keep} for r in res["series"]],
-                "snapshots": snaps, "conservation": gr.conservation(res)[-1]}
+                "snapshots": snaps, "conservation": gr.conservation(res)[-1],
+                "omega_run": self._omega_along(P, res)}
+
+    def _omega_along(self, P: dict, res: dict) -> dict:
+        """The grid's Omega(m) along a growth run, at the pool the run leaves (precursor converted minus what the
+        nuclei and dots took), with the same definition as the live panel (grid up to m0, barrier = largest
+        Omega(m) - Omega(1)): the barrier and m* per output time and Delta Omega(m, t) for the map."""
+        c = P["conditions"]
+        eps = float(P.get("solvation", {}).get("eps", 1.0))
+        m0 = self._m0({**c, "eps": eps})[0]
+        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "m": None, "dOmega": []}
+        cols = []
+        for row in res["series"]:
+            if row["C_M"] <= 1e-20:
+                continue
+            try:
+                o = self._omega(row.get("T", c["T"]), row["C_M"], row["C_X"], m0, eps,
+                                float(c.get("gamma_MA", 1.0)), float(c.get("gamma_MX", 1.0)))
+            except ValueError:
+                continue
+            rows = [r for r in o["per_m"] if r["m"] <= o["m0"]]
+            out["t"].append(row["t"])
+            out["barrier"].append(o["barrier"])
+            out["m_star"].append(o["m_star"])
+            out["C_M"].append(row["C_M"])
+            out["m"] = [r["m"] for r in rows]
+            cols.append([r["Omega_m"] - rows[0]["Omega_m"] for r in rows])
+        out["dOmega"] = [list(col) for col in zip(*cols)]              # rows m = 1..m0, columns the run's times
+        return out
 
     def build(self, rid: str, t: float, cohort: int | None, which: str = "mode", full: bool = False) -> dict:
         """Build the dot with QD_builder's target mode: the construction centres only (about a second), or with
