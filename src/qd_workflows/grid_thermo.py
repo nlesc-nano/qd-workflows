@@ -202,6 +202,10 @@ def thermo_at(thermo, t, solvation: dict | None = None):
     temps = thermo["temperatures"]
     nodes = {(n["m"], n["k"]): n for n in thermo["nodes"]}
     eps = float((solvation or {}).get("eps", 1.0))
+    if solvation is not None and "complexes" in thermo.get("solvation", {}):
+        # a thermo file that carries its own m = 1 complexes' COSMO data (nucleation, seeded) uses those, not the
+        # parameters' (which belong to another grid's structures); {} means none: the cluster model
+        solvation = {**solvation, "complexes": thermo["solvation"]["complexes"]}
     mx_name, ma_name = unit_names(thermo["nodes"])
     solv, d_mx, d_ma = None, 0.0, 0.0
     if eps > 1.0:
@@ -224,26 +228,32 @@ def thermo_at(thermo, t, solvation: dict | None = None):
             "eps": eps, "dG_solv_mx": d_mx}
 
 
-def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
+def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False, gamma_ma=1.0, gamma_mx=1.0):
     """Chemical potentials of the precursor pool (grand_potential.md section 4b) for any MA supply c_ma and MX_q left
     in solution `avail` (mol/L): the MX_q left is shared between the free (or ligand-bound) MX_q and the MA(MX_q)_n
     complexes, and the free MX_q solves that balance. bare=True: the supply is the uncomplexed MA monomer and all
-    the MX_q left is free. th: thermo_at(). Returns mu_MA, mu_MX, c_MX_free, speciation, mean_n."""
+    the MX_q left is free. th: thermo_at(). gamma_ma, gamma_mx: activity coefficients of the MA species (every
+    MA(MX_q)_n alike) and of the free MX_q, mu = mu0 + kT ln(gamma c / c0), 1 = ideal; the complexes bind MX_q at its
+    activity, the balance stays in concentrations.
+    Returns mu_MA, mu_MX, c_MX_free, a_MX_free (= gamma_mx c_MX_free, what the facets' coverage sees), speciation,
+    mean_n."""
     kt = KB_EV * th["t"]
     g_n, g_mx = th["g_n"], th["g_mx"]
     if c_ma <= 0 or avail <= 0:
         raise ValueError(f"no monomer or no MX_q left: c_MA = {c_ma:g} M, MX_q left = {avail:g} M")
+    lg_ma, lg_mx = float(np.log(gamma_ma)), float(np.log(gamma_mx))
     bind = 1.0 + k_l * (c_l / c0) ** 2
     if bare:
         if 0 not in g_n:
             raise ValueError("bare monomer: no MA monomer (m = 1, k = 0 node or library reference)")
         c_mx_free = avail / bind
-        mu_mx = g_mx + kt * np.log(c_mx_free / c0)
-        return {"mu_MA": float(g_n[0] + kt * np.log(c_ma / c0)), "mu_MX": float(mu_mx), "c_MX_free": float(c_mx_free),
-                "speciation": {0: 1.0}, "mean_n": 0.0}
+        mu_mx = g_mx + kt * (np.log(c_mx_free / c0) + lg_mx)
+        return {"mu_MA": float(g_n[0] + kt * (np.log(c_ma / c0) + lg_ma)), "mu_MX": float(mu_mx),
+                "c_MX_free": float(c_mx_free), "a_MX_free": float(gamma_mx * c_mx_free), "speciation": {0: 1.0},
+                "mean_n": 0.0}
 
-    def excess(ln_x):                                   # MX_q balance of the precursor pool, increasing in ln_x
-        mu = g_mx + kt * (ln_x - np.log(c0))
+    def excess(ln_x):                                   # MX_q balance (in concentrations), increasing in ln_x
+        mu = g_mx + kt * (ln_x + lg_mx - np.log(c0))    # the complexes see the free MX_q's activity
         return np.exp(ln_x) * bind + c_ma * _speciation(g_n, mu, kt)[2] - avail
 
     lo, hi = np.log(avail) - 80.0, np.log(avail / bind)
@@ -253,10 +263,10 @@ def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
         mid = 0.5 * (lo + hi)
         lo, hi = (mid, hi) if excess(mid) < 0 else (lo, mid)
     c_mx_free = float(np.exp(0.5 * (lo + hi)))
-    mu_mx = g_mx + kt * np.log(c_mx_free / c0)
+    mu_mx = g_mx + kt * (np.log(c_mx_free / c0) + lg_mx)
     lse, speciation, mean_n = _speciation(g_n, mu_mx, kt)
-    return {"mu_MA": float(kt * np.log(c_ma / c0) - kt * lse), "mu_MX": float(mu_mx), "c_MX_free": c_mx_free,
-            "speciation": speciation, "mean_n": mean_n}
+    return {"mu_MA": float(kt * (np.log(c_ma / c0) + lg_ma) - kt * lse), "mu_MX": float(mu_mx), "c_MX_free": c_mx_free,
+            "a_MX_free": float(gamma_mx * c_mx_free), "speciation": speciation, "mean_n": mean_n}
 
 
 def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False):

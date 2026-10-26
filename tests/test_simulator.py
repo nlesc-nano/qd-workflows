@@ -80,3 +80,35 @@ def test_build_refuses_large_dots():
         sim.build(out["run_id"], 30.0, None)
     with pytest.raises(KeyError):
         sim.build("nope", 30.0, None)
+
+
+def test_injection_temperature_program_and_activities_reach_the_model():
+    sim = _sim()
+    cond = {"t_end": 600.0, "inject": True, "c_syringe_M": 0.3, "rate_mL_h": 120.0, "V0_mL": 10.0,
+            "inj_duration_s": 60.0, "two_T": True, "T_growth": 480.0, "t_switch_s": 30.0, "ramp_s": 0.0,
+            "gamma_MA": 2.0, "gamma_MX": 0.5, "beta_scale": 0.8}
+    P = sim.params_for(cond)
+    c = P["conditions"]
+    assert c["c_P0"] == 0.0 and abs(c["injection"]["rate_L_h"] - 0.12) < 1e-12 and c["injection"]["V0_L"] == 0.01
+    assert c["T_growth"] == 480.0 and c["gamma_MA"] == 2.0 and c["gamma_MX"] == 0.5 and P["kinetics"]["beta_scale"] == 0.8
+    out = sim.run(cond)
+    last = out["series"][-1]
+    assert abs(last["V_L"] - 0.012) < 1e-12 and abs(last["T"] - 480.0) < 1.0
+    assert abs(out["conservation"]["MA"]) < 1e-9 and abs(out["conservation"]["MX"]) < 1e-9
+    live = sim.omega_live({**cond, "t": 45.0})
+    assert live["injection"] and abs(live["T_now"] - 480.0) < 1e-9 and 0 < live["alpha"] <= 1.0
+    with pytest.raises(ValueError):                                                    # more Se than CdCl2
+        sim.params_for({**cond, "c_syringe_M": 1.0, "rate_mL_h": 1000.0, "inj_duration_s": 3600.0})
+
+
+def test_pre_pool_closed_form_and_injection_balance():
+    sim = _sim()
+    P = sim.params_for({"T": 500.0})
+    _T, cm, _cx = sim.pre_pool(P, [10.0])[0]
+    c = P["conditions"]
+    assert abs(cm - converted(10.0, c["k_conv_500K"], c["c_P0"], c["c_MX0"])) < 1e-12
+    Pi = sim.params_for({"inject": True, "c_syringe_M": 0.1, "rate_mL_h": 36.0, "V0_mL": 10.0, "inj_duration_s": 100.0})
+    (_T, cm1, cx1), = sim.pre_pool(Pi, [1e4])                    # long after: all converted, everything diluted
+    v_end = 0.01 + 0.036 / 3600 * 100
+    assert abs(cm1 * v_end - 0.1 * 0.036 / 3600 * 100) < 1e-9
+    assert abs((cx1 + cm1) * v_end - Pi["conditions"]["c_MX0"] * 0.01) < 1e-9

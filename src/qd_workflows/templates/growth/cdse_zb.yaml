@@ -26,6 +26,19 @@ kinetics:
   mu_small: grid
   D: 1.0e-05
   k_r: 10000.0
+  growth_law: shape
+  beta_scale: 1.0
+  facets:
+    '100':
+      k_f: 11000.0
+      island_beta_eV: 1.08
+    111A:
+      k_f: 4.2e+11
+    111B:
+      k_f: 770.0
+      island_beta_eV: 1.027
+    '110':
+      k_f: 2.4e+11
 families:
   '100':
     gamma0: 11.3
@@ -65,6 +78,8 @@ families:
     site_area: 27.20717960074628
 provenance:
   families: fit of 108 QD_builder dots (MACE-MH-1)
+  facets: 'k_f: single-unit NEB + Hessians on builder dots (500 K, geometric mean of the sites, collision-capped);
+    island_beta_eV: island ladders N = 1-9 with CdCl2 released to the pool (facet_kinetics, island_release)' 
 solvation:
   eps: 2.0
   vdw_scale: 1.4
@@ -97,6 +112,8 @@ units:
   w: eV (lateral interaction at full coverage)
   k0: A/s
   k_r: A/s
+  k_f: A/s (facet incorporation rate, relative speeds of the shape rule)
+  island_beta_eV: eV (step term of the island ladder, dG(N) = g N + beta sqrt(N))
   D: cm^2/s
   x_X: X-type MX_q per surface site (electron counting)
   site_area: A^2

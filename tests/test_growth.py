@@ -170,7 +170,7 @@ def test_dot_chemical_potential_is_the_wulff_gibbs_thomson():
     _A, r, dmu, _th = g.size_state([{"m": m, "area": area}], fam, {f: 0.0 for f in g.F})
     for f in g.F:
         if area[f] > 0:                                                               # every exposed facet: 2 gamma Om / h
-            assert math.isclose(dmu[0], 2 * gam[f] * g.Om / h[f], rel_tol=1e-6)
+            assert math.isclose(dmu[0] - g.junction(m), 2 * gam[f] * g.Om / h[f], rel_tol=1e-6)   # + grid junction
     assert math.isclose(r[0], (3 * 300 * g.Om / (4 * math.pi)) ** (1 / 3), rel_tol=1e-6)
 
 
@@ -217,3 +217,170 @@ def test_grid_dots_dissolve_or_grow_by_the_grid_mu():
     assert (m_end > 10.0) == grows
     for c in gr.conservation(res):
         assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
+def test_facet_law_reduces_to_the_size_law_on_a_wulff_dot():
+    facets = {f: {"k_f": 50.0} for f in ("100", "111A", "111B", "110")}
+    P = _params(kinetics={"growth_law": "facet", "facets": facets, "k_r": 50.0})
+    g = gr.Growth(_thermo(), P)
+    g._arrays()
+    pl, fam = g.chem(1e-3, 0.1)
+    for f in g.F:                                                     # one coverage on every facet
+        fam[f]["theta"] = 0.3
+    th = {f: 0.3 for f in g.F}
+    gam = {f: fam[f]["gamma"] for f in g.F}
+    h = g.shape.wulff(gam, 400 * g.Om)
+    m, k, area, _s = g.dot(h, fam)
+    co = {"m": m, "k": k, "h": h, "area": area}
+    A, r, dmu, thb = g.size_state([co], fam, th)
+    C, C_M = 2e-3, 1e-3
+    c_eq = C_M * np.exp((g.gb + dmu - pl["mu_MA"]) / g.kt)
+    size = g.size_rates(A, r, c_eq, thb, C)[0]
+    facet, v = g._facet_rate(co, C, C_M, pl["mu_MA"], fam, th)
+    assert math.isclose(facet, size, rel_tol=1e-6)
+    exposed = [f for f in g.F if area[f] > 0]
+    assert np.allclose([v[f] for f in exposed], v[exposed[0]], rtol=1e-6)   # Wulff: every facet at one velocity
+
+
+def test_island_limited_facet_grows_large():
+    cond = {"c_P0": 0.05, "t_end": 30.0, "n_out": 4, "t_start": 1.0, "c_M0": 2e-2}
+
+    def weak(P):                                                       # weak binding: every gamma > 0, several facets
+        for f in P["families"].values():
+            f["eps0"] = 0.3
+        return P
+
+    probe = gr.Growth(_thermo(), weak(_params(conditions=cond)))
+    probe._arrays()
+    fam0 = probe.chem(1e-4, 0.2)[1]
+    area0 = probe.dot(probe.shape.wulff({f: fam0[f]["gamma"] for f in probe.F}, 2000 * probe.Om), fam0)[2]
+    slow = min((f for f in area0 if area0[f] > 0), key=lambda f: area0[f])      # the smallest exposed facet
+    facets = {f: ({"island_beta_eV": 0.25} if f == slow else {"k_f": 1e6}) for f in probe.F}
+    P = weak(_params(conditions=cond, nucleation={"flux": "constant", "J0": 0.0},
+                     kinetics={"growth_law": "facet", "facets": facets, "k_r": 1e6}))
+    g = gr.Growth(_thermo(), P)
+    res = g.run(seed=[{"N": 1e-6, "m": 2000}])
+    first, last = res["snapshots"][0]["cohorts"][0], res["snapshots"][-1]["cohorts"][0]
+    share = lambda co: co["area"][slow] / sum(co["area"].values())   # noqa: E731
+    assert last["m"] > first["m"]
+    assert share(last) > share(first)                                 # the slow facet takes over the surface
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
+def test_shape_rule_keeps_the_size_law_flux_and_follows_the_slow_facets():
+    cond = {"c_P0": 0.05, "t_end": 30.0, "n_out": 4, "t_start": 1.0, "c_M0": 2e-2}
+
+    def weak(P):                                                       # weak binding: every gamma > 0, several facets
+        for f in P["families"].values():
+            f["eps0"] = 0.3
+        return P
+
+    probe = gr.Growth(_thermo(), weak(_params(conditions=cond)))
+    probe._arrays()
+    fam0 = probe.chem(1e-4, 0.2)[1]
+    area0 = probe.dot(probe.shape.wulff({f: fam0[f]["gamma"] for f in probe.F}, 2000 * probe.Om), fam0)[2]
+    main = max(area0, key=lambda f: area0[f])                          # the Wulff dot's dominant family
+    runs = {}
+    for law, ratio in (("size", None), ("slow", 0.01), ("fast", 100.0)):
+        facets = None if ratio is None else {f: {"k_f": 1.0 if f == main else 1.0 / ratio} for f in probe.F}
+        P = weak(_params(conditions=cond, nucleation={"flux": "constant", "J0": 0.0},
+                         kinetics={"growth_law": "size" if ratio is None else "shape", "facets": facets}))
+        g = gr.Growth(_thermo(), P)
+        runs[law] = g.run(seed=[{"N": 1e-6, "m": 2000}])
+        for c in gr.conservation(runs[law]):
+            assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+    share = lambda co: co["area"][main] / sum(co["area"].values())   # noqa: E731
+    last = {k: r["snapshots"][-1]["cohorts"][0] for k, r in runs.items()}
+    for k in ("slow", "fast"):                                         # the size law sets how much the dot grows
+        assert math.isclose(last[k]["m"], last["size"]["m"], rel_tol=0.2)
+    assert share(last["slow"]) > share(last["size"]) - 1e-6            # slow: it keeps the surface
+    assert share(last["fast"]) < 0.5 * share(last["size"])             # fast: it grows out, the others take over
+
+
+def test_activity_coefficients_shift_the_potentials_and_keep_the_balance():
+    g = gr.Growth(_thermo(), _params())
+    g._arrays()
+    kt = g.kt
+    ref = g.pool(2e-3, 0.1)
+    g.P["conditions"]["gamma_MA"] = 2.0
+    pl = g.pool(2e-3, 0.1)
+    assert math.isclose(pl["mu_MA"] - ref["mu_MA"], kt * math.log(2.0), abs_tol=1e-9)    # MA: kT ln gamma exactly
+    assert math.isclose(pl["c_MX_free"], ref["c_MX_free"], rel_tol=1e-9)
+    g.P["conditions"].update(gamma_MA=1.0, gamma_MX=0.5)
+    pl = g.pool(2e-3, 0.1)
+    assert math.isclose(pl["a_MX_free"], 0.5 * pl["c_MX_free"], rel_tol=1e-12)
+    mu_from_activity = g.th["g_mx"] + kt * math.log(pl["a_MX_free"])
+    assert math.isclose(pl["mu_MX"], mu_from_activity, abs_tol=1e-9)
+    bound = 2e-3 * pl["mean_n"]                                       # the MX_q balance stays in concentrations
+    assert math.isclose(pl["c_MX_free"] + bound, 0.1, rel_tol=1e-9)
+    assert pl["mu_MX"] < ref["mu_MX"]
+    _pl, fam = g.chem(2e-3, 0.1)                                      # the facets see the activity: less coverage
+    _pl, fam_ref = gr.Growth(_thermo(), _params()).chem(2e-3, 0.1)
+    assert all(fam[f]["theta"] <= fam_ref[f]["theta"] + 1e-12 for f in fam)
+
+
+def test_growth_does_not_change_its_params():
+    P = _params()
+    before = copy.deepcopy(P)
+    gr.Growth(_thermo(), P)
+    gr.Growth(_thermo(), P)
+    assert P == before
+
+
+def test_injection_dilutes_and_conserves_amounts():
+    inj = {"c_syringe_M": 0.3, "rate_L_h": 0.36, "V0_L": 0.01, "duration_s": 20.0}       # 2 mL over 20 s into 10 mL
+    P = _params(conditions={"c_P0": 0.0, "t_end": 40.0, "n_out": 8, "injection": inj})
+    res = gr.Growth(_thermo(), P).run()
+    last = res["series"][-1]
+    assert math.isclose(last["V_L"], 0.012, rel_tol=1e-9)
+    assert math.isclose(last["n_inj_mol"], 0.3 * 0.002, rel_tol=1e-9)
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+    assert res["series"][0]["P"] < 0.3 * 0.002 / 0.012                                   # the precursor arrives slowly
+
+
+def test_temperature_program_switches_the_free_energies():
+    P = _params(conditions={"t_end": 30.0, "n_out": 6, "T_growth": 450.0, "t_switch_s": 5.0, "ramp_s": 10.0})
+    g = gr.Growth(_thermo(), P)
+    assert g.temperature_at(1.0) == P["conditions"]["T"] and g.temperature_at(30.0) == 450.0
+    assert math.isclose(g.temperature_at(10.0), 0.5 * (P["conditions"]["T"] + 450.0))
+    res = g.run()
+    Ts = [r["T"] for r in res["series"]]
+    assert Ts[0] == P["conditions"]["T"] and abs(Ts[-1] - 450.0) < 1.0 and g.T == Ts[-1]
+    ref = gr.Growth(_thermo(), _params(conditions={"T": 450.0}))
+    assert math.isclose(g.gb, ref.gb, abs_tol=1e-3) and math.isclose(g.k_conv, ref.k_conv, rel_tol=1e-2)
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
+def test_results_do_not_depend_on_the_output_times():
+    sizes = []
+    for n_out in (8, 40):
+        res = gr.Growth(_thermo(), _params(conditions={"t_end": 30.0, "n_out": n_out})).run()
+        sizes.append((res["series"][-1]["N_dots"], res["series"][-1]["m_mean"]))
+    assert math.isclose(sizes[0][0], sizes[1][0], rel_tol=0.05) and math.isclose(sizes[0][1], sizes[1][1], rel_tol=0.05)
+
+
+def test_atomistic_transport_enters_flux_and_dots():
+    th = _thermo()
+    for nd in th["nodes"]:                                            # geometry of every node: radii grow with size
+        for s in nd["states"]:
+            s["R_se_A"] = 2.4 * nd["m"] ** (1 / 3) + 0.3 * nd["k"]
+            s["R_h_A"] = 2.6 * nd["m"] ** (1 / 3) + 0.3 * nd["k"]
+    g = gr.Growth(th, _params(kinetics={"transport": "stokes", "viscosity_mPa_s": 0.4}))
+    g._arrays()
+    assert g.stokes
+    pl, fam = g.chem(2e-3, 0.1)
+    J1 = g.nucleation(pl["mu_MA"] + 0.3, pl["mu_MX"])[0]
+    assert g._R1 > 2.4 and g._D1 > 0
+    g2 = gr.Growth(th, _params(kinetics={"transport": "stokes", "viscosity_mPa_s": 0.8}))
+    g2._arrays()
+    g2.chem(2e-3, 0.1)
+    J2 = g2.nucleation(pl["mu_MA"] + 0.3, pl["mu_MX"])[0]
+    assert abs(J1 / J2 - 2.0) < 1e-6                                   # diffusion-limited: J ~ D ~ 1/eta
+    g._capf = g._cap_factor(fam)                                       # a dot: its Wulff polyhedron's shape factor
+    assert 1.0 < g._capf < 1.2
+    plain = gr.Growth(_thermo(), _params(kinetics={"transport": "stokes"}))
+    plain._arrays()
+    assert not plain.stokes                                             # no geometry: the fixed D

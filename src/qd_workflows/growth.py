@@ -67,7 +67,8 @@ SQ3 = math.sqrt(3.0)
 # Every number below is a PLACEHOLDER (with where it came from) until the shape-library calibration replaces it.
 PARAMS = {
     "conditions": {"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t_end": 600.0,
-                   "t_start": 1e-3, "n_out": 60},
+                   "t_start": 1e-3, "n_out": 60,
+                   "gamma_MA": 1.0, "gamma_MX": 1.0},     # activity coefficients (calibration, 1 = ideal)
     "material": {
         "Omega_m": A_ZB ** 3 / 4,               # A^3 per CdSe (4 formula units per cubic cell)
         "g_bulk": -5.4903,                      # eV per CdSe: MACE bulk zinc-blende energy at 0 K (shapes fit)
@@ -76,6 +77,11 @@ PARAMS = {
         "m0": "auto",                           # nucleus size: "auto" = where grid and continuum agree (_handover)
         "m0_min": 10,                           # smallest nucleus the automatic hand-over may pick
         "m_dissolve": 4,                        # a dot below this many CdSe units dissolves back into the pool
+        "dt_rel_max": 0.01,                     # a step is at most 1 % of t (CdSe batch: within 7 % of 0.3 %)
+        "birth_interval": 0.05,                 # nuclei become a new cohort every 5 % of t ...
+        "birth_share": 0.05,                    # ... or once they reach 5 % of the dots present
+        "merge_tol": 0.01,                      # cohorts past 4 m_top within 1 % in m merge (N, m, k kept) ...
+        "max_cohorts": 64,                      # ... and the closest such ones while there are more than this
         "N_min": 1e-15,                         # M: fewer nuclei than this in an output interval make no cohort
         "match_m0": False,                      # scale gamma^0 so the m0 dot's continuum chemical potential equals the
                                                 # grid's free-energy step at m0 (the bridge used with placeholder gamma)
@@ -87,7 +93,13 @@ PARAMS = {
                    "J0": 1e-6},                 # M/s, used only with flux: constant (J = J0 e^(-barrier/kT))
     "kinetics": {"mu_small": "grid",            # grid nucleation: dots within the grid's sizes take the grid's own
                                                 # chemical potential (grid_mu); "continuum": Gibbs-Thomson at every size
-                 "D": 1e-5,                     # cm^2/s, monomer diffusion coefficient in the solvent (PLACEHOLDER)
+                 "transport": "stokes",         # stokes: contact radii and Stokes-Einstein D from the grid's structures
+                                                # (transport.add_geometry), the dot's polyhedron capacitance; fixed: D
+                                                # below with bulk-volume spheres (also when the thermo has no geometry)
+                 "viscosity_mPa_s": 0.4,        # solvent viscosity at T (PLACEHOLDER: an n-alkane like octadecene near
+                                                # 500 K, about 0.4 mPa s; to be set from data for the solvent used)
+                 "stokes_c": 6.0,               # 6: stick boundary, 4: slip
+                 "D": 1e-5,                     # cm^2/s, monomer diffusion coefficient, transport "fixed" (PLACEHOLDER)
                  "k_r": 1e4},                   # A/s, surface reaction rate constant of the size law (PLACEHOLDER);
                                                 # None: the diffusion limit (D/r ~ 1e10 A/s), which turns every run into
                                                 # one extreme LaMer burst (a few dots of ~100 nm)
@@ -118,7 +130,7 @@ PARAMS = {
               "w": "eV (lateral interaction at full coverage)",
               "k0": "A/s", "k_r": "A/s", "D": "cm^2/s", "x_X": "X-type MX_q per surface site (electron counting)", "site_area": "A^2",
               "J0": "M/s", "attach_barrier_eV": "eV", "T": "K", "c_P0": "M", "c_MX0": "M", "k_conv_500K": "1/(M s)",
-              "Ea_conv": "eV", "t_end": "s"},
+              "Ea_conv": "eV", "t_end": "s", "gamma_MA": "1 (activity coefficient)", "gamma_MX": "1 (activity coefficient)"},
 }
 
 
@@ -264,7 +276,8 @@ class Shape:
 
 
 # ---------------- nucleation flux ----------------
-def nucleation_flux(om, ms, m0: int, kt: float, omega_m: float, P: dict, barrier: float | None = None) -> float:
+def nucleation_flux(om, ms, m0: int, kt: float, omega_m: float, P: dict, barrier: float | None = None,
+                    radii=None, diff=None, e_att=None, act: float = 1.0) -> float:
     """Steady-state Becker-Doring flux (M/s) of clusters through the grid up to the nucleus m0:
 
         J = [ sum_{m=1}^{m0-1} 1 / (f_m c_eq(m)) ]^-1,   c_eq(m) = c0 exp(-Omega(m)/kT)   (1 M standard state),
@@ -273,7 +286,9 @@ def nucleation_flux(om, ms, m0: int, kt: float, omega_m: float, P: dict, barrier
     Smoluchowski attachment of monomers to an m-cluster (relative diffusion, contact radius), with an optional
     incorporation barrier E_att. The monomer supply is c_eq(1) = exp(-Omega(1)/kT): the grid's m = 1 row and the pool
     share mu_MA, so Omega(1) = -kT ln(C_MA/c0). The largest term (the rarest cluster) dominates, J ~ f* c_eq(m*); the
-    effective prefactor J exp(barrier/kT) is reported as J0. P['nucleation']['flux'] = 'constant' keeps J0 exp(-barrier/kT)."""
+    effective prefactor J exp(barrier/kT) is reported as J0. P['nucleation']['flux'] = 'constant' keeps J0 exp(-barrier/kT).
+    radii, diff, e_att (arrays over ms, A, A^2/s, eV): the atomistic contact radii, diffusion coefficients and attachment
+    barriers of each size (transport, facet_kinetics), in place of the bulk-volume sphere, D_1 m^(-1/3) and one E_att."""
     nuc = P["nucleation"]
     if nuc.get("flux", "becker_doring") == "constant":
         return float(nuc["J0"]) * math.exp(-(barrier or 0.0) / kt)
@@ -281,12 +296,25 @@ def nucleation_flux(om, ms, m0: int, kt: float, omega_m: float, P: dict, barrier
     sel = ms < m0
     if not sel.any() or ms[0] != 1:
         return 0.0
-    c1 = math.exp(-om[0] / kt)                                                    # M, the monomer supply
-    d1 = float(P["kinetics"].get("D", 1e-5)) * 1e16                               # A^2/s
+    # Omega(1) = -kT ln(gamma_MA C_MA): the monomer's activity; attachment counts molecules, so the concentration
+    # C_MA = activity / gamma_MA (act) sets the attachment frequency and the m = 1 term
+    om = om.copy()
+    om[0] += kt * math.log(act)
+    c1 = math.exp(-om[0] / kt)                                                    # M, the monomer concentration
     m = ms[sel].astype(float)
-    r = (3.0 * m * omega_m / (4.0 * math.pi)) ** (1.0 / 3.0)                      # A
-    f = (4.0 * math.pi * d1 * (1.0 + m ** (-1.0 / 3.0)) * (r[0] + r) * 6.02214076e-4 * c1
-         * math.exp(-float(nuc.get("attach_barrier_eV", 0.0)) / kt))              # 1/s; 6.022e-4 molecules/A^3 per M
+    if radii is not None:
+        r = np.asarray(radii, float)[sel]
+    else:
+        r = (3.0 * m * omega_m / (4.0 * math.pi)) ** (1.0 / 3.0)                  # A
+    if diff is not None:
+        d = np.asarray(diff, float)[sel]
+        dsum = d[0] + d
+    else:
+        d1 = float(P["kinetics"].get("D", 1e-5)) * 1e16                           # A^2/s
+        dsum = d1 * (1.0 + m ** (-1.0 / 3.0))
+    ea = (np.asarray(e_att, float)[sel] if e_att is not None
+          else float(nuc.get("attach_barrier_eV", 0.0)))
+    f = 4.0 * math.pi * dsum * (r[0] + r) * 6.02214076e-4 * c1 * np.exp(-np.asarray(ea) / kt)   # 1/s
     x = om[sel] / kt - np.log(f)                                                  # ln of each resistance 1/(f c_eq)
     xm = x.max()
     return float(math.exp(-(xm + math.log(np.exp(x - xm).sum()))))
@@ -295,20 +323,36 @@ def nucleation_flux(om, ms, m0: int, kt: float, omega_m: float, P: dict, barrier
 # ---------------- the model ----------------
 class Growth:
     def __init__(self, thermo: dict, params: dict, normals: dict | None = None):
-        self.P = params
-        c = params["conditions"]
-        self.T = float(c["T"])
-        self.kt = KB_EV * self.T
+        self.P = params                                  # the inputs: never changed (derived values live in self.F)
+        self.thermo = thermo
         self.solv = params.get("solvation") or {"eps": 1.0}
-        self.th = thermo_at(thermo, self.T, self.solv)
-        m0 = params["material"]["m0"]
-        self.m0 = max(m for m, _k in self.th["G"]) if m0 == "auto" else int(m0)      # "auto": set by handover()
+        # atomistic contact and hydrodynamic radii of each node's lowest state (transport.add_geometry)
+        self.geo = {}
+        for nd in thermo.get("nodes", []):
+            st = min(nd["states"], key=lambda s: s["E_eV"]) if nd.get("states") else None
+            if st and "R_se_A" in st and "R_h_A" in st:
+                self.geo[(nd["m"], nd["k"])] = (float(st["R_se_A"]), float(st["R_h_A"]))
         self.Om = float(params["material"]["Omega_m"])
-        self.F = params["families"]
-        self.shape = Shape({f: (normals or ZB_NORMALS)[f] for f in self.F})
+        self.shape = Shape({f: (normals or ZB_NORMALS)[f] for f in params["families"]})
+        self._gscale = 1.0                               # gamma^0 scale of match_m0
+        self.act_ma = float(params["conditions"].get("gamma_MA", 1.0))
+        self.set_temperature(float(params["conditions"]["T"]))
+        self.match = self._match_m0() if params["material"].get("match_m0", False) else None
+
+    def set_temperature(self, T: float):
+        """Everything that depends on T: the grid's free energies, k_conv, g_bulk, the facets' binding free energies
+        and solvation-shifted gamma^0 (a copy of the input families), and the nucleus hand-over; the run calls it again
+        when the temperature program (conditions.T_growth, t_switch_s, ramp_s or T_profile) changes T."""
+        c = self.P["conditions"]
+        self.T = float(T)
+        self.kt = KB_EV * self.T
+        self.th = thermo_at(self.thermo, self.T, self.solv)
+        m0 = self.P["material"]["m0"]
+        self.m0 = max(m for m, _k in self.th["G"]) if m0 == "auto" else int(m0)      # "auto": set by handover()
         self.k_conv = k_conv_at(self.T, float(c["k_conv_500K"]), float(c["Ea_conv"]))
         self.gb = self.g_bulk()
-        self.dg_th = binding_thermal(thermo, self.T)                    # thermal part of binding one MX_q at T
+        self.dg_th = binding_thermal(self.thermo, self.T)               # thermal part of binding one MX_q at T
+        self.F = copy.deepcopy(self.P["families"])
         for p in self.F.values():
             if "eps0" in p:                                              # binding free energy at T from the energy
                 p["dG_bind"] = -float(p["eps0"]) + self.dg_th
@@ -316,13 +360,66 @@ class Growth:
         # and every facet gains the solvation free energy of a neutral nanocrystal surface per area
         eps = float(self.solv.get("eps", 1.0))
         self.solv_area = per_area(eps, self.solv) if eps > 1.0 else 0.0
-        if eps > 1.0:
-            for p in self.F.values():
+        for p in self.F.values():
+            if eps > 1.0:
                 p["dG_bind"] = float(p["dG_bind"]) - self.th["dG_solv_mx"]
                 p["gamma0"] = float(p["gamma0"]) + 1000.0 * self.solv_area
-        classical = params["nucleation"].get("omega", "grid") == "continuum"
+            p["gamma0"] = float(p["gamma0"]) * self._gscale
+        self._R1 = 0.0                                   # the monomer's transport is set again at this T
+        classical = self.P["nucleation"].get("omega", "grid") == "continuum"
         self.handover = self._handover() if m0 == "auto" and not classical else None
-        self.match = self._match_m0() if params["material"].get("match_m0", False) else None
+
+    def ref_pool(self):
+        """Monomer supply and MX_q left of the reference pool (half of all the precursor converted): with an
+        injection, the precursor is what the flask ends up with (c_P0 V0 plus the syringe's delivery, over V_end)."""
+        c = self.P["conditions"]
+        inj = self.injection()
+        if inj is None:
+            c_p, c_x = float(c["c_P0"]), float(c["c_MX0"])
+        else:
+            v_end = inj["V0"] + inj["rate"] * inj["duration"]
+            c_p = (float(c["c_P0"]) * inj["V0"] + inj["c"] * inj["rate"] * inj["duration"]) / v_end
+            c_x = float(c["c_MX0"]) * inj["V0"] / v_end
+        return 0.5 * c_p, c_x - 0.5 * c_p
+
+    def injection(self):
+        """conditions.injection: {c_syringe_M, rate_L_h, V0_L (flask volume at the start), t_start_s (default 0),
+        and duration_s or volume_L (what the syringe delivers)} -> {c (M), rate (L/s), V0 (L), t0, duration (s)};
+        None without an injection."""
+        inj = self.P["conditions"].get("injection")
+        if not inj:
+            return None
+        rate = float(inj["rate_L_h"]) / 3600.0
+        dur = float(inj["duration_s"]) if "duration_s" in inj else float(inj["volume_L"]) / rate
+        return {"c": float(inj["c_syringe_M"]), "rate": rate, "V0": float(inj["V0_L"]),
+                "t0": float(inj.get("t_start_s", 0.0)), "duration": dur}
+
+    def temperature_at(self, t: float) -> float:
+        """The temperature program: conditions.T_profile [[t, T], ...] (piecewise linear), or T until t_switch_s,
+        then a linear ramp over ramp_s (default 0: a step) to T_growth; plain T without either."""
+        c = self.P["conditions"]
+        prof = c.get("T_profile")
+        if prof:
+            ts, Ts = zip(*sorted((float(a), float(b)) for a, b in prof))
+            return float(np.interp(t, ts, Ts))
+        if c.get("T_growth") is None:
+            return float(c["T"])
+        t1, ramp = float(c.get("t_switch_s", 0.0)), float(c.get("ramp_s", 0.0))
+        if t <= t1:
+            return float(c["T"])
+        if ramp <= 0 or t >= t1 + ramp:
+            return float(c["T_growth"])
+        return float(c["T"]) + (float(c["T_growth"]) - float(c["T"])) * (t - t1) / ramp
+
+    def temperature_breaks(self):
+        """Times where the temperature program has a kink (a step must not jump over them)."""
+        c = self.P["conditions"]
+        if c.get("T_profile"):
+            return sorted(float(a) for a, _b in c["T_profile"])
+        if c.get("T_growth") is None:
+            return []
+        t1 = float(c.get("t_switch_s", 0.0))
+        return [t1, t1 + float(c.get("ramp_s", 0.0))]
 
     def _handover(self):
         """Nucleus size m0 where the grid hands over to the continuum. The grid's step chemical potential
@@ -331,9 +428,8 @@ class Growth:
         g_bulk(T) + 2 gamma_f Omega_m / h_f of a Wulff dot of m units (exposed facet, gamma at the pool's coverage),
         both at the pool of half conversion. m0 is the size, from m0_min (default: half the largest row) up, where the
         two agree best (a tie goes to the larger m); the fitted gamma is not rescaled, the mismatch left is reported."""
-        c = self.P["conditions"]
         try:
-            pl, fam = self.chem(0.5 * c["c_P0"], c["c_MX0"] - 0.5 * c["c_P0"])
+            pl, fam = self.chem(*self.ref_pool())
         except ValueError:
             return None
         self._arrays()
@@ -376,9 +472,8 @@ class Growth:
         the area-weighted gamma at the reference coverage, r0 the area-weighted facet distance), equals the grid's
         step mu_step = mu_MA + Omega(m0) - Omega(m0 - 1) (best shells included) at reference chemical potentials: the
         pool at half conversion. Growth then starts where the grid says adding MA lowers Omega. PLACEHOLDER bridge."""
-        c = self.P["conditions"]
         try:
-            pl = pool(self.th, 0.5 * c["c_P0"], c["c_MX0"] - 0.5 * c["c_P0"])
+            pl = self.pool(*self.ref_pool())
         except ValueError:
             return None
         self._arrays()
@@ -386,7 +481,7 @@ class Growth:
         if self.m0 - 1 not in per_m:
             return None
         mu_step = pl["mu_MA"] + per_m[self.m0] - per_m[self.m0 - 1]
-        _pl, fam = self.chem(0.5 * c["c_P0"], c["c_MX0"] - 0.5 * c["c_P0"])
+        _pl, fam = self.chem(*self.ref_pool())
         g = {f: fam[f]["gamma"] for f in self.F}
         h0 = self.shape.wulff(g, self.m0 * self.Om)
         area, _v, _s = self.shape(h0)
@@ -394,14 +489,22 @@ class Growth:
         r0 = sum(h0[f] * area[f] for f in self.F) / sum(area.values())
         s = (mu_step - self.gb) * r0 / (2.0 * gbar * self.Om)
         if s > 0:
+            self._gscale *= s                                # kept when set_temperature derives the families again
             for p in self.F.values():
                 p["gamma0"] = p["gamma0"] * s
         return {"mu_step_eV": mu_step, "g_bulk_eV": self.gb, "mu_MA_ref_eV": pl["mu_MA"], "scale": s, "applied": s > 0}
 
     # -- pool, coverage, surface energies --
+    def pool(self, C_M, C_X):
+        """The precursor pool at monomer supply C_M and MX_q left C_X, with the activity coefficients of
+        conditions.gamma_MA and gamma_MX (calibration factors, 1 = ideal)."""
+        c = self.P["conditions"]
+        return pool(self.th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=float(c.get("gamma_MA", 1.0)),
+                    gamma_mx=float(c.get("gamma_MX", 1.0)))
+
     def chem(self, C_M, C_X):
-        pl = pool(self.th, max(C_M, 1e-30), max(C_X, 1e-30))
-        c = pl["c_MX_free"]
+        pl = self.pool(C_M, C_X)
+        c = pl["a_MX_free"]                             # the facets' coverage sees the free MX_q's activity
         fam = {}
         for f, p in self.F.items():
             fam[f] = facet_state(p, c, self.kt)
@@ -434,6 +537,21 @@ class Growth:
         self.Gp = np.full((len(self.ms), len(self.ks)), np.inf)                         # G(m, k), inf where no node
         for (m, k), g in self.th["G"].items():
             self.Gp[np.searchsorted(self.ms, m), np.searchsorted(self.ks, k)] = g
+        # transport from the structures: Stokes-Einstein on the hydrodynamic radii, contact radii of the clusters,
+        # the capacitance of the dot's polyhedron (kinetics.transport = "stokes"; without geometry: the fixed D)
+        kin = self.P["kinetics"]
+        self.stokes = kin.get("transport", "stokes") == "stokes" and bool(self.geo)
+        self.eta = float(kin.get("viscosity_mPa_s", 0.4))
+        self.c_st = float(kin.get("stokes_c", 6.0))
+        self.Rse = np.full(self.Gp.shape, np.nan)
+        self.Rh = np.full(self.Gp.shape, np.nan)
+        for (m, k), (rs, rh) in self.geo.items():
+            if m in self.Gm:
+                self.Rse[np.searchsorted(self.ms, m), np.searchsorted(self.ks, k)] = rs
+                self.Rh[np.searchsorted(self.ms, m), np.searchsorted(self.ks, k)] = rh
+        self._R1, self._D1 = 0.0, self.D
+        self._capf_cache = {}
+        self._capf = 1.0
         self.m_top = int(self.ms.max())
         # grid nucleation: dots within the grid's sizes take the grid's chemical potential (grid_mu), and the
         # nucleation chain runs on the grid up to its top before the continuum takes over
@@ -452,6 +570,148 @@ class Growth:
         ms = [m for m in self.ms.tolist() if m - 2 in pos]
         return np.array(ms, float), np.array([0.5 * (gt[pos[m]] - gt[pos[m - 2]]) for m in ms])
 
+    def _transport(self, v, sizes):
+        """Contact radii (A) and Stokes-Einstein diffusion coefficients (A^2/s) of the clusters of `sizes`: within the
+        grid the shells weighted by e^(-Omega(m,k)/kT) at the pool, beyond it scaled as m^(1/3) from the grid's top.
+        Also sets the monomer's R_1, D_1 (the complexes of the pool) for the growth of dots."""
+        from .transport import stokes_d
+        vmin = np.nanmin(np.where(np.isfinite(v), v, np.nan), axis=1)
+        w = np.exp(-(v - vmin[:, None]) / self.kt)
+        ok = np.isfinite(self.Rse) & np.isfinite(w)
+        wsum = np.where(ok, w, 0.0).sum(1)
+        rse = np.where(wsum > 0, np.where(ok, w * np.nan_to_num(self.Rse), 0.0).sum(1) / np.maximum(wsum, 1e-300), np.nan)
+        rh = np.where(wsum > 0, np.where(ok, w * np.nan_to_num(self.Rh), 0.0).sum(1) / np.maximum(wsum, 1e-300), np.nan)
+        have = np.flatnonzero(np.isfinite(rse))
+        mg = self.ms[have]
+        R, D = [], []
+        for m in np.asarray(sizes, float):
+            j = have[np.searchsorted(mg, m, side="right") - 1] if m >= mg[0] else have[0]
+            s = (m / self.ms[j]) ** (1.0 / 3.0) if m != self.ms[j] else 1.0
+            R.append(rse[j] * s)
+            D.append(stokes_d(rh[j] * s, self.T, self.eta, self.c_st))
+        if self.ms[have[0]] == 1:
+            self._R1, self._D1 = float(rse[have[0]]), stokes_d(float(rh[have[0]]), self.T, self.eta, self.c_st)
+        return np.array(R), np.array(D)
+
+    def _cap_factor(self, fam):
+        """Capacitance of the dot's Wulff polyhedron over the radius of the sphere of the same volume (1 for a sphere,
+        1.065 for a cube): scale-free, so one walk-on-spheres run per surface-energy ratio (cached to 1 %)."""
+        gam = {f: fam[f]["gamma"] for f in self.F}
+        g0 = max(min(gam.values()), 1e-9)
+        key = tuple(round(gam[f] / g0, 2) for f in self.F)
+        if key not in self._capf_cache:
+            from .transport import capacitance_polyhedron
+            h1 = self.shape.wulff(gam, self.Om)
+            normals, dists = [], []
+            for f in self.F:
+                for nrm in (ZB_NORMALS[f] if f in ZB_NORMALS else []):
+                    normals.append(np.asarray(nrm, float) / np.linalg.norm(nrm))
+                    dists.append(h1[f])
+            c, _se = capacitance_polyhedron(normals, dists, n=20000)
+            self._capf_cache[key] = c / (3.0 * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+        return self._capf_cache[key]
+
+    # -- facet-resolved growth (kinetics.growth_law = "facet") --
+    def facet_mu(self, h, area, fam):
+        """mu_f - g_bulk (eV) of each facet: the variational facet potential Omega_m (dE_s/dh_f) / (dV/dh_f),
+        E_s = sum_g gamma_g A_g(h) (central differences on the polyhedron). On the Wulff shape it is 2 gamma_f
+        Omega_m / h_f; off it a facet that lags behind (large area) has a low potential, one that runs ahead a high one.
+        A hidden facet is probed just inside its support plane (where it would reappear)."""
+        gam = {f: fam[f]["gamma"] for f in self.F}
+
+        def es_vol(hh):
+            a, v, s = self.shape(hh)
+            return sum(gam[g] * a[g] for g in self.F), v, s
+
+        _e0, _v0, sup = es_vol(h)
+        # an exposed facet is probed with the hidden planes lifted clear of the dot: a hidden plane sitting right at
+        # its support would otherwise cut the corners as the facet moves out and inflate its potential
+        lifted = {g: (h[g] if area[g] > 1e-6 else max(h[g], sup[g] + 0.05 * max(h.values()))) for g in self.F}
+        out = {}
+        for f in self.F:
+            if area[f] > 1e-6:
+                d = 0.005 * h[f]
+                hp, hm = dict(lifted), dict(lifted)
+                hp[f] += d
+                hm[f] -= d
+            else:
+                d = 0.25
+                hp, hm = dict(h), dict(h)
+                hp[f] = sup[f]
+                hm[f] = sup[f] - 2 * d
+            ep, vp, _ = es_vol(hp)
+            em, vm, _ = es_vol(hm)
+            out[f] = self.Om * (ep - em) / (vp - vm) if abs(vp - vm) > 1e-12 else 2.0 * gam[f] * self.Om / max(h[f], 1e-6)
+        jn = self.junction(_v0 / self.Om)                  # the same junction term as the dot's mu (size_state)
+        return {f: x + jn for f, x in out.items()}
+    def _facet_rate(self, co, C, C_M, mu0, fam, th):
+        """dm/dt and v_f of one dot at monomer level C (see _facet_setup)."""
+        return self._facet_setup(co, C_M, mu0, fam, th)(C)
+
+    def _facet_setup(self, co, C_M, mu0, fam, th):
+        """A function C -> (dm/dt (units/s), facet velocities v_f (A/s)) for one dot, with its geometry, facet
+        potentials and Gibbs-Thomson levels set up once (they do not depend on C). Every facet grows from
+        the monomer level C_s at the dot's surface, all fed by one diffusion field, sum_f A_f v_f / Omega_m =
+        4 pi (D_1 + D_dot)(C_dot + R_1) n (C - C_s), solved for C_s:
+          fast facets (a lone unit sticks):  v_f = Omega_m n k_f (1 - theta_f)(C_s - C_eq,f)
+          island facets (a new layer needs a 2D nucleus):  v_f = d_f min(J_f A_f, (J_f v_step^2)^(1/3)),
+             J_f = (kT/h) rho_f (1 - theta_f) e^(-dG*_f/kT),  dG*_f = beta_f^2 / (4 kT ln S_f),  S_f = C_s / C_eq,f
+             (beta_f: the step term of the island ladder dG(N) = g_inf N + beta_f sqrt(N)); dissolving: the fast law at
+             the collision rate
+        with C_eq,f = C_M e^((g_bulk + 2 gamma_f Omega_m / h_f - mu)/kT) the facet's own Gibbs-Thomson level."""
+        n = 6.02214076e-4
+        FK = self.P["kinetics"]["facets"]
+        h, area = co["h"], co["area"]
+        r = (3.0 * co["m"] * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+        if self.stokes:
+            from .transport import KB
+            cap = self._capf * r
+            d_dot = KB * self.T / (self.c_st * math.pi * self.eta * 1e-3 * cap * 1e-10) * 1e20
+            g_diff = 4.0 * math.pi * (self._D1 + d_dot) * (cap + self._R1) * n
+        else:
+            g_diff = 4.0 * math.pi * self.D * r * n
+        kt = self.kt
+        dmu = self.facet_mu(h, area, fam)
+        ceq = {f: C_M * math.exp(min((self.gb + dmu[f] - mu0) / kt, 700.0)) for f in self.F}
+        m_cx = (112.414 * 2 + 78.971 + 2 * 35.453) * 1.66053907e-27
+        k_coll = math.sqrt(1.380649e-23 * self.T / (2 * math.pi * m_cx)) * 1e10           # A/s
+
+        def v_of(cs):
+            v = {}
+            for f in self.F:
+                p = FK.get(f, {})
+                free = max(1.0 - th[f], 1e-6)
+                drive = cs - ceq[f]
+                beta = p.get("island_beta_eV")
+                if beta is None or beta <= 0 or drive <= 0:
+                    k = float(p.get("k_f", k_coll)) if drive > 0 else k_coll
+                    v[f] = self.Om * n * min(k, k_coll) * free * drive
+                else:
+                    d_f = self.Om / self.F[f]["site_area"]
+                    lnS = math.log(cs / ceq[f])
+                    dG = beta ** 2 / (4.0 * kt * lnS)
+                    J = (kt / 4.135667696e-15) / self.F[f]["site_area"] * free * math.exp(-min(dG / kt, 700.0))
+                    v_step = self.Om * n * k_coll * free * drive
+                    v[f] = d_f * min(J * area[f], (J * v_step ** 2) ** (1.0 / 3.0)) if area[f] > 0 else 0.0
+                if area[f] <= 1e-6:
+                    v[f] = max(v[f], 0.0)                 # a hidden facet does not dissolve: it can only reappear
+            return v
+
+        ce = [ceq[f] for f in self.F if area[f] > 1e-6] or list(ceq.values())
+
+        def rate(C):
+            def mismatch(lncs):
+                cs = math.exp(lncs)
+                v = v_of(cs)
+                return sum(area[f] * v[f] for f in self.F) / self.Om - g_diff * (C - cs)
+
+            lo, hi = math.log(max(min(ce), 1e-30) * 1e-6), math.log(max(C, max(ce)) * 1.0001)
+            flo, fhi = mismatch(lo), mismatch(hi)
+            lncs = brentq(mismatch, lo, hi, xtol=1e-10) if flo < 0 < fhi else (lo if flo >= 0 else hi)
+            v = v_of(math.exp(lncs))
+            return sum(area[f] * v[f] for f in self.F) / self.Om, v
+        return rate
+
     def nucleation(self, mu_ma, mu_mx):
         """Barrier, flux J (nucleation_flux) and the nuclei: on the grid's Omega(m) continued past m0 by the continuum
         (nucleation.omega = "grid", nuclei of m0 units with the shell k*(m0), or larger when the critical nucleus lies
@@ -466,7 +726,7 @@ class Growth:
         vmin = v.min(axis=1)
         om = vmin - self.kt * np.log(np.exp(-(v - vmin[:, None]) / self.kt).sum(axis=1))
         if self.P["nucleation"].get("omega", "grid") == "continuum":
-            return self._nucleation_continuum(mu_ma, float(om[0]))
+            return self._nucleation_continuum(mu_ma, float(om[0]), v)
         per_m = dict(zip(self.ms.tolist(), om.tolist()))
         ob, mb = om[self.below], self.ms[self.below]
         # past the grid part (m0, or the grid's top when dots there take the grid's mu) the continuum carries on,
@@ -475,32 +735,54 @@ class Growth:
         # maximum (as in the classical mode)
         sigma, dmu = getattr(self, "_sigma", None), mu_ma - self.gb
         m0, m_e = int(self.m0), int(mb[-1])
+        # junction: where the dots take the grid's mu up to its top, the continuum's (2/3) sigma m^(-1/3) is joined to
+        # the grid's two-step mu at m_top by a term delta m_top / m that dies away with size (growth uses the same,
+        # self.junction), so no step in mu at the switch traps dots there
+        self._delta, self._m_join = 0.0, m_e
+        if sigma is not None and self.grid_mu_on:
+            mg, mug = self.grid_mu(mu_mx)
+            if len(mg) and mg[-1] == m_e:
+                self._delta = float(mug[-1] - self.gb - (2.0 / 3.0) * sigma * m_e ** (-1.0 / 3.0))
         if sigma is not None:
             if dmu <= 0 or (2.0 * sigma / (3.0 * dmu)) ** 3 > self.M_CLASSICAL:
                 self._m_birth = m0
                 return 0.0, float("inf"), None, per_m
-            top = int(max(m_e, 2.0 * (2.0 * sigma / (3.0 * dmu)) ** 3, m_e + 10)) + 2
+            top = int(max(m_e, 2.0 * (2.0 * sigma / (3.0 * dmu)) ** 3, 3 * m_e, m_e + 10)) + 2
             mt = np.arange(m_e + 1, top + 1)
-            ob = np.concatenate([ob, ob[-1] - (mt - m_e) * dmu + sigma * (mt ** (2.0 / 3.0) - m_e ** (2.0 / 3.0))])
+            ob = np.concatenate([ob, ob[-1] - (mt - m_e) * dmu + sigma * (mt ** (2.0 / 3.0) - m_e ** (2.0 / 3.0))
+                                 + self._delta * m_e * np.log(mt / m_e)])
             mb = np.concatenate([mb, mt])
         # the barrier is the largest climb from a preceding minimum: a well of stable clusters in the grid (below the
         # monomers) has to be climbed out of, toward the continuum's maximum
         climb = ob - np.minimum.accumulate(ob)
         i_max = int(np.argmax(climb))
         barrier = max(0.0, float(climb[i_max]))
-        after = np.nonzero((mb > mb[i_max]) & (ob <= ob[i_max] - self.kt))[0]
-        m_b = max(m0, int(mb[after[0]]) if len(after) else m0)
+        # nuclei are born past the last hump: the first size beyond the barrier, kT below the highest Omega before
+        # it, from which Omega never climbs again (within kT/4: the grid's even-odd ripple), and past the grid's top
+        # when the dots there take the grid's mu (no dot is left in a shallow well of the grid; the Becker-Doring
+        # chain runs through all of it up to the birth size)
+        m_min = (m_e + 1) if (self.grid_mu_on and sigma is not None) else m0
+        run_max = np.maximum.accumulate(ob)
+        later_max = np.concatenate([np.maximum.accumulate(ob[::-1])[::-1][1:], [-np.inf]])
+        ok = np.nonzero((np.arange(len(ob)) > i_max) & (mb >= m_min) & (ob <= run_max - self.kt)
+                        & (later_max <= ob + 0.25 * self.kt))[0]
+        m_b = int(mb[ok[0]]) if len(ok) else int(max(m_min, mb[-1]))
         self._m_birth = m_b
         if m_b in self.Gm and (m_b == m0 or self.grid_mu_on):                # a grid size: the grid's best shell
             k_star = int(self.ks[int(np.argmin(v[np.searchsorted(self.ms, m_b)]))])
         else:
             k_star = None                                                   # continuum coverage (k_of), set by run
-        J = nucleation_flux(ob, mb, m_b, self.kt, self.Om, self.P, barrier)
+        if self.stokes:
+            radii, diff = self._transport(v, mb)
+            J = nucleation_flux(ob, mb, m_b, self.kt, self.Om, self.P, barrier, radii=radii, diff=diff,
+                                act=self.act_ma)
+        else:
+            J = nucleation_flux(ob, mb, m_b, self.kt, self.Om, self.P, barrier, act=self.act_ma)
         return J, barrier, k_star, per_m
 
     M_CLASSICAL = 3000                                  # a critical size beyond this nucleates nothing (dG* > 30 eV)
 
-    def _nucleation_continuum(self, mu_ma, om1):
+    def _nucleation_continuum(self, mu_ma, om1, v=None):
         sigma = getattr(self, "_sigma", None)
         dmu = mu_ma - self.gb
         if sigma is None or dmu <= 0:
@@ -518,7 +800,12 @@ class Growth:
         after = np.nonzero((ms > ms[i_star]) & (dg <= dg[i_star] - self.kt))[0]
         m_b = int(ms[after[0]]) if len(after) else int(ms[i_star]) + 1
         self._m_birth = max(2, m_b)
-        J = nucleation_flux(om1 + dg, ms, self._m_birth, self.kt, self.Om, self.P, barrier)
+        if self.stokes and v is not None:
+            radii, diff = self._transport(v, ms)
+            J = nucleation_flux(om1 + dg, ms, self._m_birth, self.kt, self.Om, self.P, barrier, radii=radii, diff=diff,
+                                act=self.act_ma)
+        else:
+            J = nucleation_flux(om1 + dg, ms, self._m_birth, self.kt, self.Om, self.P, barrier, act=self.act_ma)
         return J, barrier, None, {}
 
     def dot(self, h, fam):
@@ -538,9 +825,45 @@ class Growth:
             a = sum(area.values())
             A[i] = a
             r[i] = (3.0 * co["m"] * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
-            dmu_dot[i] = (2.0 / 3.0) * sum(fam[f]["gamma"] * area[f] for f in self.F) / max(co["m"], 1e-12)
+            dmu_dot[i] = (2.0 / 3.0) * sum(fam[f]["gamma"] * area[f] for f in self.F) / max(co["m"], 1e-12) \
+                + self.junction(co["m"])
             th_bar[i] = sum(th[f] * area[f] for f in self.F) / a if a > 0 else 0.0
         return A, r, dmu_dot, th_bar
+
+    def _merge(self, cohorts: list):
+        """Merge neighbouring cohorts (in ln m) that are within material.merge_tol (1 %) of each other, and the
+        closest ones while there are more than material.max_cohorts (64): N adds up, m and k are the number-weighted
+        means (amounts conserved exactly), h the number-weighted mean scaled to the merged volume."""
+        tol = float(self.P["material"].get("merge_tol", 0.01))
+        cap = int(self.P["material"].get("max_cohorts", 64))
+        # only dots well past the nucleus (m > 4 m_top): near the birth size, whether a cohort grows or dissolves
+        # hangs on small differences in m, and merging there changes the outcome
+        m_min = 4.0 * max(getattr(self, "m_top", 0), self._m_birth if hasattr(self, "_m_birth") else 0)
+        while True:
+            big = sorted((co for co in cohorts if co["m"] > m_min), key=lambda co: co["m"])
+            if len(big) < 2:
+                break
+            gaps = [math.log(big[i + 1]["m"] / big[i]["m"]) for i in range(len(big) - 1)]
+            i = int(np.argmin(gaps))
+            if gaps[i] > tol and len(cohorts) <= cap:
+                break
+            a, b = big[i], big[i + 1]
+            cohorts.remove(b)
+            n = a["N"] + b["N"]
+            m = (a["N"] * a["m"] + b["N"] * b["m"]) / n
+            h = {f: (a["N"] * a["h"][f] + b["N"] * b["h"][f]) / n for f in self.F}
+            _area, vol, _sup = self.shape(h)
+            sc = (m * self.Om / vol) ** (1.0 / 3.0)
+            h = {f: x * sc for f, x in h.items()}
+            area = self.shape(h)[0]
+            a.update(N=n, m=m, k=(a["N"] * a["k"] + b["N"] * b["k"]) / n, h=h, area=area,
+                     t_b=min(a["t_b"], b["t_b"]))
+
+    def junction(self, m: float) -> float:
+        """The continuum's mu past the grid's top joined to the grid's (nucleation): delta m_top / m (eV), 0 within
+        the grid or without grid mu."""
+        d, mj = getattr(self, "_delta", 0.0), getattr(self, "_m_join", None)
+        return d * mj / m if (d and mj and m > mj) else 0.0
 
     def size_rates(self, A, r, c_eq, th_bar, C):
         """dm/dt (CdSe units per second per dot) at monomer level C (M): diffusion to the dot (equivalent sphere) in
@@ -553,12 +876,95 @@ class Growth:
         return self.conductance(A, r, th_bar) * (C - c_eq)
 
     def conductance(self, A, r, th_bar):
-        """dm/dt per M of driving concentration, A n / (A / (4 pi D r) + 1 / k_eff) (size_rates)."""
-        res = A / (4.0 * math.pi * self.D * np.maximum(r, 1e-6))                       # s/A
+        """dm/dt per M of driving concentration, A n / (A / (4 pi D r) + 1 / k_eff) (size_rates). With the atomistic
+        transport (self.stokes) the sphere becomes the dot's polyhedron: 4 pi (D_1 + D_dot)(C_dot + R_1), C_dot its
+        capacitance (self._capf x the equal-volume radius), D_dot by Stokes-Einstein on C_dot, R_1 and D_1 the
+        monomer complexes'."""
+        res_d, res_r = self.resistances(A, r, th_bar)
+        return A * 6.02214076e-4 / (res_d + res_r)
+
+    def resistances(self, A, r, th_bar):
+        """The two resistances in series of the size law (s/A): diffusion to the dot, A / (4 pi D r) (or the
+        polyhedron's 4 pi (D_1 + D_dot)(C_dot + R_1)), and the surface reaction 1 / (k_r (1 - theta_bar))."""
+        r = np.maximum(r, 1e-6)
+        if self.stokes:
+            from .transport import KB
+            cap = self._capf * r
+            d_dot = KB * self.T / (self.c_st * math.pi * self.eta * 1e-3 * cap * 1e-10) * 1e20     # A^2/s
+            res_d = A / (4.0 * math.pi * (self._D1 + d_dot) * (cap + self._R1))
+        else:
+            res_d = A / (4.0 * math.pi * self.D * r)                                     # s/A
         k_r = self.P["kinetics"].get("k_r")                                             # A/s
-        if k_r is not None:
-            res = res + 1.0 / (float(k_r) * np.maximum(1.0 - th_bar, 1e-6))
-        return A * 6.02214076e-4 / res
+        res_r = 1.0 / (float(k_r) * np.maximum(1.0 - th_bar, 1e-6)) if k_r is not None else 0.0 * res_d
+        return res_d, res_r
+
+    # -- facet shape within the size law (kinetics.growth_law = "shape") --
+    def shape_speeds(self, co, dmu_s, fam, th):
+        """Relative speeds of the facets of one dot (the size law sets how much it grows, these only how the growth
+        is shared): v_f = rho_f k_f (1 - theta_f) [1 - e^(-(mu_s - mu_f)/kT)] P_f, with mu_s - g_bulk = dmu_s the
+        monomer's potential at the dot's surface, mu_f the variational facet potential (facet_mu), k_f the facet's
+        incorporation rate (kinetics.facets, default the same for every facet) and P_f the layer-nucleation factor
+        e^(-dG*_f/kT), dG*_f = dG(min(n_face, N*_f)), dG(n) = beta_f sqrt(n) - n kT ln S_f, N*_f = (beta_f /
+        (2 kT ln S_f))^2: the critical island, or the whole face when it is smaller (continuous in the face's size)."""
+        FK = self.P["kinetics"].get("facets") or {}
+        dmu = self.facet_mu(co["h"], co["area"], fam)
+        v = {}
+        for f in self.F:
+            p = FK.get(f, {})
+            drive = (dmu_s - dmu[f]) / self.kt
+            if drive <= 0:
+                v[f] = 0.0
+                continue
+            v[f] = float(p.get("k_f", 1.0)) * max(1.0 - th[f], 1e-6) * -math.expm1(-drive) / self.F[f]["site_area"]
+            beta = p.get("island_beta_eV")
+            if beta:
+                beta *= float(self.P["kinetics"].get("beta_scale", 1.0))   # calibration against experiments
+                # a new layer climbs dG(n) = beta sqrt(n) - n kT ln S_f up to the critical island N* or, on a smaller
+                # face, up to the face's own n units (a hidden facet: one unit); barrier dG(min(n_face, N*)) >= 0
+                n_face = max(co["area"][f] / (len(ZB_NORMALS.get(f, [1])) * self.F[f]["site_area"]), 1.0)
+                n = min(n_face, (beta / (2.0 * self.kt * drive)) ** 2)
+                barrier = max(beta * math.sqrt(n) - n * self.kt * drive, 0.0)
+                v[f] *= math.exp(-min(barrier / self.kt, 700.0))
+        return v
+
+    def shape_step(self, co, m_new, v):
+        """Facet distances of a dot grown to m_new units, each facet advanced in proportion to v_f (shape_speeds):
+        h_f + s v_f / max(v) with s set by the volume; a dissolving dot, or one whose facets all stand still, keeps
+        its shape. A hidden facet stays at most 1 A outside its support plane."""
+        h = co["h"]
+        exposed = [f for f in self.F if co["area"][f] > 1e-6]
+        vm = max((v[f] for f in exposed), default=0.0)        # only exposed facets add volume
+
+        def keep_shape():
+            s = (m_new / co["m"]) ** (1.0 / 3.0)
+            hn = {f: h[f] * s for f in self.F}
+            return hn, self.shape(hn)[0]
+
+        if m_new <= co["m"] or vm <= 0:
+            return keep_shape()
+        # relative to the fastest exposed facet; a hidden one faster than 10x that stays hidden anyway (a plane outruns
+        # its support at most sqrt(3) times faster), and the cap keeps the polyhedron finite
+        u = {f: min(v[f] / vm, 10.0) for f in self.F}
+        target = m_new * self.Om
+
+        # Newton on the volume: dV/ds = sum_f A_f u_f, with the areas the polyhedron returns anyway (2-3 evaluations)
+        area, vol, support = self.shape(h)
+        s = 0.0
+        for _ in range(30):
+            slope = sum(area[f] * u[f] for f in self.F)
+            if slope <= 0:
+                return keep_shape()
+            s_new = s + (target - vol) / slope
+            if s_new < 0 or s_new > 10.0 * max(h.values()):
+                return keep_shape()
+            s = s_new
+            hn = {f: h[f] + s * u[f] for f in self.F}
+            area, vol, support = self.shape(hn)
+            if abs(vol - target) <= 1e-10 * target:
+                break
+        else:
+            return keep_shape()
+        return {f: min(hn[f], support[f] + 1.0) for f in self.F}, area
 
     def _stop_at_equilibrium(self, m, m_new, dmu_pool, mg, mug, sigma):
         """A dot moving from m to m_new in one step stops where its own mu_dot meets the pool's mu (dmu_pool =
@@ -603,6 +1009,11 @@ class Growth:
         pending = pending_m = pending_k = 0.0           # this interval's nuclei (M), the MA and MX_q they took (M)
         th_dots = None                                  # Z-type coverage of the dots' facets per family
         m_dis = self.P["material"]["m_dissolve"]
+        if self.grid_mu_on and self.P["nucleation"].get("omega", "grid") == "grid":
+            # nuclei are born past the grid's top (nucleation); a dot that shrinks back into the grid's sizes goes back
+            # to the pool, where the Becker-Doring chain accounts for clusters, instead of sitting in a shallow well
+            m_dis = max(m_dis, self.m_top + 1)
+        grid_dots = m_dis <= getattr(self, "m_top", 0)  # dots may live at grid sizes (then they stop at the grid's kinks)
         if seed:
             _pl, fam = self.chem(C_M, C_X)
             gam = {f: fam[f]["gamma"] for f in self.F}
@@ -611,9 +1022,24 @@ class Growth:
                 m_, k_, area, _support = self.dot(h, fam)
                 cohorts.append({"t_b": 0.0, "N": float(sd["N"]), "h": h, "m": m_, "k": k_, "area": area})
         seeded = {"m": sum(co["N"] * co["m"] for co in cohorts), "k": sum(co["N"] * co["k"] for co in cohorts)}
+        inj = self.injection()
+        V0 = inj["V0"] if inj else 1.0                  # L (concentrations are per litre of the flask at time t)
+        V, n_inj, n_conv = V0, 0.0, 0.0                 # flask volume, moles injected, moles of precursor converted
+        t_last_birth = 0.0
+        birth_frac = float(self.P["material"].get("birth_interval", 0.05))   # new cohort every 5 % of t
+        birth_share = float(self.P["material"].get("birth_share", 0.05))     # or at 5 % of the dots present
+        t_breaks = self.temperature_breaks() + ([inj["t0"], inj["t0"] + inj["duration"]] if inj else [])
         while outs:
+            T_now = self.temperature_at(t)
+            if abs(T_now - self.T) > 1.0 or (T_now != self.T and any(abs(t - b) < 1e-12 for b in t_breaks)):
+                self.set_temperature(T_now)                 # the temperature program: free energies, rates at T
+                self._arrays()
             pl, fam = self.chem(C_M, C_X)
             mu0, mu_mx = pl["mu_MA"], pl["mu_MX"]
+            if self.stokes:
+                self._capf = self._cap_factor(fam)                                   # the dot's shape factor
+                if cohorts and not self._R1:
+                    self.nucleation(mu0, mu_mx)                                       # sets the monomer's R_1, D_1
             if th_dots is None:
                 th_dots = {f: fam[f]["theta"] for f in self.F}
             Q = self.k_conv * P_ * C_X
@@ -636,6 +1062,17 @@ class Growth:
                     dmu_dm[inside] = slope
             c_eq = np.exp(np.clip(math.log(C_M) + (self.gb + dmu_dot - mu0) / self.kt, -700.0, 5.0))
             rate0 = self.size_rates(Ac, rc, c_eq, th_bar, C_M) if len(cohorts) else np.zeros(0)
+            # facet-resolved dots (beyond the grid's sizes): dm/dt from the facet law, linear in C for the pool solve
+            facet_on = self.P["kinetics"].get("growth_law", "size") == "facet" and bool(self.P["kinetics"].get("facets"))
+            fmask = (mc > self.m_top + 1) if (facet_on and len(cohorts)) else np.zeros(len(cohorts), bool)
+            shape_on = self.P["kinetics"].get("growth_law", "size") == "shape"
+            smask = (mc > self.m_top + 1) if (shape_on and len(cohorts)) else np.zeros(len(cohorts), bool)
+            if shape_on and len(cohorts):
+                res_d, res_r = self.resistances(Ac, rc, th_bar)
+            fr, fv = {}, {}                                    # per facet dot: C -> (dm/dt, v_f), set up once a step
+            for i in np.flatnonzero(fmask):
+                fr[i] = self._facet_setup(cohorts[i], C_M, mu0, fam, th_dots)
+                rate0[i], fv[i] = fr[i](C_M)
             vmax = float(np.abs(rate0 / np.maximum(mc, 1e-12)).max(initial=0.0))           # fastest relative change
             dt = outs[0] - t
             gam_now = {f: fam[f]["gamma"] for f in self.F}
@@ -645,7 +1082,7 @@ class Growth:
             sigma_now = sum(gam_now[f] * area1[f] for f in self.F)                    # continuum: (2/3) sigma m^(-1/3)
             with np.errstate(over="ignore", divide="ignore"):
                 g_, d_ = rate0 > 0, rate0 < 0
-                if mg is not None:
+                if mg is not None and grid_dots:
                     # a grid-size dot that meets its own equilibrium within the allowed change stops there exactly
                     # (_stop_at_equilibrium): it does not limit the step
                     for i in np.nonzero(mc <= self.m_top + 1)[0]:
@@ -665,16 +1102,53 @@ class Growth:
                 # x' = x (1 + s dt) / (1 + N g dt), stable whenever the physics is (N g > s), and the 2 % / 20 % limits
                 # bound how far ripening moves in one step (checked: LSW and Wagner rate constants and distributions)
                 s_fb = np.minimum(-self.conductance(Ac, rc, th_bar) * c_eq * dmu_dm / self.kt, 0.0)
+                s_fb[fmask] = 0.0
+                for i, v0 in fv.items():                                    # a facet moves by < 2 % of its h a step
+                    hs = [cohorts[i]["h"][f] / abs(v0[f]) for f in self.F if cohorts[i]["area"][f] > 0 and v0[f]]
+                    if hs:
+                        dt = min(dt, 0.02 * min(hs))
             if Q > 0:
-                dt = min(dt, 0.02 * P_ / Q, 0.02 * C_X / Q)                               # precursor and MX_q < 2 %
+                # MX_q < 2 %; the precursor itself decays exactly over the step (below), so a fast conversion of a
+                # slowly injected precursor does not limit the step
+                dt = min(dt, 0.02 * C_X / Q)
+            dt_rel = self.P["material"].get("dt_rel_max", 0.01)
+            if dt_rel and t > 0:
+                dt = min(dt, float(dt_rel) * t)             # resolution in log time (material.dt_rel_max)
+            nxt = [b for b in t_breaks if b > t + 1e-12]
+            if nxt:
+                dt = min(dt, nxt[0] - t)                    # land on the temperature and injection breakpoints
+            dTdt = abs(self.temperature_at(t + 1e-6) - self.temperature_at(t)) / 1e-6
+            if dTdt > 0:
+                dt = min(dt, 1.0 / dTdt)                    # a ramp moves T by < 1 K a step
+            injecting = bool(inj) and inj["t0"] - 1e-12 <= t < inj["t0"] + inj["duration"] - 1e-12
+            if injecting:
+                dt = min(dt, 0.02 * V / inj["rate"])        # the volume grows by < 2 % a step
+            q_inst = Q
             while True:
+                # conversion over the step at the step's MX_q: P -> P e^(-k C_X dt), Q the mean rate
+                kx = self.k_conv * C_X
+                Q = P_ * -math.expm1(-kx * dt) / dt if (q_inst > 0 and dt > 0) else 0.0
+
                 def balance(lnC):
                     mu = mu0 + self.kt * (lnC - math.log(C_M))
                     J_, *_ = self.nucleation(mu, mu_mx)
-                    U = float((Nc * self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt)).sum()) if len(cohorts) else 0.0
+                    if len(cohorts):
+                        rr = self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt)
+                        for i, f_ in fr.items():
+                            rr[i] = f_(math.exp(lnC))[0]
+                        U = float((Nc * rr).sum())
+                    else:
+                        U = 0.0
                     return math.exp(lnC) - C_M - dt * (Q - self._m_birth * J_ - U)
                 lo, hi = math.log(1e-30), math.log(C_M + Q * dt + 1e-12)
                 b_lo, b_hi = balance(lo), balance(hi)
+                # dissolving dots can push C above C_M + Q dt: widen the bracket (not for facet-law dots, whose capped
+                # inward moves do not follow the solve's rates: their steps rely on the old bracket's limit)
+                for _ in range(0 if fr else 200):
+                    if b_hi >= 0:
+                        break
+                    hi += math.log(2.0)
+                    b_hi = balance(hi)
                 lnC = brentq(balance, lo, hi, xtol=1e-12, rtol=1e-12) if b_lo < 0 < b_hi else (hi if b_hi < 0 else lo)
                 mu = mu0 + self.kt * (lnC - math.log(C_M))
                 J, barrier, k_star, _per_m = self.nucleation(mu, mu_mx)
@@ -685,17 +1159,44 @@ class Growth:
                 # Z-type coverage on the dots moves toward the Langmuir value of the free MX_q, but only as far as the
                 # MX_q left in solution allows (the dots' surfaces are a reservoir of MX_q too)
                 lam = 1.0
+                vs = {}                                                    # facet velocities at the solved C
                 while True:
                     th_eff = {f: th_dots[f] + lam * (fam[f]["theta"] - th_dots[f]) for f in self.F}
                     k_area = {f: th_eff[f] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"] for f in self.F}
                     new, up_m, up_k = [], 0.0, 0.0
                     for i, co in enumerate(cohorts):
+                        if fmask[i]:                                       # facet law: each facet moves by v_f dt
+                            if i not in vs:
+                                vs[i] = fr[i](math.exp(lnC))[1]
+                            # hidden facets move too: a fast one stays hidden, an island one (no area, no nuclei)
+                            # stands still and comes back as the dot grows past it
+                            # (the step limit used the velocities at the old C: at the solved C a facet may dissolve
+                            # faster, so the inward move is capped at 10 % of h; m and the uptake follow from V(h))
+                            h_new = {f: co["h"][f] + max(vs[i][f] * dt, -0.1 * co["h"][f]) for f in self.F}
+                            area, vol, support = self.shape(h_new)
+                            h_new = {f: min(h_new[f], support[f] + 1.0) for f in self.F}
+                            m_new = vol / self.Om
+                            k_new = sum(k_area[f] * area[f] for f in self.F)
+                            up_m += co["N"] * (m_new - co["m"])
+                            up_k += co["N"] * (k_new - co["k"])
+                            new.append({"h": h_new, "m": m_new, "k": k_new, "area": area})
+                            continue
                         m_new = max(co["m"] + rate[i] * dt, 1e-6)
-                        if mg is not None and min(co["m"], m_new) <= self.m_top + 1:
+                        if mg is not None and grid_dots and min(co["m"], m_new) <= self.m_top + 1:
                             m_new = self._stop_at_equilibrium(co["m"], m_new, mu - self.gb, mg, mug, sigma_now)
-                        s = m_new ** (1.0 / 3.0)                                       # shape: Wulff at gamma(C)
-                        h_new = {f: h1[f] * s for f in self.F}
-                        area = {f: area1[f] * s * s for f in self.F}
+                        if smask[i] and m_new > self.m_top + 1:
+                            # shape rule: the size law's growth shared among the facets by their relative speeds,
+                            # at the monomer level of the dot's surface (diffusion and reaction resistances in series)
+                            if i not in vs:
+                                C_now = math.exp(lnC)
+                                c_s = C_now - (C_now - c_eq[i]) * res_d[i] / (res_d[i] + res_r[i])
+                                dmu_s = mu0 - self.gb + self.kt * math.log(max(c_s, 1e-300) / C_M)
+                                vs[i] = self.shape_speeds(co, dmu_s, fam, th_dots)
+                            h_new, area = self.shape_step(co, m_new, vs[i])
+                        else:
+                            s = m_new ** (1.0 / 3.0)                                   # shape: Wulff at gamma(C)
+                            h_new = {f: h1[f] * s for f in self.F}
+                            area = {f: area1[f] * s * s for f in self.F}
                         k_new = sum(k_area[f] * area[f] for f in self.F)               # as self.dot at theta_eff
                         up_m += co["N"] * (m_new - co["m"])
                         up_k += co["N"] * (k_new - co["k"])
@@ -720,10 +1221,27 @@ class Growth:
                 C_M += co["N"] * co["m"]
                 C_X += co["N"] * co["k"]
                 cohorts.remove(co)
+            n_conv += Q * dt * V
+            if injecting:
+                # syringe: the flask's volume grows by rate dt; everything already there is diluted by V / V_new and
+                # the precursor gains c_syringe rate dt moles (amounts conserved exactly)
+                dV = inj["rate"] * dt
+                f_d = V / (V + dV)
+                P_, C_M, C_X = P_ * f_d + inj["c"] * dV / (V + dV), C_M * f_d, C_X * f_d
+                pending, pending_m, pending_k = pending * f_d, pending_m * f_d, pending_k * f_d
+                for co in cohorts:
+                    co["N"] *= f_d
+                n_inj += inj["c"] * dV
+                V += dV
             self.steps.append((t, dt, vmax, Q, C_M, C_X_new, J))
             t += dt
-            if t >= outs[0] - 1e-12:
-                if pending > self.P["material"].get("N_min", 1e-15):                   # this interval's nuclei
+            at_out = t >= outs[0] - 1e-12
+            n_dots = sum(co["N"] for co in cohorts)
+            if at_out or t - t_last_birth >= birth_frac * t or pending >= birth_share * (n_dots + pending):
+                # this interval's nuclei become a cohort at every output, every birth_interval of t, and whenever they
+                # reach birth_share of all dots (a burst is resolved into many cohorts; results do not depend on n_out)
+                if pending > self.P["material"].get("N_min", 1e-15):
+                    t_last_birth = t
                     m_new = pending_m / pending                          # the interval's mean birth size
                     h0 = self.shape.wulff({f: fam[f]["gamma"] for f in self.F}, m_new * self.Om)
                     # the nuclei took m0 MA and k*(t) MX_q each from the pool; a Wulff dot of that volume may hold a
@@ -757,6 +1275,8 @@ class Growth:
                     cohorts.append({"t_b": t, "N": pending, "h": {f: min(h0[f], support[f]) for f in self.F},
                                     "m": m_, "k": k_, "area": area})
                     pending = pending_m = pending_k = 0.0
+                    self._merge(cohorts)
+            if at_out:
                 N = sum(co["N"] for co in cohorts)
                 mm = np.array([co["m"] for co in cohorts]) if cohorts else np.zeros(0)
                 w = np.array([co["N"] for co in cohorts]) if cohorts else np.zeros(0)
@@ -764,6 +1284,7 @@ class Growth:
                 std = float(np.sqrt((w * (mm - mean) ** 2).sum() / N)) if N > 0 else 0.0
                 row = {"t": t, "P": P_, "C_M": C_M, "C_X": C_X, "c_MX_free": pl["c_MX_free"], "mu_MA": mu,
                        "mu_MX": mu_mx, "S_bulk": math.exp(min((mu - self.gb) / self.kt, 700)),
+                       "T": self.T, "V_L": V, "n_inj_mol": n_inj, "n_conv_mol": n_conv,
                        "barrier": barrier, "J": J, "J0": J * math.exp(min(barrier / self.kt, 700)), "k_star": k_star,
                        "m_birth": m_b,
                        "N_dots": N, "m_mean": mean, "m_std": std,
@@ -777,19 +1298,25 @@ class Growth:
                         f"J = {J:.3g} M/s  dots {N:.3g} M  <m> = {mean:.1f}")
                 outs.pop(0)
         return {"params": self.P, "match_m0": self.match, "handover": self.handover, "m0": self.m0, "series": series,
-                "snapshots": snaps, "seeded": seeded}
+                "snapshots": snaps, "seeded": seeded, "V0_L": V0}
 
 
 def conservation(res) -> dict:
-    """Total MA (precursor + pool + dots) and total MX_q (left + converted + dots) at each output: both constant."""
+    """Total MA (precursor + pool + dots, less what the syringe added) and total MX_q (left + converted + dots) at
+    each output, in moles per litre of the starting flask: both constant (0 here)."""
     c = res["params"]["conditions"]
     s0 = res.get("seeded") or {"m": 0.0, "k": 0.0}                                       # dots present at t = 0
+    V0 = res.get("V0_L", 1.0)
     out = []
     for row, snap in zip(res["series"], res["snapshots"]):
         dots_m = sum(co["N"] * co["m"] for co in snap["cohorts"])
         dots_k = sum(co["N"] * co["k"] for co in snap["cohorts"])
-        out.append({"t": row["t"], "MA": row["P"] + row["C_M"] + dots_m - c["c_P0"] - c.get("c_M0", 1e-12) - s0["m"],
-                    "MX": row["C_X"] + (c["c_P0"] - row["P"]) + dots_k - c["c_MX0"] - s0["k"]})
+        V = row.get("V_L", V0)
+        n_conv = row.get("n_conv_mol", (c["c_P0"] - row["P"]) * V0)
+        out.append({"t": row["t"],
+                    "MA": (V * (row["P"] + row["C_M"] + dots_m) - row.get("n_inj_mol", 0.0)) / V0
+                    - c["c_P0"] - c.get("c_M0", 1e-12) - s0["m"],
+                    "MX": (V * (row["C_X"] + dots_k) + n_conv) / V0 - c["c_MX0"] - s0["k"]})
     return out
 
 

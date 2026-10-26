@@ -60,6 +60,11 @@ main { display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(0, 0.75
 .card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
 .card h3 { font-size: 12px; color: var(--text-secondary); margin: 14px 0 8px; font-weight: 600; border-top: 1px solid var(--border); padding-top: 12px; }
 .ctl { margin-bottom: 13px; }
+.tog { display: flex; align-items: center; gap: 7px; cursor: pointer; color: var(--text-secondary); }
+.tog input { margin: 0; }
+.ctl.off { opacity: 0.45; }
+.lawpick { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--text-secondary); align-items: center; }
+.lawpick label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
 .ctl label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
 .ctl .num { display: inline-flex; align-items: center; gap: 4px; }
 .ctl .num i { font-style: normal; font-size: 11.5px; color: var(--text-muted); min-width: 3.2em; }
@@ -137,6 +142,13 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
     <section class="card sticky">
       <h2>Conditions</h2>
       <div id="controls"></div>
+      <h3><label class="tog"><input type="checkbox" id="inject"> Inject the Se precursor with a syringe</label></h3>
+      <div id="injControls" hidden></div>
+      <div class="hint" id="injInfo"></div>
+      <h3><label class="tog"><input type="checkbox" id="twoT"> Grow at another temperature</label></h3>
+      <div id="tprogControls" hidden></div>
+      <h3>Calibration (tune to target experiments)</h3>
+      <div id="calControls"></div>
       <h3>Look at Ω at</h3>
       <div id="tcontrol"></div>
       <div class="status" id="liveStatus"></div>
@@ -159,26 +171,33 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
           <div class="cap">Click a cell for that cluster [CdSe]m(CdCl₂)k; k* of each m outlined.</div>
         </div>
       </div>
-      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* along the time after injection, for these conditions (precursor conversion only, no nuclei)</div>
+      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
       <div class="chart short" id="cBarLive"></div>
-      <div class="cap">Click the curve to move the time after injection there.</div>
-      <div class="chart-title" style="margin-top:6px">ΔΩ(m, t) = Ω(m) − Ω(1) along the time after injection (red uphill, blue downhill, gray zero)</div>
+      <div class="cap">Click the curve to move the time there.</div>
+      <div class="chart-title" style="margin-top:6px">ΔΩ(m, t) = Ω(m) − Ω(1) along the time (red uphill, blue downhill, gray zero)</div>
       <div class="chart tall" id="cOmegaT"></div>
       <div class="cap">The solid line follows the barrier top m*(t), the thin contour is ΔΩ = 0, the dotted line is the time
         shown above. Click the map to move the time there.</div>
     </section>
 
     <section class="card">
-      <h2>2 · Kinetic growth <small>nucleation from Ω, monomer consumption, size-law growth of Wulff dots</small></h2>
+      <h2>2 · Kinetic growth <small>nucleation from Ω, monomer consumption, size-law growth, facet shape</small></h2>
       <div class="runrow">
         <div id="durcontrol"></div>
         <div><button class="primary" id="run">Run kinetic growth</button></div>
       </div>
+      <div class="lawpick" role="radiogroup" aria-label="Dot shape">
+        <span>Dot shape:</span>
+        <label><input type="radio" name="law" value="shape" id="law_shape"> facet shape rule (the facet rates share the growth)</label>
+        <label><input type="radio" name="law" value="size" id="law_size"> Wulff shape at γ(C)</label>
+      </div>
       <div class="cap">Uses the conditions on the left. Growth duration is how long the kinetics is integrated after
         injection; it is independent of the time you look at Ω above. Each dot grows or dissolves by
         dm/dt = A·N<sub>A</sub>(C − C<sub>eq</sub>(m)) / (A/4πDr + 1/k<sub>r</sub>(1 − θ)) (diffusion in series with the
-        surface reaction), C<sub>eq</sub> from the Gibbs–Thomson chemical potential of its Wulff shape at γ(C); facets set
-        the shape and the surface energy, not the rate.</div>
+        surface reaction), C<sub>eq</sub> from the Gibbs–Thomson chemical potential of its shape. With the facet shape
+        rule the growth is shared among the facets by their relative speeds ρ<sub>f</sub>k<sub>f</sub>(1 − θ<sub>f</sub>)[1 − e<sup>−(μ<sub>s</sub>−μ<sub>f</sub>)/kT</sup>]P<sub>f</sub>
+        (P<sub>f</sub>: layer nucleation from the island step β<sub>f</sub>); otherwise every dot keeps the Wulff shape.
+        Facets set the shape and the surface energy, not the overall rate.</div>
       <div class="status" id="runStatus"></div>
       <div id="growth" hidden>
         <div class="stale" id="stale" hidden>The conditions changed since this run: press Run kinetic growth again to update it.</div>
@@ -218,7 +237,8 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
       <div class="tbl" style="overflow-x:auto">
         <table class="ptable">
           <thead><tr><th>facet</th><th>γ⁰ (meV/Å²)</th><th>ε₀ (eV)</th><th>ΔG<sub>bind</sub>(T) (eV)</th>
-            <th>Γ<sup>max</sup> (nm⁻²)</th><th>w (eV)</th><th>coverage θ</th><th>γ(C) (meV/Å²)</th></tr></thead>
+            <th>Γ<sup>max</sup> (nm⁻²)</th><th>w (eV)</th><th>coverage θ</th><th>γ(C) (meV/Å²)</th>
+            <th>k<sub>f</sub> (Å/s)</th><th>β island (eV)</th></tr></thead>
           <tbody id="surfRows"></tbody>
         </table>
       </div>
@@ -259,7 +279,25 @@ const CTLS = [
   { key: "Ea_conv", label: "Conversion Ea", unit: "eV", log: false, step: 0.01 },
   { key: "eps", label: "Solvent ε", unit: "", log: true, hint: "implicit solvent; 1 = gas phase, otherwise 1.8 and up (octadecene ≈ 2)" },
 ];
-const TCTL = { key: "t", label: "Time after injection", unit: "s", log: true, hint: "the precursor converted by then sets μ" };
+const INJ = [
+  { key: "c_syringe_M", label: "Se in the syringe", unit: "M", log: true },
+  { key: "rate_mL_h", label: "Infusion rate", unit: "mL/h", log: true },
+  { key: "V0_mL", label: "Flask volume at the start", unit: "mL", log: true },
+  { key: "inj_duration_s", label: "Injection time", unit: "s", log: true },
+];
+const TPROG = [
+  { key: "T_growth", label: "Growth temperature", unit: "K", log: false, step: 5 },
+  { key: "t_switch_s", label: "Switch at", unit: "s", log: false, step: 1 },
+  { key: "ramp_s", label: "Ramp over", unit: "s", log: false, step: 1, hint: "0 = a step" },
+];
+const CAL = [
+  { key: "gamma_MA", label: "Activity coeff. CdSe γ_MA", unit: "", log: true },
+  { key: "gamma_MX", label: "Activity coeff. CdCl₂ γ_MX", unit: "", log: true,
+    hint: "μ = μ° + kT ln(γ c): 0.3–3 moves μ by ±0.05 eV at 500 K" },
+  { key: "beta_scale", label: "Island step scale (× β)", unit: "", log: false, step: 0.05 },
+];
+const ALLCTLS = [...CTLS, ...INJ, ...TPROG, ...CAL];
+const TCTL = { key: "t", label: "Time from the start", unit: "s", log: true, hint: "the precursor delivered and converted by then sets μ" };
 const DCTL = { key: "t_end", label: "Growth duration", unit: "s", log: true };
 const KCTL = { key: "k_r", label: "Surface reaction k_r", unit: "Å/s", log: true,
   hint: "attachment rate constant (placeholder); 1e10 ≈ the diffusion limit" };
@@ -310,7 +348,22 @@ function setVal(c, x, from) {
   n.classList.remove("bad");
   h.textContent = c.hint || "";
 }
-const conds = () => Object.fromEntries(CTLS.map((c) => [c.key, val(c)]));
+const law = () => ($("law_size").checked ? "size" : "shape");
+const conds = () => ({ ...Object.fromEntries(ALLCTLS.map((c) => [c.key, val(c)])),
+  inject: $("inject").checked, two_T: $("twoT").checked, growth_law: law() });
+function syncToggles() {
+  const inj = $("inject").checked, two = $("twoT").checked;
+  $("injControls").hidden = !inj; $("tprogControls").hidden = !two;
+  // with a syringe the flask starts without Se: the syringe delivers all of it
+  for (const id of ["s_c_P0", "n_c_P0"]) $(id).disabled = inj;
+  $("s_c_P0").closest(".ctl").classList.toggle("off", inj);
+  $("h_c_P0").textContent = inj ? "not used: the flask starts without Se, the syringe delivers it" : "";
+  if (inj) {
+    const n = val(INJ[0]) * val(INJ[1]) * 1e-3 / 3600 * val(INJ[3]);            // mol
+    const vEnd = val(INJ[2]) + val(INJ[1]) * val(INJ[3]) / 3600;                 // mL
+    $("injInfo").textContent = `delivers ${fmt(n * 1e6)} µmol Se over ${fmt(val(INJ[3]) / 60)} min: ${fmt(1e6 * n / vEnd)} mM in the final ${fmt(vEnd)} mL`;
+  } else $("injInfo").textContent = "";
+}
 
 // ---------- charts ----------
 const PCONF = { displayModeBar: false, responsive: true };
@@ -340,13 +393,15 @@ function requestLive() {
     } catch (e) { $("liveStatus").className = "status err"; $("liveStatus").textContent = e.message; }
   }, 30);
 }
-const sameConds = (a, b) => b && CTLS.every((c) => Math.abs(a[c.key] - b[c.key]) <= 1e-9 * Math.max(1, Math.abs(b[c.key])));
+const sameConds = (a, b) => !!b && JSON.stringify(a) === JSON.stringify(b);
 
 function drawNucleation(o) {
   const c1 = css("--series-1"), grid = css("--grid");
   const ro = (l, v) => `<div class="ro"><span>${l}</span><b>${v}</b></div>`;
-  $("nucWhen").textContent = `at ${fmt(o.t)} s after injection, ${fmt(100 * o.alpha)} % converted`;
-  $("nucRO").innerHTML = ro("barrier ΔΩ* (eV)", o.barrier.toFixed(3)) + ro("critical m*", o.m_star)
+  $("nucWhen").textContent = o.injection
+    ? `at ${fmt(o.t)} s from the start, ${o.T_now.toFixed(0)} K, ${fmt(100 * o.alpha)} % of the Se delivered so far converted`
+    : `at ${fmt(o.t)} s after injection, ${o.T_now.toFixed(0)} K, ${fmt(100 * o.alpha)} % converted`;
+  $("nucRO").innerHTML = ro("barrier ΔΩ* (eV)", o.barrier == null ? "–" : o.barrier.toFixed(3)) + ro("critical m*", o.m_star)
     + ro(`k* at m0 = ${o.m0}`, o.k_star_m0)
     + (o.handover ? ro("grid → continuum at m0", `${o.handover.m0} (Δμ ${o.handover.mismatch_eV >= 0 ? "+" : ""}${o.handover.mismatch_eV.toFixed(3)} eV)`) : "") + ro("J, Becker–Döring (M/s)", fmt(o.J)) + ro("J₀ = J e^(ΔΩ*/kT) (M/s)", fmt(o.J0))
     + ro("CdSe supply (M)", fmt(o.C_M)) + ro("CdCl₂ left / free (M)", `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
@@ -384,7 +439,7 @@ function drawNucleation(o) {
   // barrier along the time after injection
   const B = layout("linear", { hovermode: "x unified" });
   B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4 };
-  B.xaxis.title = { text: "time after injection (s)", standoff: 4 };
+  B.xaxis.title = { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 };
   B.shapes = [vline(o.t)];
   Plotly.react("cBarLive", [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "barrier", c1,
     { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" })], B, PCONF);
@@ -402,7 +457,7 @@ function drawNucleation(o) {
   const path = { x: o.curve.map((r) => r.t), y: o.curve.map((r) => r.m_star), type: "scatter", mode: "lines", line: { color: ink, width: 2, shape: "hv" },
     hovertemplate: "m* = %{y} at %{x:.3g} s<extra></extra>" };
   const M = layout("linear", { hovermode: "closest", margin: { l: 44, r: 8, t: 6, b: 32 } });
-  M.xaxis = { type: "log", title: { text: "time after injection (s)", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, exponentformat: "power" };
+  M.xaxis = { type: "log", title: { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, exponentformat: "power" };
   M.yaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, range: [0.5, o.m0 + 0.5] };
   M.shapes = [vline(o.t)];
   Plotly.react("cOmegaT", [map, zero, path], M, PCONF);
@@ -432,7 +487,7 @@ async function run() {
     return;
   }
   const body = { ...conds(), t_end: val(DCTL), k_r: val(KCTL), families: fams };
-  $("run").disabled = true; $("runStatus").className = "status"; $("runStatus").textContent = "Integrating nucleation and growth…";
+  $("run").disabled = true; $("runStatus").className = "status"; $("runStatus").textContent = body.inject ? "Integrating nucleation and growth over the injection (about a minute)…" : "Integrating nucleation and growth…";
   try {
     R = await api("/api/run", body); runConds = conds();
     $("growth").hidden = false; $("stale").hidden = true;
@@ -440,7 +495,7 @@ async function run() {
     snapIdx = R.snapshots.length - 1; s.value = snapIdx;
     drawSeries(); onTime();
     const nEnd = R.series[R.series.length - 1].N_dots;
-    $("runStatus").textContent = (R.modified ? "Edited facet parameters · " : "") + `${R.seconds} s · ${fmt(nEnd)} M dots in ${R.snapshots[snapIdx].cohorts.length} cohorts at ${fmt(R.snapshots[snapIdx].t)} s · mass balance ${fmt(R.conservation.MA)} (CdSe), ${fmt(R.conservation.MX)} (CdCl₂)`;
+    $("runStatus").textContent = (R.modified ? "Edited facet parameters · " : "") + (R.growth_law === "shape" ? "facet shape rule · " : "Wulff shape · ") + `${R.seconds} s · ${fmt(nEnd)} M dots in ${R.snapshots[snapIdx].cohorts.length} cohorts at ${fmt(R.snapshots[snapIdx].t)} s · mass balance ${fmt(R.conservation.MA)} (CdSe), ${fmt(R.conservation.MX)} (CdCl₂)`;
     $("growth").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
   $("run").disabled = false;
@@ -471,7 +526,7 @@ function onTime() {
   for (const id of TIME_CHARTS) Plotly.relayout(id, { shapes: [vline(t)] });
   $("tval").textContent = `${fmt(t)} s`;
   const row = R.series.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
-  $("poolLine").textContent = `Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier.toFixed(3)} eV`;
+  $("poolLine").textContent = `${row.T != null ? row.T.toFixed(0) + " K · " : ""}${row.V_L != null && R.conditions.injection ? fmt(1000 * row.V_L) + " mL · " : ""}Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier == null ? "none (no supersaturation)" : row.barrier.toFixed(3) + " eV"}`;
   drawDist();
   fillSurface(row);
 }
@@ -489,7 +544,8 @@ function buildSurface() {
     <td><input id="b_${f}" type="text" inputmode="decimal" value="${p.eps0}" disabled aria-label="binding energy of ${f}"
         data-min="${ed.eps0.min}" data-max="${ed.eps0.max}"></td>
     <td id="gu_${f}">–</td><td>${p.Gamma_max ?? "–"}</td><td>${p.w ?? "–"}</td>
-    <td id="th_${f}">–</td><td id="gc_${f}">–</td></tr>`).join("");
+    <td id="th_${f}">–</td><td id="gc_${f}">–</td>
+    <td>${fmt((D.facet_kinetics[f] || {}).k_f)}</td><td>${(D.facet_kinetics[f] || {}).island_beta_eV ?? "–"}</td></tr>`).join("");
   document.querySelectorAll(".ptable input").forEach((el) => el.addEventListener("change", () => {
     const x = Number(el.value.replace(",", ".").trim());
     const ok = Number.isFinite(x) && x >= +el.dataset.min && x <= +el.dataset.max;
@@ -642,10 +698,25 @@ $("dlxyz").addEventListener("click", () => {
   D = await api("/api/defaults");
   if (D.material) $("title").textContent = `${D.material} nucleation and growth simulator`;
   for (const c of CTLS) addSlider($("controls"), c, requestLive);
+  const onCtl = () => { syncToggles(); requestLive(); };
+  for (const c of INJ) addSlider($("injControls"), c, onCtl);
+  for (const c of TPROG) addSlider($("tprogControls"), c, onCtl);
+  for (const c of CAL) addSlider($("calControls"), c, requestLive);
+  $("inject").addEventListener("change", () => {
+    // a slow injection needs a growth run that covers it
+    if ($("inject").checked && val(DCTL) < 1.5 * val(INJ[3])) setVal(DCTL, Math.min(1.5 * val(INJ[3]), D.limits.t_end[1]));
+    onCtl();
+  });
+  $("twoT").addEventListener("change", onCtl);
+  $(D.growth_law === "size" ? "law_size" : "law_shape").checked = true;
+  document.querySelectorAll('input[name="law"]').forEach((r) => r.addEventListener("change", () => {
+    if (R) $("stale").hidden = sameConds(conds(), runConds);
+  }));
   addSlider($("tcontrol"), TCTL, requestLive);
   addSlider($("durcontrol"), DCTL);
   addSlider($("durcontrol"), KCTL);
   buildSurface();
+  syncToggles();
   requestLive();
 })();
 </script>

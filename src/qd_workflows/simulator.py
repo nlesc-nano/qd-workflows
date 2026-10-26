@@ -33,9 +33,17 @@ from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
 PAGE = Path(__file__).parent / "templates" / "simulator" / "index.html"
 LIMITS = {                                  # slider ranges of the page (the grid thermo spans its own T range)
     "T": [300.0, 700.0], "c_P0": [0.005, 0.5], "c_MX0": [0.01, 1.0], "k_conv_500K": [0.01, 100.0],
-    "t_end": [1.0, 3600.0], "Ea_conv": [0.0, 2.0], "t": [1e-3, 1e4], "eps": [1.0, 40.0],
+    "t_end": [1.0, 36000.0], "Ea_conv": [0.0, 2.0], "t": [1e-3, 1e5], "eps": [1.0, 40.0],
     "k_r": [1.0, 1e10],                     # A/s, surface reaction of the size law (1e10: the diffusion limit)
+    # calibration factors (tuned to target experiments): activity coefficients and the island step scale
+    "gamma_MA": [0.3, 3.0], "gamma_MX": [0.3, 3.0], "beta_scale": [0.5, 1.5],
+    # syringe injection of the precursor (volumes in mL on the page, L in the model)
+    "c_syringe_M": [1e-3, 1.0], "rate_mL_h": [0.01, 1000.0], "V0_mL": [1.0, 1000.0], "inj_duration_s": [1.0, 36000.0],
+    # temperature program: growth temperature, switch time, ramp
+    "T_growth": [300.0, 700.0], "t_switch_s": [0.0, 36000.0], "ramp_s": [0.0, 3600.0],
 }
+PAGE_DEFAULTS = {"gamma_MA": 1.0, "gamma_MX": 1.0, "c_syringe_M": 0.03, "rate_mL_h": 0.6, "V0_mL": 10.0,
+                 "inj_duration_s": 3600.0, "t_switch_s": 120.0, "ramp_s": 60.0}
 
 
 def solvent_eps(x) -> float:
@@ -68,15 +76,20 @@ class Simulator:
         self._handovers: dict = {}
         self.build_lock = threading.Lock()  # the builder redirects stdout: one build at a time
         t = thermo["temperatures"]
-        self.limits = dict(LIMITS, T=[max(LIMITS["T"][0], min(t)), min(LIMITS["T"][1], max(t))])
+        trange = [max(LIMITS["T"][0], min(t)), min(LIMITS["T"][1], max(t))]
+        self.limits = dict(LIMITS, T=trange, T_growth=trange)
 
     def defaults(self) -> dict:
         c = self.params["conditions"]
         F = self.params["families"]
         eps = float(self.params.get("solvation", {}).get("eps", 1.0))
         k_r = self.params["kinetics"].get("k_r")
+        kin = self.params["kinetics"]
         return {"conditions": {**{k: c[k] for k in SETTINGS}, "t": 10.0, "eps": eps,
-                               "k_r": float(k_r) if k_r is not None else LIMITS["k_r"][1]},
+                               "k_r": float(k_r) if k_r is not None else LIMITS["k_r"][1],
+                               **PAGE_DEFAULTS, "T_growth": c["T"],
+                               "beta_scale": float(kin.get("beta_scale", 1.0))},
+                "growth_law": kin.get("growth_law", "size"), "facet_kinetics": kin.get("facets") or {},
                 "m0": self._m0({**c, "eps": eps})[0],
                 "solvation_note": self.params.get("solvation", {}).get("note", ""),
                 "limits": self.limits, "families": list(F), "max_atoms": self.max_atoms,
@@ -110,19 +123,53 @@ class Simulator:
             P["material"]["match_m0"] = False
         return changed
 
-    def run(self, cond: dict) -> dict:
+    def _clip(self, cond: dict, k: str, default=None):
+        x = cond.get(k, default)
+        if x is None:
+            return None
+        lo, hi = self.limits[k]
+        return min(max(float(x), lo), hi)
+
+    def params_for(self, cond: dict) -> dict:
+        """The growth parameters for the page's conditions: T, concentrations, conversion, solvent, k_r; the
+        calibration factors (gamma_MA, gamma_MX, beta_scale); the syringe (inject: c_syringe_M, rate_mL_h, V0_mL,
+        inj_duration_s; the flask's own precursor is then c_P0, 0 for a pure injection) and the temperature program
+        (two_T: T_growth, t_switch_s, ramp_s); growth_law "shape" or "size"."""
         P = copy.deepcopy(self.params)
+        c = P["conditions"]
         for k in SETTINGS:
-            if k in cond and cond[k] is not None:
-                lo, hi = self.limits[k]
-                P["conditions"][k] = min(max(float(cond[k]), lo), hi)
+            if cond.get(k) is not None:
+                c[k] = self._clip(cond, k)
         if cond.get("eps") is not None and "solvation" in P:
             P["solvation"]["eps"] = solvent_eps(cond["eps"])
         if cond.get("k_r") is not None:
-            lo, hi = self.limits["k_r"]
-            P["kinetics"]["k_r"] = min(max(float(cond["k_r"]), lo), hi)
-        if P["conditions"]["c_MX0"] <= P["conditions"]["c_P0"]:
-            raise ValueError("MX_q must exceed the precursor (every conversion takes one MX_q)")
+            P["kinetics"]["k_r"] = self._clip(cond, "k_r")
+        for k in ("gamma_MA", "gamma_MX"):
+            c[k] = self._clip(cond, k, 1.0)
+        P["kinetics"]["beta_scale"] = self._clip(cond, "beta_scale", P["kinetics"].get("beta_scale", 1.0))
+        if cond.get("growth_law") in ("shape", "size"):
+            P["kinetics"]["growth_law"] = cond["growth_law"]
+        if cond.get("inject"):
+            c["c_P0"] = float(cond.get("c_P0_flask", 0.0) or 0.0)
+            c["injection"] = {"c_syringe_M": self._clip(cond, "c_syringe_M", PAGE_DEFAULTS["c_syringe_M"]),
+                              "rate_L_h": self._clip(cond, "rate_mL_h", PAGE_DEFAULTS["rate_mL_h"]) * 1e-3,
+                              "V0_L": self._clip(cond, "V0_mL", PAGE_DEFAULTS["V0_mL"]) * 1e-3,
+                              "duration_s": self._clip(cond, "inj_duration_s", PAGE_DEFAULTS["inj_duration_s"])}
+        if cond.get("two_T"):
+            c["T_growth"] = self._clip(cond, "T_growth", c["T"])
+            c["t_switch_s"] = self._clip(cond, "t_switch_s", PAGE_DEFAULTS["t_switch_s"])
+            c["ramp_s"] = self._clip(cond, "ramp_s", PAGE_DEFAULTS["ramp_s"])
+        inj = c.get("injection")
+        n_p = c["c_P0"] * (inj["V0_L"] if inj else 1.0) + (inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0
+                                                           * inj["duration_s"] if inj else 0.0)
+        n_x = c["c_MX0"] * (inj["V0_L"] if inj else 1.0)
+        if n_x <= n_p:
+            raise ValueError("CdCl2 must exceed all the Se precursor (in the flask and from the syringe): "
+                             "every conversion takes one MX_q")
+        return P
+
+    def run(self, cond: dict) -> dict:
+        P = self.params_for(cond)
         modified = self._overrides(P, cond.get("families"))
         t0 = time.time()
         g = gr.Growth(self.thermo, P)
@@ -142,10 +189,11 @@ class Simulator:
                             "n_atoms": int(round(2 * co["m"] + 3 * co["k"])),
                             "facets": {f: a / A for f, a in co["area"].items() if a > 0}})
             snaps.append({"t": s["t"], "cohorts": cos})
-        keep = ("t", "P", "C_M", "C_X", "c_MX_free", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots", "m_mean",
-                "m_std", "theta", "theta_eq", "gamma")
-        used = res["params"]["families"]                     # gamma0 after the match_m0 rescaling, when it applied
+        keep = ("t", "T", "V_L", "P", "C_M", "C_X", "c_MX_free", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots",
+                "m_mean", "m_std", "theta", "theta_eq", "gamma")
+        used = g.F                                           # derived: solvation, binding at T, match_m0 rescaling
         return {"run_id": rid, "seconds": round(time.time() - t0, 2), "conditions": P["conditions"],
+                "growth_law": P["kinetics"].get("growth_law", "size"),
                 "match_m0": res["match_m0"], "modified": modified,
                 "surface_used": {f: {"gamma0": used[f]["gamma0"], "eps0": used[f].get("eps0"),
                                      "dG_bind": used[f]["dG_bind"]} for f in used},
@@ -231,14 +279,15 @@ class Simulator:
                 self._handovers.pop(next(iter(self._handovers)))
         return self._handovers[key]
 
-    def _omega(self, T: float, C_M: float, C_X: float, m0: int | None = None, eps: float = 1.0) -> dict:
+    def _omega(self, T: float, C_M: float, C_X: float, m0: int | None = None, eps: float = 1.0,
+               gamma_ma: float = 1.0, gamma_mx: float = 1.0) -> dict:
         """Omega(m, k) = G(m, k) - m mu_MA - k mu_MX of the grid at the pool (C_M monomer supply, C_X MX_q left),
         Omega(m) = -kT ln sum_k e^(-Omega(m,k)/kT), the barrier max_{m <= m0} Omega(m) - Omega(1), m*, k*(m),
         P(k|m) and J (the nucleation step of the growth model); every species in implicit solvent at eps."""
         gr_ = self._grid(T, eps)
         th, ms, ks, Gp = gr_["th"], gr_["ms"], gr_["ks"], gr_["Gp"]
         kt = KB_EV * T
-        pl = pool(th, max(C_M, 1e-30), max(C_X, 1e-30))
+        pl = pool(th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=gamma_ma, gamma_mx=gamma_mx)
         mu_ma, mu_mx = pl["mu_MA"], pl["mu_MX"]
         v = Gp - ms[:, None] * mu_ma - ks[None, :] * mu_mx
         vmin = v.min(axis=1)
@@ -260,50 +309,109 @@ class Simulator:
         return {"T": T, "C_M": C_M, "C_X": C_X, "mu_MA": mu_ma, "mu_MX": mu_mx, "c_MX_free": pl["c_MX_free"],
                 "mean_n": pl["mean_n"], "speciation": {str(n): float(x) for n, x in pl["speciation"].items()},
                 "m0": m0, "barrier": barrier, "m_star": top["m"], "k_star_m0": k0,
-                "J": (J := gr.nucleation_flux(om_m, ms, m0, kt, float(self.params["material"]["Omega_m"]), self.params, barrier)),
+                "J": (J := gr.nucleation_flux(om_m, ms, m0, kt, float(self.params["material"]["Omega_m"]), self.params, barrier,
+                                              act=gamma_ma)),
                 "J0": J * math.exp(min(barrier / kt, 700.0)),
                 "ms": ms.tolist(), "ks": ks.tolist(), "Omega": [[None if not np.isfinite(x) else float(x) for x in r] for r in v],
                 "P_k": P.round(6).tolist(), "per_m": rows}
 
+    def pre_pool(self, P: dict, times) -> list:
+        """The pool before any nucleus at each time (s): precursor conversion P -> MA at k_conv(T(t)) P C_X, the
+        syringe adding precursor and diluting the flask, the temperature program. Without injection and at one
+        temperature the closed form (grid_thermo.converted). Returns (T, C_M, C_X) per time."""
+        from types import SimpleNamespace
+
+        from scipy.integrate import solve_ivp
+        c = P["conditions"]
+        prog = SimpleNamespace(P=P)
+        inj = c.get("injection")
+        times = [float(x) for x in times]
+        if not inj and c.get("T_growth") is None:
+            k = k_conv_at(c["T"], c["k_conv_500K"], c["Ea_conv"])
+            out = []
+            for tt in times:
+                x = converted(tt, k, c["c_P0"], c["c_MX0"])
+                out.append((c["T"], x, c["c_MX0"] - x))
+            return out
+        q = inj["rate_L_h"] / 3600.0 if inj else 0.0
+        t_stop = inj["duration_s"] if inj else 0.0
+
+        def rhs(tt, y):
+            p_, cm, cx, v = y
+            k = k_conv_at(gr.Growth.temperature_at(prog, tt), c["k_conv_500K"], c["Ea_conv"])
+            qq = q if tt < t_stop else 0.0
+            conv = k * max(p_, 0.0) * max(cx, 0.0)
+            feed = qq * (inj["c_syringe_M"] - p_) / v if inj else 0.0
+            return [feed - conv, conv - qq * cm / v, -conv - qq * cx / v, qq]
+
+        ts = sorted(set(t for t in times if t > 0))
+        breaks = sorted({b for b in [t_stop] + gr.Growth.temperature_breaks(prog) if 0 < b < ts[-1]})
+        y = np.array([c["c_P0"], 0.0, c["c_MX0"], inj["V0_L"] if inj else 1.0])
+        got, t_now = {0.0: y}, 0.0
+        for seg_end in breaks + [ts[-1]]:
+            pts = sorted({t for t in ts if t_now < t <= seg_end} | {seg_end})
+            sol = solve_ivp(rhs, (t_now, seg_end), y, method="LSODA", t_eval=pts, rtol=1e-8, atol=1e-14)
+            for tt, yy in zip(sol.t, sol.y.T):
+                got[float(tt)] = yy
+            y, t_now = sol.y[:, -1], seg_end
+        out = []
+        for tt in times:
+            yy = got[max(tt, 0.0)] if max(tt, 0.0) in got else got[min(got, key=lambda x: abs(x - tt))]
+            out.append((gr.Growth.temperature_at(prog, tt), max(float(yy[1]), 0.0), max(float(yy[2]), 1e-30)))
+        return out
+
     def omega_live(self, cond: dict, n_curve: int = 41) -> dict:
-        """Omega at time t after injection from the precursor conversion alone (no nuclei yet: the pre-nucleation
-        pool, the qdw nucleation Omega page), and the barrier along t on a log grid for the same conditions."""
-        c = {k: float(cond.get(k, self.params["conditions"][k])) for k in SETTINGS if k != "t_end"}
-        t = float(cond.get("t", 10.0))
-        if c["c_MX0"] <= c["c_P0"]:
-            raise ValueError("CdCl2 must exceed the precursor (every conversion takes one MX_q)")
-        k = k_conv_at(c["T"], c["k_conv_500K"], c["Ea_conv"])
-        c["eps"] = solvent_eps(cond.get("eps", self.params.get("solvation", {}).get("eps", 1.0)))
-        m0, handover = self._m0(c)
-
-        def at(tt):
-            x = converted(tt, k, c["c_P0"], c["c_MX0"])
-            return self._omega(c["T"], x, c["c_MX0"] - x, m0, c["eps"])
-
-        out = at(t)
-        out.update(t=t, alpha=out["C_M"] / c["c_P0"], conditions=c, handover=handover)
+        """Omega at time t from the start, from the precursor alone (no nuclei yet: the pre-nucleation pool, the
+        qdw nucleation Omega page), with the syringe, the temperature program and the activity coefficients; and
+        the barrier along t on a log grid for the same conditions."""
+        P = self.params_for(cond)
+        c = P["conditions"]
+        t = min(max(float(cond.get("t", 10.0)), self.limits["t"][0]), self.limits["t"][1])
+        eps = solvent_eps(cond.get("eps", self.params.get("solvation", {}).get("eps", 1.0)))
+        m0, handover = self._m0({**c, "eps": eps})
+        g_ma, g_mx = c["gamma_MA"], c["gamma_MX"]
+        grid_t = list(np.geomspace(1e-3, 1e4, n_curve))
+        pools = self.pre_pool(P, [t] + grid_t)
+        T, cm, cx = pools[0]
+        out = self._omega(T, cm, cx, m0, eps, g_ma, g_mx)
+        inj = c.get("injection")
+        if inj:
+            t_in = min(t, inj["duration_s"])
+            n_p = c["c_P0"] * inj["V0_L"] + inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0 * t_in
+            v_t = inj["V0_L"] + inj["rate_L_h"] / 3600.0 * t_in
+        else:
+            n_p, v_t = c["c_P0"], 1.0
+        out.update(t=t, T_now=T, alpha=out["C_M"] * v_t / n_p if n_p > 0 else 0.0, conditions={**c, "eps": eps},
+                   handover=handover, injection=bool(inj))
         curve, heat = [], []
         ms = [r["m"] for r in out["per_m"] if r["m"] <= out["m0"]]
-        for tt in np.geomspace(1e-3, 1e4, n_curve):
+        for tt, (Tt, cm_t, cx_t) in zip(grid_t, pools[1:]):
+            if cm_t <= 1e-20:
+                continue
             try:
-                o = at(tt)
+                o = self._omega(Tt, cm_t, cx_t, m0, eps, g_ma, g_mx)
             except ValueError:
                 continue
-            curve.append({"t": float(tt), "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"], "C_M": o["C_M"]})
+            curve.append({"t": float(tt), "T": Tt, "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
+                          "C_M": o["C_M"]})
             om1 = o["per_m"][0]["Omega_m"]
             heat.append([r["Omega_m"] - om1 for r in o["per_m"] if r["m"] <= out["m0"]])
         out["curve"] = curve
-        # Delta Omega(m, t) = Omega(m) - Omega(1) along the time after injection: rows m = 1..m0, columns the curve's t
+        # Delta Omega(m, t) = Omega(m) - Omega(1) along the time: rows m = 1..m0, columns the curve's t
         out["heat"] = {"t": [c["t"] for c in curve], "m": ms, "dOmega": [list(col) for col in zip(*heat)]}
         return out
 
     def omega(self, rid: str, t: float) -> dict:
-        """Omega at time t of a growth run: the run's pool (precursor converted, minus what nuclei and dots took)."""
+        """Omega at time t of a growth run: the run's pool (precursor converted, minus what nuclei and dots took),
+        at the run's temperature then and with its activity coefficients."""
         if rid not in self.runs:
             raise KeyError("run not found (the server keeps the last 8 runs): run the model again")
         res, g = self.runs[rid]["res"], self.runs[rid]["growth"]
         row = min(res["series"], key=lambda r: abs(r["t"] - t))
-        return {**self._omega(g.T, row["C_M"], row["C_X"], g.m0, float(g.solv.get("eps", 1.0))), "t": row["t"]}
+        c = g.P["conditions"]
+        om = self._omega(row.get("T", g.T), row["C_M"], row["C_X"], g.m0, float(g.solv.get("eps", 1.0)),
+                         float(c.get("gamma_MA", 1.0)), float(c.get("gamma_MX", 1.0)))
+        return {**om, "t": row["t"]}
 
     def structure(self, m: int, k: int) -> dict:
         """xyz of the grid node's lowest state (the structure file named in the thermo, relative to its folder)."""
