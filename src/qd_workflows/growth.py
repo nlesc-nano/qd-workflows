@@ -885,7 +885,7 @@ class Growth:
             h = {f: x * sc for f, x in h.items()}
             area = self.shape(h)[0]
             a.update(N=n, m=m, k=(a["N"] * a["k"] + b["N"] * b["k"]) / n, h=h, area=area,
-                     t_b=min(a["t_b"], b["t_b"]))
+                     t_b=merged_birth(a, b))
             a.pop("_speeds", None)                         # a new shape: its facet speeds are computed again
 
     def junction(self, m: float) -> float:
@@ -1359,7 +1359,31 @@ class Growth:
                         f"J = {J:.3g} M/s  dots {N:.3g} M  <m> = {mean:.1f}")
                 outs.pop(0)
         return {"params": self.P, "match_m0": self.match, "handover": self.handover, "m0": self.m0, "series": series,
-                "snapshots": snaps, "seeded": seeded, "V0_L": V0, "nucleation_window": nucleation_window(track)}
+                "snapshots": snaps, "seeded": seeded, "V0_L": V0, "nucleation_window": nucleation_window(track),
+                "survivor_window": survivor_window(cohorts)}
+
+
+def merged_birth(a: dict, b: dict) -> float:
+    """Birth time of two merged cohorts: their number-weighted mean in ln t (arithmetic when one was seeded at 0)."""
+    N = a["N"] + b["N"]
+    if a["t_b"] > 0 and b["t_b"] > 0:
+        return math.exp((a["N"] * math.log(a["t_b"]) + b["N"] * math.log(b["t_b"])) / N)
+    return (a["N"] * a["t_b"] + b["N"] * b["t_b"]) / N
+
+
+def survivor_window(cohorts) -> dict | None:
+    """When the dots left at the end were born: the birth times (cohorts' t_b, number-weighted) by which 10 %, 50 %
+    and 90 % of them had formed, and the fraction of the end's dots this covers. None without dots."""
+    co = sorted((c for c in cohorts if c["N"] > 0), key=lambda c: c["t_b"])
+    if not co:
+        return None
+    t = np.array([c["t_b"] for c in co])
+    w = np.cumsum([c["N"] for c in co])
+    frac = w / w[-1]
+    out = {}
+    for q in (0.1, 0.5, 0.9):
+        out[f"t{int(100 * q)}"] = float(t[min(int(np.searchsorted(frac, q)), len(t) - 1)])
+    return {**out, "dots_M": float(w[-1])}
 
 
 def nucleation_window(track) -> dict | None:

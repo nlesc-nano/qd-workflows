@@ -158,7 +158,8 @@ class Classical:
             a, b = big[i], big[i + 1]
             co.remove(b)
             N = a["N"] + b["N"]
-            a.update(n=(a["N"] * a["n"] + b["N"] * b["n"]) / N, N=N, t_b=min(a["t_b"], b["t_b"]))
+            from .growth import merged_birth
+            a.update(n=(a["N"] * a["n"] + b["N"] * b["n"]) / N, N=N, t_b=merged_birth(a, b))
 
     # -- integration --
     def run(self, seed=None) -> dict:
@@ -284,9 +285,9 @@ class Classical:
                 snaps.append({"t": t, "cohorts": [{"N": x["N"], "n": x["n"], "t_b": x["t_b"],
                                                    "d_nm": 2.0 * float(self.radius(x["n"])) / 10.0} for x in co]})
                 outs.pop(0)
-        from .growth import nucleation_window
+        from .growth import nucleation_window, survivor_window
         return {"params": self.P, "series": series, "snapshots": snaps, "seeded": seeded, "V0_L": V0,
-                "nucleation_window": nucleation_window(track)}
+                "nucleation_window": nucleation_window(track), "survivor_window": survivor_window(co)}
 
 
 def conservation(res) -> list:

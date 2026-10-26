@@ -174,7 +174,8 @@ table.src td.n { font-variant-numeric: tabular-nums; white-space: nowrap; text-a
           <div class="chart-title">Free energy of a cluster against its size at this time, ΔG − ΔG(monomer) (eV)</div>
           <div class="pick" style="margin:2px 4px 0">
             <span>Size axis:</span>
-            <label><input type="radio" name="dgx" value="r" id="dgx_r" checked> radius (nm)</label>
+            <label><input type="radio" name="dgx" value="eq" id="dgx_eq" checked> equimolar radius</label>
+            <label><input type="radio" name="dgx" value="r" id="dgx_r"> solvent-excluded radius</label>
             <label><input type="radio" name="dgx" value="n" id="dgx_n"> CdSe units</label>
           </div>
           <div class="chart" id="cDG" style="height:240px"></div>
@@ -308,12 +309,16 @@ function nucShapes() {
     const g = css("--series-3");
     out.push({ type: "rect", xref: "x", yref: "paper", x0: w.t10, x1: w.t90, y0: 0.5, y1: 1, fillcolor: g, opacity: 0.15, line: { width: 0 }, layer: "below" },
              { type: "line", xref: "x", yref: "paper", x0: w.t_peak, x1: w.t_peak, y0: 0.5, y1: 1, line: { color: g, width: 1.5 } });
+    const s = R.survivor_window;                     // the dots left at the end: a darker strip on top of the band
+    if (s) out.push({ type: "rect", xref: "x", yref: "paper", x0: s.t10, x1: Math.max(s.t90, s.t10 * 1.02), y0: 0.94, y1: 1, fillcolor: g, opacity: 0.6, line: { width: 0 } });
   }
   const aw = A && A.nucleation_window;
   if (aw && same({ ...conds(), ...atomOpts() }, aConds)) {
     const o = css("--series-2");
     out.push({ type: "rect", xref: "x", yref: "paper", x0: aw.t10, x1: aw.t90, y0: 0, y1: 0.5, fillcolor: o, opacity: 0.15, line: { width: 0 }, layer: "below" },
              { type: "line", xref: "x", yref: "paper", x0: aw.t_peak, x1: aw.t_peak, y0: 0, y1: 0.5, line: { color: o, width: 1.5, dash: "dash" } });
+    const s = A.survivor_window;
+    if (s) out.push({ type: "rect", xref: "x", yref: "paper", x0: s.t10, x1: Math.max(s.t90, s.t10 * 1.02), y0: 0.44, y1: 0.5, fillcolor: o, opacity: 0.6, line: { width: 0 } });
   }
   return out;
 }
@@ -347,9 +352,12 @@ function requestRun() {
       const w = R.nucleation_window;
       const aw = A && same({ ...conds(), ...atomOpts() }, aConds) ? A.nucleation_window : null;
       $("toPeak").disabled = !w;
+      const surv = (sw, nw, V) => (sw && nw ? `; the dots left at the end (dark strip, ${fmt(100 * sw.dots_M / (nw.nuclei_mol / V))} % of all nuclei) were born between ${fmt(sw.t10)} and ${fmt(sw.t90)} s (half by ${fmt(sw.t50)} s)` : "");
       $("nucWin").innerHTML = (w ? `<b>Nucleation, classical</b> (green band, upper half of the charts): 10 % of the nuclei by ${fmt(w.t10)} s, peak rate at ${fmt(w.t_peak)} s, 90 % by ${fmt(w.t90)} s`
+          + surv(R.survivor_window, w, R.series[R.series.length - 1].V_L)
         : "<b>Nucleation, classical</b>: no nuclei in this run")
         + (A ? (aw ? `<br><b>Nucleation, atomistic</b> (orange band, lower half): 10 % by ${fmt(aw.t10)} s, peak rate at ${fmt(aw.t_peak)} s, 90 % by ${fmt(aw.t90)} s`
+                     + surv(A.survivor_window, aw, A.series[A.series.length - 1].V_L ?? 1)
                    : (same({ ...conds(), ...atomOpts() }, aConds) ? "<br><b>Nucleation, atomistic</b>: no nuclei" : "<br>The atomistic run is for other conditions: run it again to compare."))
              : "");
       $("runInfo").textContent = `${r.seconds} s · ${r.steps} steps · mass balance ${fmt(r.conservation.MA)}`;
@@ -494,10 +502,12 @@ function drawDG() {
   const nStar = lnS > 0 ? (2 * gam * a / (3 * kt * lnS)) ** 3 : null;
   const nMax = Math.min(Math.max(nStar ? 3 * nStar : 60, 60), 1e6);
   const ns = Array.from({ length: 160 }, (_, i) => Math.exp(Math.log(nMax) * i / 159));
-  // size axis: the radius (classical: the CdSe sphere of n units; atomistic: the clusters' solvent-excluded radius,
-  // CdCl2 shell included, weighted over their shells at the run's pool; for bare clusters the two agree within 0.3 A)
-  // or the number of CdSe units
-  const byR = $("dgx_r").checked;
+  // size axis: the equimolar radius (3 n V_m / 4 pi)^(1/3) of the CdSe content, for both models (Gibbs' dividing
+  // surface, CNT's own r; the CdCl2 shell counts in the free energy, not in the size); the solvent-excluded radius
+  // (atomistic: each cluster's, CdCl2 shell included, weighted over its shells at the run's pool; classical: the
+  // CdSe sphere, which a bare cluster's matches within 0.3 A); or the number of CdSe units
+  const mode = $("dgx_r").checked ? "se" : $("dgx_n").checked ? "n" : "eq";
+  const byR = mode !== "n";
   const rn = (n) => Math.cbrt(3 * n * mat.Vm_A3 / (4 * Math.PI)) / 10;                 // nm
   const X = (n) => (byR ? rn(n) : n);
   const tr = [{ x: ns.map(X), y: ns.map((n) => dG(n) - dG(1)), type: "scatter", mode: "lines", name: "classical sphere ΔG",
@@ -512,25 +522,32 @@ function drawDG() {
     let j = 0;
     om.t.forEach((tt, i) => { if (Math.abs(Math.log(tt / s.t)) < Math.abs(Math.log(om.t[j] / s.t))) j = i; });
     const rr = om.R_se_A ? om.R_se_A.map((r) => (r[j] != null ? r[j] / 10 : null)) : om.m.map(() => null);
-    tr.push({ x: byR ? rr : om.m, y: om.dOmega.map((r) => r[j]), type: "scatter", mode: "lines+markers", name: "atomistic grid ΔΩ",
+    const req = om.m.map(rn);
+    const xa = mode === "se" ? rr : mode === "eq" ? req : om.m;
+    tr.push({ x: xa, y: om.dOmega.map((r) => r[j]), type: "scatter", mode: "lines+markers", name: "atomistic grid ΔΩ",
       line: { color: css("--series-2"), width: 2, dash: "dash" }, marker: { size: 6, color: css("--series-2") },
-      customdata: om.m.map((m, i) => [m, rr[i]]),
-      hovertemplate: "m = %{customdata[0]}, R = %{customdata[1]:.3f} nm: ΔΩ = %{y:.3f} eV<extra>atomistic grid</extra>" });
+      customdata: om.m.map((m, i) => [m, req[i], rr[i]]),
+      hovertemplate: "m = %{customdata[0]}, equimolar r = %{customdata[1]:.3f} nm, solvent-excluded R = %{customdata[2]:.3f} nm: ΔΩ = %{y:.3f} eV<extra>atomistic grid</extra>" });
     const iS = om.m.indexOf(om.m_star[j]);
-    note += ` · atomistic grid at ${fmt(om.t[j])} s: barrier ${fmt(om.barrier[j])} eV at m* = ${om.m_star[j]}` + (rr[iS] != null ? `, R = ${fmt(rr[iS])} nm` : "");
+    note += ` · atomistic grid at ${fmt(om.t[j])} s: barrier ${fmt(om.barrier[j])} eV at m* = ${om.m_star[j]} (equimolar r = ${fmt(req[iS])} nm`
+      + (rr[iS] != null ? `, solvent-excluded R = ${fmt(rr[iS])} nm)` : ")");
   }
   const L = layout("linear", { hovermode: "closest", showlegend: true, legend: { orientation: "h", y: 1.02, yanchor: "bottom", x: 0, font: { size: 10 } },
     margin: { l: 52, r: 8, t: 22, b: 32 } });
-  L.xaxis = { type: "log", title: { text: byR ? "cluster radius (nm)" : "cluster size (CdSe units)", standoff: 4 }, gridcolor: css("--grid"), zeroline: false, exponentformat: "power" };
+  L.xaxis = { type: "log", title: { text: { eq: "equimolar radius (3mV_m/4π)^(1/3) (nm)", se: "solvent-excluded radius (nm)", n: "cluster size (CdSe units)" }[mode], standoff: 4 },
+    gridcolor: css("--grid"), zeroline: false, exponentformat: "power" };
   const ys = tr.flatMap((t) => t.y).filter((y) => y != null && isFinite(y));
   const top = Math.max(...ys), bot = Math.min(...ys);
   L.yaxis.range = [Math.max(bot, -Math.max(2, 1.5 * Math.max(top, 0.5))), Math.min(top, 20) + 0.2];   // keep the hump in view
   L.yaxis.zeroline = true; L.yaxis.zerolinecolor = css("--text-muted");
   Plotly.react("cDG", tr, L, PCONF);
-  $("dgCap").innerHTML = `${note}. Classical: ΔG(n) = −n kT ln S + γ a n<sup>2/3</sup>, a = (36π)<sup>1/3</sup>V<sub>m</sub><sup>2/3</sup>,
-    radius of the CdSe sphere r = (3nV<sub>m</sub>/4π)<sup>1/3</sup>; the circle is the critical nucleus. Atomistic: the grid's
-    Ω(m) − Ω(1) at the run's pool, against each cluster's solvent-excluded radius (its CdCl₂ shell included, weighted over
-    the shells k at that pool; a bare cluster's is within 0.3 Å of the CdSe sphere's).`;
+  const axisNote = {
+    eq: "Both models against the equimolar radius r = (3mV<sub>m</sub>/4π)<sup>1/3</sup> of their CdSe content (Gibbs' dividing surface, the r of classical nucleation theory): clusters with the same amount of CdSe line up, the CdCl₂ shell counts in the free energy.",
+    se: "Atomistic clusters against their solvent-excluded radius (2 Å probe; CdCl₂ shell included, weighted over the shells k at that pool); the classical sphere against its own radius, which a bare cluster's solvent-excluded radius matches within 0.3 Å. This is the physical size.",
+    n: "Both models against the number of CdSe units.",
+  }[mode];
+  $("dgCap").innerHTML = `${note}. Classical: ΔG(n) = −n kT ln S + γ a n<sup>2/3</sup>, a = (36π)<sup>1/3</sup>V<sub>m</sub><sup>2/3</sup>;
+    the circle is the critical nucleus. Atomistic: the grid's Ω(m) − Ω(1) at the run's pool. ${axisNote}`;
 }
 
 function drawPSD() {

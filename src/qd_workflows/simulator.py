@@ -213,7 +213,7 @@ class Simulator:
         return {"run_id": rid, "seconds": round(time.time() - t0, 2), "conditions": P["conditions"],
                 "growth_law": P["kinetics"].get("growth_law", "size"),
                 "growth_control": P["kinetics"].get("growth_control", "mixed"),
-                "nucleation_window": res.get("nucleation_window"),
+                "nucleation_window": res.get("nucleation_window"), "survivor_window": res.get("survivor_window"),
                 "match_m0": res["match_m0"], "modified": modified,
                 "surface_used": {f: {"gamma0": used[f]["gamma0"], "eps0": used[f].get("eps0"),
                                      "dG_bind": used[f]["dG_bind"]} for f in used},
@@ -544,7 +544,7 @@ class Simulator:
         m = cl.Classical(P)
         res = m.run()
         return {"seconds": round(time.time() - t0, 2), "material": P["material"], "conditions": P["conditions"],
-                "nucleation_window": res.get("nucleation_window"),
+                "nucleation_window": res.get("nucleation_window"), "survivor_window": res.get("survivor_window"),
                 "series": [{k: _finite(v) for k, v in r.items()} for r in res["series"]],
                 "snapshots": res["snapshots"], "conservation": cl.conservation(res)[-1], "steps": m.steps}
 

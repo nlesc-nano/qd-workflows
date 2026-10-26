@@ -371,8 +371,11 @@ function nucShapes() {
   const w = R && R.nucleation_window;
   if (!w || !sameConds(conds(), runConds)) return [];
   const band = css("--series-3");
-  return [{ type: "rect", xref: "x", yref: "paper", x0: w.t10, x1: w.t90, y0: 0, y1: 1, fillcolor: band, opacity: 0.13, line: { width: 0 }, layer: "below" },
-          { type: "line", xref: "x", yref: "paper", x0: w.t_peak, x1: w.t_peak, y0: 0, y1: 1, line: { color: band, width: 1.5 } }];
+  const out = [{ type: "rect", xref: "x", yref: "paper", x0: w.t10, x1: w.t90, y0: 0, y1: 1, fillcolor: band, opacity: 0.13, line: { width: 0 }, layer: "below" },
+               { type: "line", xref: "x", yref: "paper", x0: w.t_peak, x1: w.t_peak, y0: 0, y1: 1, line: { color: band, width: 1.5 } }];
+  const s = R.survivor_window;                       // the dots left at the end: a darker strip along the top
+  if (s) out.push({ type: "rect", xref: "x", yref: "paper", x0: s.t10, x1: Math.max(s.t90, s.t10 * 1.02), y0: 0.92, y1: 1, fillcolor: band, opacity: 0.55, line: { width: 0 } });
+  return out;
 }
 const conds = () => ({ ...Object.fromEntries(ALLCTLS.map((c) => [c.key, val(c)])),
   inject: $("inject").checked, two_T: $("twoT").checked, growth_law: law(), growth_control: gctl() });
@@ -545,6 +548,7 @@ async function run() {
     $("nucWin").hidden = false;
     $("nucWin").innerHTML = w
       ? `<b>Nucleation</b> (green band on the charts): 10 % of the nuclei formed by ${fmt(w.t10)} s, the rate peaks at ${fmt(w.t_peak)} s, half by ${fmt(w.t50)} s, 90 % by ${fmt(w.t90)} s`
+        + (R.survivor_window ? `<br><b>Dots left at the end</b> (dark strip along the top; ${fmt(100 * R.survivor_window.dots_M / (w.nuclei_mol / R.series[R.series.length - 1].V_L))} % of all nuclei): born 10 % by ${fmt(R.survivor_window.t10)} s, half by ${fmt(R.survivor_window.t50)} s, 90 % by ${fmt(R.survivor_window.t90)} s` : "")
       : "<b>Nucleation</b>: no nuclei formed in this run";
     drawSeries(); onTime();
     if (L0) drawNucleation(L0);                                  // the run's barrier joins the live curve
