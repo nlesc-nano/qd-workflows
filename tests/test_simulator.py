@@ -105,6 +105,25 @@ def test_injection_temperature_program_and_activities_reach_the_model():
         sim.params_for({**cond, "c_syringe_M": 1.0, "rate_mL_h": 1000.0, "inj_duration_s": 3600.0})
 
 
+def test_classical_twin_from_the_atomistic_model():
+    sim = _sim()
+    m = sim.from_atomistic({"T": 500.0})
+    mat = m["material"]
+    g = sm.gr.Growth(sim.thermo, sim.params_for({"T": 500.0}))
+    g._arrays()
+    cm, cx = g.ref_pool()
+    assert abs(g.pool(mat["C_inf_M"], cx)["mu_MA"] - g.gb) < 1e-6                 # C_inf: mu_MA = g_bulk
+    assert 0.01 <= mat["gamma_J_m2"] <= 2.0 and mat["Vm_A3"] == g.Om and mat["D_cm2_s"] > 0 and mat["k_r_A_s"] > 0
+    if m["raw"]["gamma_J_m2"] < 0.01:                     # the synthetic grid's full shell makes gamma < 0: clipped, noted
+        assert any("gamma_J_m2" in n for n in m["notes"])
+    out = sim.classical_run({"T": 500.0, "t_end": 60.0}, mat)
+    assert abs(out["conservation"]["MA"]) < 1e-9 and out["series"][-1]["N_dots"] > 0
+    json.dumps(out, allow_nan=False)
+    inj = sim.classical_run({"t_end": 300.0, "inject": True, "c_syringe_M": 0.3, "rate_mL_h": 120.0, "V0_mL": 10.0,
+                             "inj_duration_s": 60.0}, mat)
+    assert abs(inj["series"][-1]["V_L"] - 0.012) < 1e-12 and abs(inj["conservation"]["MA"]) < 1e-9
+
+
 def test_pre_pool_closed_form_and_injection_balance():
     sim = _sim()
     P = sim.params_for({"T": 500.0})

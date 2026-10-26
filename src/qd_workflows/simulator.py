@@ -31,6 +31,11 @@ from . import growth as gr
 from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
 
 PAGE = Path(__file__).parent / "templates" / "simulator" / "index.html"
+CLASSICAL_PAGE = Path(__file__).parent / "templates" / "simulator" / "classical.html"
+CLASSICAL_LIMITS = {                        # material sliders of the classical twin
+    "gamma_J_m2": [0.01, 2.0], "Vm_A3": [20.0, 200.0], "C_inf_M": [1e-15, 1.0], "dH_sol_eV": [0.0, 3.0],
+    "D_cm2_s": [1e-8, 1e-2], "k_r_A_s": [1e-2, 1e12], "J0_M_s": [1e-10, 1e40],
+}
 LIMITS = {                                  # slider ranges of the page (the grid thermo spans its own T range)
     "T": [300.0, 700.0], "c_P0": [0.005, 0.5], "c_MX0": [0.01, 1.0], "k_conv_500K": [1e-8, 1e6],
     "t_end": [1.0, 36000.0], "Ea_conv": [0.0, 2.0], "t": [1e-3, 1e5], "eps": [1.0, 40.0],
@@ -71,6 +76,12 @@ class Simulator:
         self.thermo, self.params, self.cfg = thermo, params, preset_cfg
         self.thermo_dir = Path(thermo_dir) if thermo_dir else None      # the grid's structure files are relative to it
         self.max_atoms = max_atoms
+        # solvent-excluded radius of each grid node's lowest state (transport.add_geometry), A
+        self._rse = {}
+        for nd in thermo.get("nodes", []):
+            st = min(nd["states"], key=lambda s: s["E_eV"]) if nd.get("states") else None
+            if st and "R_se_A" in st:
+                self._rse[(nd["m"], nd["k"])] = float(st["R_se_A"])
         self.runs: OrderedDict[str, dict] = OrderedDict()
         self._grids: dict = {}
         self._handovers: dict = {}
@@ -149,6 +160,8 @@ class Simulator:
         for k in ("gamma_MA", "gamma_MX"):
             c[k] = self._clip(cond, k, 1.0)
         P["kinetics"]["beta_scale"] = self._clip(cond, "beta_scale", P["kinetics"].get("beta_scale", 1.0))
+        if cond.get("nucleation_omega") in ("grid", "continuum"):
+            P["nucleation"]["omega"] = cond["nucleation_omega"]   # continuum: CNT with the Wulff sigma (comparison)
         if cond.get("growth_law") in ("shape", "size"):
             P["kinetics"]["growth_law"] = cond["growth_law"]
         if cond.get("inject"):
@@ -211,8 +224,8 @@ class Simulator:
         c = P["conditions"]
         eps = float(P.get("solvation", {}).get("eps", 1.0))
         m0 = self._m0({**c, "eps": eps})[0]
-        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "m": None, "dOmega": []}
-        cols = []
+        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "m": None, "dOmega": [], "R_se_A": []}
+        cols, rcols = [], []
         for row in res["series"]:
             if row["C_M"] <= 1e-20:
                 continue
@@ -228,7 +241,9 @@ class Simulator:
             out["C_M"].append(row["C_M"])
             out["m"] = [r["m"] for r in rows]
             cols.append([r["Omega_m"] - rows[0]["Omega_m"] for r in rows])
+            rcols.append([r["R_se_A"] for r in rows])
         out["dOmega"] = [list(col) for col in zip(*cols)]              # rows m = 1..m0, columns the run's times
+        out["R_se_A"] = [list(col) for col in zip(*rcols)]             # the clusters' radius, same layout
         return out
 
     def build(self, rid: str, t: float, cohort: int | None, which: str = "mode", full: bool = False) -> dict:
@@ -329,9 +344,13 @@ class Simulator:
         for i, m in enumerate(ms.tolist()):
             j = int(np.argmin(v[i]))
             node = th["nodes"][(m, int(ks[j]))]
+            # the cluster's size: solvent-excluded radius (CdCl2 shell included) weighted over its shells k at this pool
+            rk = [(P[i][q], self._rse.get((m, int(k)))) for q, k in enumerate(ks.tolist()) if P[i][q] > 0]
+            wsum = sum(w for w, r in rk if r is not None)
+            r_se = sum(w * r for w, r in rk if r is not None) / wsum if wsum > 0 else None
             rows.append({"m": m, "Omega_m": float(om_m[i]), "k_star": int(ks[j]), "Omega_min": float(v[i, j]),
                          "mean_k": float((P[i] * ks).sum()), "formula": node["formula"],
-                         "source": node["states"][0].get("source", "grid")})
+                         "source": node["states"][0].get("source", "grid"), "R_se_A": r_se})
         below = [r for r in rows if r["m"] <= m0]
         top = max(below, key=lambda r: r["Omega_m"])
         barrier = max(0.0, top["Omega_m"] - below[0]["Omega_m"])
@@ -443,6 +462,84 @@ class Simulator:
                          float(c.get("gamma_MA", 1.0)), float(c.get("gamma_MX", 1.0)))
         return {**om, "t": row["t"]}
 
+    # -- the classical twin (classical.py) --
+    def from_atomistic(self, cond: dict) -> dict:
+        """The classical parameters the atomistic model implies at these conditions (reference pool: half of the
+        precursor converted): gamma_eff = sigma_W / ((36 pi)^(1/3) V_m^(2/3)) of the Wulff dot at the pool's
+        coverage; C_inf where the pool's mu_MA meets g_bulk(T), and its enthalpy from T +- 10 K; D of the monomer
+        complexes (Stokes-Einstein); k_r of the Wulff dot from the facet rates; J0 = J e^(dOmega*/kT) of the grid."""
+        from .classical import J_M2
+        P = self.params_for(cond)
+        g = gr.Growth(self.thermo, P)
+        g._arrays()
+        cm, cx = g.ref_pool()
+
+        def c_inf():
+            lo, hi = math.log(1e-30), math.log(10.0)
+            for _ in range(200):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if g.pool(math.exp(mid), cx)["mu_MA"] < g.gb else (lo, mid)
+            return math.exp(0.5 * (lo + hi))
+
+        T = g.T
+        cinf = {}
+        for dT in (-10.0, 10.0, 0.0):                              # ends at T
+            g.set_temperature(T + dT)
+            g._arrays()
+            cinf[dT] = c_inf()
+        dH = -KB_EV * math.log(cinf[10.0] / cinf[-10.0]) / (1.0 / (T + 10.0) - 1.0 / (T - 10.0))
+        pl, fam = g.chem(cm, cx)
+        J, barrier, _k, _pm = g.nucleation(pl["mu_MA"], pl["mu_MX"])
+        gam_eff = g._sigma / ((36.0 * math.pi) ** (1.0 / 3.0) * g.Om ** (2.0 / 3.0))          # eV/A^2
+        h = g.shape.wulff({f: fam[f]["gamma"] for f in g.F}, g.Om)
+        area = g.shape(h)[0]
+        th = {f: fam[f]["theta"] for f in g.F}
+        k_r = g.mean_keff([{"N": 1.0, "area": area}], th)
+        if k_r is None or not math.isfinite(k_r):
+            k_r = 1e4
+        D = (g._D1 if (g.stokes and g._D1) else g.D) / 1e16                                    # cm^2/s
+        out = {"gamma_J_m2": gam_eff / J_M2, "Vm_A3": g.Om, "C_inf_M": cinf[0.0], "T_ref": T, "dH_sol_eV": max(dH, 0.0),
+               "D_cm2_s": D, "k_r_A_s": k_r, "J0_mode": "zeldovich",
+               "J0_M_s": (J * math.exp(min(barrier / g.kt, 700.0))) if math.isfinite(barrier) else None}
+        raw = dict(out)
+        notes = []
+        for k, (lo, hi) in CLASSICAL_LIMITS.items():          # a classical sphere needs values in the sliders' range
+            if out.get(k) is not None and not lo <= out[k] <= hi:
+                notes.append(f"{k} = {out[k]:.3g} is outside the classical range [{lo:g}, {hi:g}]: clipped")
+                out[k] = min(max(out[k], lo), hi)
+        return {"material": out, "raw": raw, "notes": notes,
+                "reference_pool": {"C_M": cm, "C_X": cx, "S_at_ref": cm / cinf[0.0],
+                                                    "barrier_eV": barrier if math.isfinite(barrier) else None},
+                "sources": {"gamma_J_m2": "Wulff surface energy of the facets at the pool's CdCl2 coverage",
+                            "Vm_A3": "volume per CdSe (MACE zinc blende)",
+                            "C_inf_M": "monomer level where the pool's mu_MA = g_bulk(T)",
+                            "dH_sol_eV": "from C_inf at T - 10 K and T + 10 K",
+                            "D_cm2_s": "monomer complexes, Stokes-Einstein on their hydrodynamic radius",
+                            "k_r_A_s": "facet incorporation rates over the Wulff dot's facets, k_f (1 - theta_f)",
+                            "J0_M_s": "Becker-Doring prefactor of the grid at the reference pool (for J0_mode set)"}}
+
+    def classical_run(self, cond: dict, material: dict | None) -> dict:
+        """The classical twin at the page's conditions (syringe and temperature program included) and the
+        material parameters of the sliders (clipped to CLASSICAL_LIMITS)."""
+        from . import classical as cl
+        P = copy.deepcopy(cl.PARAMS)
+        P["conditions"].update({k: v for k, v in self.params_for(cond)["conditions"].items()
+                                if k not in ("gamma_MA", "gamma_MX")})
+        for k, v in (material or {}).items():
+            if k in CLASSICAL_LIMITS and v is not None:
+                lo, hi = CLASSICAL_LIMITS[k]
+                P["material"][k] = min(max(float(v), lo), hi)
+            elif k in ("J0_mode",) and v in ("zeldovich", "set"):
+                P["material"][k] = v
+            elif k == "T_ref" and v is not None:
+                P["material"][k] = float(v)
+        t0 = time.time()
+        m = cl.Classical(P)
+        res = m.run()
+        return {"seconds": round(time.time() - t0, 2), "material": P["material"], "conditions": P["conditions"],
+                "series": [{k: _finite(v) for k, v in r.items()} for r in res["series"]],
+                "snapshots": res["snapshots"], "conservation": cl.conservation(res)[-1], "steps": m.steps}
+
     def structure(self, m: int, k: int) -> dict:
         """xyz of the grid node's lowest state (the structure file named in the thermo, relative to its folder)."""
         node = next((n for n in self.thermo["nodes"] if n["m"] == m and n["k"] == k), None)
@@ -465,6 +562,33 @@ def make_app(sim: Simulator):
     @app.get("/", response_class=HTMLResponse)
     def page():
         return PAGE.read_text()
+
+    @app.get("/classical", response_class=HTMLResponse)
+    def classical_page():
+        return CLASSICAL_PAGE.read_text()
+
+    @app.get("/api/classical/defaults")
+    def classical_defaults():
+        d = sim.defaults()
+        try:
+            mapped = sim.from_atomistic(d["conditions"])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return {**d, "classical_limits": CLASSICAL_LIMITS, "mapped": mapped}
+
+    @app.post("/api/classical/from_atomistic")
+    def classical_from_atomistic(body: dict = Body(...)):
+        try:
+            return sim.from_atomistic(body)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc).strip("'\""))
+
+    @app.post("/api/classical/run")
+    def classical_run(body: dict = Body(...)):
+        try:
+            return sim.classical_run(body.get("conditions") or {}, body.get("material"))
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc).strip("'\""))
 
     @app.get("/api/defaults")
     def defaults():
