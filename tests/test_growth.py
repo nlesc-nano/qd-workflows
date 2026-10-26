@@ -339,6 +339,22 @@ def test_surface_reaction_from_the_facet_rates():
         assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
 
 
+def test_growth_control_and_nucleation_window():
+    g = gr.Growth(_thermo(), _params())
+    A, r, th = np.array([400.0]), np.array([8.0]), np.array([0.3])
+    rd, rr = g.resistances(A, r, th)
+    g.P["kinetics"]["growth_control"] = "diffusion"
+    d, q = g.resistances(A, r, th)
+    assert np.allclose(d, rd) and np.allclose(q, 0.0)                      # the surface reaction is fast
+    g.P["kinetics"]["growth_control"] = "reaction"
+    d, q = g.resistances(A, r, th)
+    assert np.allclose(d, 0.0) and np.allclose(q, rr)                      # transport is fast
+    res = gr.Growth(_thermo(), _params(conditions={"t_end": 30.0})).run()
+    w = res["nucleation_window"]
+    assert w and w["t10"] <= w["t50"] <= w["t90"] <= 30.0 and w["nuclei_mol"] > 0
+    assert abs(res["series"][-1]["nucleated_M"] * res["series"][-1]["V_L"] - w["nuclei_mol"]) < 1e-12
+
+
 def test_growth_does_not_change_its_params():
     P = _params()
     before = copy.deepcopy(P)

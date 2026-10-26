@@ -40,6 +40,24 @@ def test_growth_rate_limits():
     assert math.isclose(float(m.rate(n, C)), want, rel_tol=1e-4)                      # k_r finite: 3e-5
 
 
+def test_growth_control_switches_the_limiting_step():
+    r, C = 30.0, None
+    rates = {}
+    for ctl in ("mixed", "diffusion", "reaction"):
+        m = cl.Classical(_p(material={"control": ctl, "k_r_A_s": 100.0}))
+        n = 4 * math.pi * r ** 3 / (3 * m.Vm)
+        C = 10 * m.c_inf
+        gt = math.exp(2 * m.gam * m.Vm / (r * m.kt))
+        rates[ctl] = float(m.rate(n, C))
+        drive = cl.NA * (C - m.c_inf * gt) * 4 * math.pi * r * r
+    assert math.isclose(rates["diffusion"], drive * m.D / r, rel_tol=1e-9)
+    assert math.isclose(rates["reaction"], drive * m.k_r, rel_tol=1e-9)
+    assert math.isclose(1 / rates["mixed"], 1 / rates["diffusion"] + 1 / rates["reaction"], rel_tol=1e-9)
+    res = cl.Classical(_p()).run()
+    w = res["nucleation_window"]
+    assert w["t10"] <= w["t50"] <= w["t90"] and w["nuclei_mol"] > 0
+
+
 def test_mass_is_conserved_with_syringe_and_temperature_program():
     for cond in ({"t_end": 600.0},
                  {"c_P0": 0.0, "t_end": 3000.0, "T_growth": 470.0, "t_switch_s": 100.0, "ramp_s": 50.0,

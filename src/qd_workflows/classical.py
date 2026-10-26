@@ -49,6 +49,7 @@ PARAMS = {
         "k_r_A_s": 1e4,                     # surface reaction
         "J0_mode": "zeldovich",             # "zeldovich": J = Z f* C e^(-dG*/kT); "set": J = J0 e^(-dG*/kT)
         "J0_M_s": 1e10,
+        "control": "mixed",                 # growth: "mixed" (r/D + 1/k_r), "diffusion" or "reaction" limited
     },
     "numerics": {"dt_rel_max": 0.01, "birth_interval": 0.05, "birth_share": 0.05, "merge_tol": 0.01,
                  "max_cohorts": 64, "n_min": 2.0},
@@ -119,17 +120,27 @@ class Classical:
             J = float(m["J0_M_s"]) * math.exp(-x)
         else:
             Z = math.sqrt(dG_star / (3.0 * math.pi * self.kt * n_star * n_star)) if n_star > 0 else 0.0
-            f_star = 4.0 * math.pi * r_star ** 2 * NA * C / (r_star / self.D + 1.0 / self.k_r)     # 1/s
+            f_star = 4.0 * math.pi * r_star ** 2 * NA * C / self.resistance(r_star)               # 1/s
             J = Z * f_star * C * math.exp(-x)
         return {"S": S, "n_star": n_star, "r_star": r_star, "dG_star": dG_star, "J": J, "n_birth": max(n_b, n_min)}
 
     # -- growth --
+    def resistance(self, r):
+        """Transport and surface reaction in series per unit area (s/A): r / D + 1 / k_r (material.control "mixed"),
+        r / D alone ("diffusion": diffusion-limited) or 1 / k_r alone ("reaction": reaction-limited)."""
+        ctl = self.P["material"].get("control", "mixed")
+        if ctl == "diffusion":
+            return r / self.D
+        if ctl == "reaction":
+            return 0.0 * r + 1.0 / self.k_r
+        return r / self.D + 1.0 / self.k_r
+
     def rate(self, n, C: float):
         """dn/dt (units/s) of dots of n units at monomer level C: diffusion in series with the surface reaction,
         Gibbs-Thomson solubility C_inf e^(2 gamma V_m / (r kT))."""
         r = self.radius(n)
         gt = np.exp(np.minimum(2.0 * self.gam * self.Vm / (np.maximum(r, 1e-6) * self.kt), 700.0))
-        flux = NA * (C - self.c_inf * gt) / (r / self.D + 1.0 / self.k_r)          # molecules / A^2 / s
+        flux = NA * (C - self.c_inf * gt) / self.resistance(r)                       # molecules / A^2 / s
         return 4.0 * math.pi * r * r * flux
 
     def _merge(self, co: list, n_b: float):
@@ -160,6 +171,7 @@ class Classical:
         inj = self.injection()
         V0 = inj["V0"] if inj else 1.0
         V, n_inj, n_conv = V0, 0.0, 0.0
+        n_nuc, track = 0.0, [(0.0, 0.0, 0.0)]           # moles of nuclei so far; (t, moles, J V) per step
         co = [{"N": float(s["N"]), "n": float(s["n"]), "t_b": 0.0} for s in (seed or [])]
         seeded = sum(x["N"] * x["n"] for x in co)
         pend = pend_n = 0.0
@@ -229,6 +241,8 @@ class Classical:
             C_X = max(C_X - Q * dt, 1e-30)
             C = max(C_new, 1e-30)
             n_conv += Q * dt * V
+            n_nuc += nuc["J"] * dt * V
+            track.append((t + dt, n_nuc, nuc["J"] * V))
             pend += nuc["J"] * dt
             pend_n += nuc["n_birth"] * nuc["J"] * dt
             for x in [x for x in co if x["n"] < n_min]:                       # dissolved dots give back
@@ -266,11 +280,13 @@ class Classical:
                                "barrier": nuc["dG_star"] if math.isfinite(nuc["dG_star"]) else None,
                                "n_star": nuc["n_star"], "r_star_nm": nuc["r_star"] / 10.0 if nuc["r_star"] else None,
                                "n_birth": nuc["n_birth"], "N_dots": N, "m_mean": mm, "d_mean_nm": md, "d_sd_rel": sd,
-                               "n_inj_mol": n_inj, "n_conv_mol": n_conv})
+                               "n_inj_mol": n_inj, "n_conv_mol": n_conv, "nucleated_M": n_nuc / V})
                 snaps.append({"t": t, "cohorts": [{"N": x["N"], "n": x["n"], "t_b": x["t_b"],
                                                    "d_nm": 2.0 * float(self.radius(x["n"])) / 10.0} for x in co]})
                 outs.pop(0)
-        return {"params": self.P, "series": series, "snapshots": snaps, "seeded": seeded, "V0_L": V0}
+        from .growth import nucleation_window
+        return {"params": self.P, "series": series, "snapshots": snaps, "seeded": seeded, "V0_L": V0,
+                "nucleation_window": nucleation_window(track)}
 
 
 def conservation(res) -> list:

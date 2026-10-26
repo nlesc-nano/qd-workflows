@@ -1,0 +1,124 @@
+{
+ "_meta": {
+  "units": {"gamma_J_m2": "J/m^2", "C_inf_M": "mol/L", "D_cm2_s": "cm^2/s", "k_r_A_s": "A/s in dr/dt = V_m k_r (C - C_r)", "Vm_A3": "A^3 per formula unit"},
+  "note": "null = not found in accessible literature. CdSe gamma is a fitted value for capped dots; the other gammas are bare low-index facet DFT values (upper bounds for capped dots). Vm derived as a^3/4 from handbook lattice constants (Madelung, Semiconductors: Data Handbook, Springer 2004). See literature_classical_params.md."
+ },
+ "CdSe": {
+  "gamma_J_m2": 0.17, "C_inf_M": 1e-5, "D_cm2_s": 1e-8, "k_r_A_s": 220.0, "control": "reaction", "Vm_A3": 55.42,
+  "sources": {
+   "gamma": "Bullen & Mulvaney, Nano Lett. 4, 2303 (2004), doi:10.1021/nl0496724; fitted, capped, ODE ~265 C; abstract prints 'J/cm2', read as J/m2",
+   "C_inf": "Talapin et al., J. Phys. Chem. B 105, 12278 (2001), doi:10.1021/jp012229m; C_flat = 1e-2 mol/m3 in the parameter table of Talapin's PhD thesis (Hamburg 2002)",
+   "D": "Talapin 2001 / thesis 2002: D = 1e-12 m2/s",
+   "k_r": "Bullen & Mulvaney 2004: deposition rate constant 2.2e-6 cm/s at ~265 C, converted to A/s",
+   "control": "Bullen 2004; van Embden et al., J. Phys. Chem. C 113, 16342 (2009); Rempel et al., JACS 131, 4479 (2009); Prins...Hens, Nano Lett. 21, 2487 (2021)",
+   "Vm": "derived, ZB a = 6.052 A; Talapin used 3.29e-5 m3/mol (wurtzite) = 54.6 A3"
+  },
+  "flags": {
+   "C_inf": "assumed in the source (model input)",
+   "D": "assumed in the source; probably 1e2-1e3 times below DOSY-type solute values",
+   "alternatives": "gamma 0.125 (Talapin, assumed) and 0.44 (Fanelli 2021, model input); bare calorimetric 1.31 hydrated / 1.65 anhydrous (Xu, Zhou, Navrotsky, J. Mater. Res. 2011); C_inf 5.5e-5 M (Fanelli fit)"
+  }
+ },
+ "CdS": {
+  "gamma_J_m2": null, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "reaction", "Vm_A3": 49.23,
+  "sources": {
+   "gamma": "not found", "C_inf": "not found; the ~1 mM thiourea nucleation threshold at 240 C (Hamachi et al., Chem. Sci. 10, 6539 (2019)) is not C_inf",
+   "D": "not found", "k_r": "not found",
+   "control": "assumed by analogy to CdSe/PbS; Hendricks 2015 and Hamachi 2019 show conversion-limited nucleation, but did not test the growth regime",
+   "Vm": "derived, ZB a = 5.818 A"
+  },
+  "flags": {"control": "assumed"}
+ },
+ "CdTe": {
+  "gamma_J_m2": null, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "reaction", "Vm_A3": 68.06,
+  "sources": {"gamma": "not found", "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed; the reactivity-limited / magic-size-cluster literature is qualitative only", "Vm": "derived, a = 6.481 A"},
+  "flags": {"control": "assumed"}
+ },
+ "ZnSe": {
+  "gamma_J_m2": null, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "reaction", "Vm_A3": 45.52,
+  "sources": {"gamma": "not found", "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed", "Vm": "derived, a = 5.668 A"},
+  "flags": {"control": "assumed"}
+ },
+ "ZnS": {
+  "gamma_J_m2": 0.38, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "reaction", "Vm_A3": 39.56,
+  "sources": {
+   "gamma": "Zhang, Zhang, Tse, Chan, Deng, Zhu, Sci. Rep. 6, 20055 (2016), arXiv:1506.05570: DFT-GGA, bare ZB (110), 23.9 meV/A2",
+   "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed", "Vm": "derived, ZB a = 5.409 A"
+  },
+  "flags": {
+   "gamma": "bare-facet DFT, an upper bound for capped dots; calorimetry gives 1.76 (bare) / 1.25 (hydrated) J/m2 (Subramani...Navrotsky, GCA 2023); oleate-capped surface enthalpy -1.41 J/m2 (Calvin et al., PNAS 2024)",
+   "control": "assumed"
+  }
+ },
+ "ZnTe": {
+  "gamma_J_m2": null, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "reaction", "Vm_A3": 56.77,
+  "sources": {"gamma": "not found", "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed", "Vm": "derived, a = 6.101 A"},
+  "flags": {"control": "assumed"}
+ },
+ "HgTe": {
+  "gamma_J_m2": null, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "mixed", "Vm_A3": 67.43,
+  "sources": {"gamma": "not found", "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed; no data; growth is anisotropic and involves aggregation, so a classical model is questionable", "Vm": "derived, a = 6.461 A"},
+  "flags": {"control": "assumed"}
+ },
+ "InP": {
+  "gamma_J_m2": null, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "reaction", "Vm_A3": 50.54,
+  "sources": {
+   "gamma": "not found. 0.58 J/m2 for (110) appears only in an unverified secondary source; the oleate-capped surface enthalpy is -3.71 J/m2 (Calvin et al., PNAS 121, e2307633121 (2024))",
+   "C_inf": "not found", "D": "not found",
+   "k_r": "not found; Wang...Segets, Chem. Eng. Sci. 2023, doi:10.1016/j.ces.2023.119062, fitted gamma, k and Ea but is paywalled",
+   "control": "McMurtry...Owen, Chem. Mater. 32, 4358 (2020) (size-dependent growth, continuous nucleation); Wang/Segets 2023 (reaction-limited PBE)",
+   "Vm": "derived, a = 5.869 A"
+  },
+  "flags": {"control": "inferred, not tested directly"}
+ },
+ "InAs": {
+  "gamma_J_m2": 0.65, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "diffusion", "Vm_A3": 55.58,
+  "sources": {
+   "gamma": "Leitsmann & Bechstedt, arXiv:cond-mat/0611521 (2006): DFT-LDA, bare relaxed (110), 40.5 meV/A2",
+   "C_inf": "not found", "D": "not found", "k_r": "not found",
+   "control": "Kim, Park, Jeong, Nat. Commun. 12, 3013 (2021) (diffusion-limited growth model with continuous cluster supply); Peng, Wickham, Alivisatos, JACS 120, 5343 (1998)",
+   "Vm": "derived, a = 6.058 A"
+  },
+  "flags": {"gamma": "bare-facet DFT", "control": "modelling assumption under continuous supply; growth after a single injection is ripening-dominated"}
+ },
+ "GaAs": {
+  "gamma_J_m2": 0.83, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "mixed", "Vm_A3": 45.16,
+  "sources": {
+   "gamma": "Moll, Kley, Pehlke, Scheffler, PRB 54, 8844 (1996), arXiv:mtrl-th/9607005: DFT-LDA, bare (110), 52 meV/A2; fracture experiment 0.86 J/m2 (Messmer & Bilello 1981)",
+   "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed; no kinetic data", "Vm": "derived, a = 5.653 A"
+  },
+  "flags": {"gamma": "bare-facet DFT", "control": "assumed"}
+ },
+ "GaP": {
+  "gamma_J_m2": 0.74, "C_inf_M": null, "D_cm2_s": null, "k_r_A_s": null, "control": "mixed", "Vm_A3": 40.49,
+  "sources": {
+   "gamma": "Zhang et al., Sci. Rep. 6, 20055 (2016): DFT-GGA, bare (110), 46.3 meV/A2",
+   "C_inf": "not found", "D": "not found", "k_r": "not found", "control": "assumed; no kinetic data", "Vm": "derived, a = 5.451 A"
+  },
+  "flags": {"gamma": "bare-facet DFT", "control": "assumed"}
+ },
+ "PbS": {
+  "gamma_J_m2": 0.38, "C_inf_M": 2e-10, "D_cm2_s": 3.6e-6, "k_r_A_s": null, "control": "reaction", "Vm_A3": 52.29,
+  "sources": {
+   "gamma": "Mathew et al., J. Chem. Phys. 140, 084106 (2014), arXiv:1310.4242 (values via MPInterfaces, arXiv:1602.07784): DFT-PBE, bare (100), 24 meV/A2",
+   "C_inf": "Wang, Xing, Wei, Wang, Wang, Shen, ACS Omega 6, 3701 (2021), doi:10.1021/acsomega.0c05223 (fitted c1,inf)",
+   "D": "Abecassis et al., Chem. Sci. 13, 4977 (2022), doi:10.1039/d1sc06134h: DOSY of Pb oleate in hexadecane at 110 C, 3.6e-10 m2/s",
+   "k_r": "not reported as k_r; Abecassis 2022 fit G = v_m k_G C / r^alpha with alpha = 1 and k_G = 3.46e-11 m2/s",
+   "control": "Abecassis 2022; Campos et al., Chem. Sci. 13, 4555 (2022), doi:10.1039/d1sc06098h",
+   "Vm": "derived, a = 5.936 A; Abecassis used 31.5e-6 m3/mol"
+  },
+  "flags": {"gamma": "bare-facet DFT, an upper bound for capped dots"}
+ },
+ "PbSe": {
+  "gamma_J_m2": 0.184, "C_inf_M": null, "D_cm2_s": 3.6e-6, "k_r_A_s": null, "control": "reaction", "Vm_A3": 57.42,
+  "sources": {
+   "gamma": "Fang, van Huis, Vanmaekelbergh, Zandbergen, ACS Nano 4, 211 (2010), doi:10.1021/nn9013406: DFT, bare {100}",
+   "C_inf": "not found; [PbSe] at nucleation onset, 0.15-0.58 mM (Campos 2022), is a supersaturation proxy",
+   "D": "assumed: the Pb oleate DOSY value from PbS (Abecassis 2022)",
+   "k_r": "not found",
+   "control": "Campos et al., Chem. Sci. 13, 4555 (2022)",
+   "Vm": "derived, a = 6.124 A"
+  },
+  "flags": {"gamma": "bare-facet DFT", "D": "assumed (transferred from the PbS precursor)"}
+ }
+}

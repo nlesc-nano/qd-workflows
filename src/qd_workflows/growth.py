@@ -932,6 +932,13 @@ class Growth:
             res_r = 1.0 / np.maximum(keff, 1e-30)
         else:
             res_r = 1.0 / (float(k_r) * np.maximum(1.0 - th_bar, 1e-6)) if k_r is not None else 0.0 * res_d
+        # kinetics.growth_control: "mixed" (both in series, the default), "diffusion" (the surface reaction is fast:
+        # diffusion-limited growth) or "reaction" (transport is fast: reaction-limited growth)
+        ctl = self.P["kinetics"].get("growth_control", "mixed")
+        if ctl == "diffusion":
+            res_r = 0.0 * res_d
+        elif ctl == "reaction":
+            res_d = 0.0 * res_d
         return res_d, res_r
 
     # -- facet shape within the size law (kinetics.growth_law = "shape") --
@@ -1067,6 +1074,7 @@ class Growth:
         inj = self.injection()
         V0 = inj["V0"] if inj else 1.0                  # L (concentrations are per litre of the flask at time t)
         V, n_inj, n_conv = V0, 0.0, 0.0                 # flask volume, moles injected, moles of precursor converted
+        n_nuc, track = 0.0, [(0.0, 0.0, 0.0)]           # moles of nuclei so far; (t, moles of nuclei, J V) per step
         t_last_birth = 0.0
         birth_frac = float(self.P["material"].get("birth_interval", 0.05))   # new cohort every 5 % of t
         birth_share = float(self.P["material"].get("birth_share", 0.05))     # or at 5 % of the dots present
@@ -1132,9 +1140,17 @@ class Growth:
                         m_try = mc[i] * (1 + frac) if g_[i] else mc[i] * (1 - frac)
                         if rate0[i] != 0 and abs(self._stop_at_equilibrium(mc[i], m_try, mu0 - self.gb, mg, mug, sigma_now) - m_try) > 1e-12:
                             g_[i] = d_[i] = False
-                if g_.any():                                                # a growing dot changes m by < 2 % a step
-                    dt = min(dt, float((0.02 * np.maximum(mc[g_], 1.0) / rate0[g_]).min()))
-                if d_.any():                                                # a dissolving one by < 20 %
+                if g_.any():
+                    # a growing dot changes m by < 2 % a step, measured against the larger of its own size and 5 % of
+                    # the largest dot: newborn nuclei that grow fast (diffusion-limited) take larger relative steps,
+                    # amounts stay exact, and the dots that hold the material keep the 2 %
+                    m_ref = np.maximum(mc[g_], 0.05 * float(mc.max()))
+                    dt = min(dt, float((0.02 * np.maximum(m_ref, 1.0) / rate0[g_]).min()))
+                # a dissolving one by < 20 %, except the smallest (below 3 m_dissolve): subcritical nuclei that may
+                # vanish within a step go back to the pool whole (exact), instead of forcing microsecond steps when
+                # growth is fast (diffusion-limited) and the newborn nuclei sit at the critical size
+                d_ &= mc > 3.0 * m_dis
+                if d_.any():
                     dt = min(dt, float((0.2 * np.maximum(mc[d_], 1.0) / -rate0[d_]).min()))
                 # each dot's own feedback at fixed C: s = d(dm/dt)/dm = -g c_eq (d mu_dot/dm) / kT, in the continuum
                 # g c_eq (mu_dot - g_bulk) / (3 m kT). s < 0 (gamma < 0, or a grid size where mu rises with m: the dot's
@@ -1264,6 +1280,8 @@ class Growth:
                 C_X += co["N"] * co["k"]
                 cohorts.remove(co)
             n_conv += Q * dt * V
+            n_nuc += J * dt * V
+            track.append((t + dt, n_nuc, J * V))
             if injecting:
                 # syringe: the flask's volume grows by rate dt; everything already there is diluted by V / V_new and
                 # the precursor gains c_syringe rate dt moles (amounts conserved exactly)
@@ -1326,7 +1344,7 @@ class Growth:
                 std = float(np.sqrt((w * (mm - mean) ** 2).sum() / N)) if N > 0 else 0.0
                 row = {"t": t, "P": P_, "C_M": C_M, "C_X": C_X, "c_MX_free": pl["c_MX_free"], "mu_MA": mu,
                        "mu_MX": mu_mx, "S_bulk": math.exp(min((mu - self.gb) / self.kt, 700)),
-                       "T": self.T, "V_L": V, "n_inj_mol": n_inj, "n_conv_mol": n_conv,
+                       "T": self.T, "V_L": V, "n_inj_mol": n_inj, "n_conv_mol": n_conv, "nucleated_M": n_nuc / V,
                        "k_eff": self.mean_keff(cohorts, th_dots),
                        "barrier": barrier, "J": J, "J0": J * math.exp(min(barrier / self.kt, 700)), "k_star": k_star,
                        "m_birth": m_b,
@@ -1341,7 +1359,20 @@ class Growth:
                         f"J = {J:.3g} M/s  dots {N:.3g} M  <m> = {mean:.1f}")
                 outs.pop(0)
         return {"params": self.P, "match_m0": self.match, "handover": self.handover, "m0": self.m0, "series": series,
-                "snapshots": snaps, "seeded": seeded, "V0_L": V0}
+                "snapshots": snaps, "seeded": seeded, "V0_L": V0, "nucleation_window": nucleation_window(track)}
+
+
+def nucleation_window(track) -> dict | None:
+    """When the nuclei formed, from the per-step record (t, moles of nuclei so far, J V): the times by which 10 %,
+    50 % and 90 % of all nuclei had formed and the time of the largest nucleation rate. None without nuclei."""
+    t = np.array([x[0] for x in track])
+    n = np.array([x[1] for x in track])
+    rate = np.array([x[2] for x in track])
+    if len(t) < 2 or n[-1] <= 0:
+        return None
+    frac = n / n[-1]
+    at = {f"t{int(100 * q)}": float(np.interp(q, frac, t)) for q in (0.1, 0.5, 0.9)}
+    return {**at, "t_peak": float(t[int(np.argmax(rate))]), "nuclei_mol": float(n[-1])}
 
 
 def conservation(res) -> dict:

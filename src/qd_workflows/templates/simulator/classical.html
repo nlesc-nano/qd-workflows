@@ -110,13 +110,24 @@ table.src td.n { font-variant-numeric: tabular-nums; white-space: nowrap; text-a
     <section class="card sticky">
       <h2>Conditions</h2>
       <div id="controls"></div>
+      <h3>Look at the time</h3>
+      <div id="lookcontrol"></div>
+      <div class="row" style="margin:-4px 0 4px"><button id="toPeak" disabled>Go to the nucleation peak</button></div>
       <h3><label class="tog"><input type="checkbox" id="inject"> Inject the Se precursor with a syringe</label></h3>
       <div id="injControls" hidden></div>
       <div class="ctl"><div class="hint" id="injInfo"></div></div>
       <h3><label class="tog"><input type="checkbox" id="twoT"> Grow at another temperature</label></h3>
       <div id="tprogControls" hidden></div>
       <h3>Classical material</h3>
-      <div class="row" style="margin-bottom:10px"><button id="fill">Fill from the atomistic model</button></div>
+      <div class="row" style="margin-bottom:6px"><button id="fill">Fill from the atomistic model</button></div>
+      <div class="ctl">
+        <label for="preset">Or a literature preset
+          <select id="preset" style="font:inherit;font-size:13px;padding:2px 4px;border-radius:6px;border:1px solid var(--border);background:var(--surface-0);color:var(--text-primary)">
+            <option value="">choose…</option>
+          </select>
+        </label>
+        <div class="hint">fills only the values the literature reports; the others stay as they are</div>
+      </div>
       <div id="matControls"></div>
       <div class="ctl">
         <label for="j0mode">Nucleation prefactor</label>
@@ -126,6 +137,15 @@ table.src td.n { font-variant-numeric: tabular-nums; white-space: nowrap; text-a
         </div>
       </div>
       <div id="j0Control" hidden></div>
+      <div class="ctl">
+        <label>Growth control</label>
+        <div class="pick" role="radiogroup" aria-label="Growth control">
+          <label><input type="radio" name="gctl" value="mixed" id="gc_mixed" checked> mixed (r/D + 1/k_r)</label>
+          <label><input type="radio" name="gctl" value="diffusion" id="gc_diff"> diffusion-limited</label>
+          <label><input type="radio" name="gctl" value="reaction" id="gc_react"> reaction-limited</label>
+        </div>
+        <div class="hint">also used for the atomistic comparison run</div>
+      </div>
       <div class="status" id="fillStatus"></div>
     </section>
   </div>
@@ -135,6 +155,7 @@ table.src td.n { font-variant-numeric: tabular-nums; white-space: nowrap; text-a
       <h2>Classical run <small id="runInfo"></small></h2>
       <div class="row"><div id="durcontrol" style="flex:1;min-width:220px"></div></div>
       <div class="readouts" id="ro"></div>
+      <div class="cap" id="nucWin" style="font-size:12px;color:var(--text-secondary)"></div>
       <div class="legend"><span><i></i>classical (spheres, CNT, size law)</span>
         <span id="legAt" hidden><i class="at"></i>atomistic model (grid nucleation, facets, coverage)</span></div>
       <div class="charts">
@@ -271,9 +292,31 @@ function setVal(c, x, from) {
 const val = (c) => VALS[c.key];
 const conds = () => ({ ...Object.fromEntries([...CTLS, ...INJ, ...TPROG].map((c) => [c.key, val(c)])),
   inject: $("inject").checked, two_T: $("twoT").checked, t_end: val(DCTL) });
+const gctl = () => ($("gc_diff").checked ? "diffusion" : $("gc_react").checked ? "reaction" : "mixed");
 const material = () => ({ ...Object.fromEntries(MAT.map((c) => [c.key, val(c)])), J0_M_s: val(J0C), T_ref: tRef,
-  J0_mode: $("j0_s").checked ? "set" : "zeldovich" });
-const atomOpts = () => ({ nucleation_omega: $("nuc_cont").checked ? "continuum" : "grid", growth_law: $("shape_wulff").checked ? "size" : "shape" });
+  J0_mode: $("j0_s").checked ? "set" : "zeldovich", control: gctl() });
+const atomOpts = () => ({ nucleation_omega: $("nuc_cont").checked ? "continuum" : "grid", growth_law: $("shape_wulff").checked ? "size" : "shape",
+  growth_control: gctl() });
+const LOOK = { key: "t_look", label: "Time", unit: "s", log: true, hint: "moves the free energy, the size distribution and the dotted line" };
+// when the nuclei formed: green band from 10 % to 90 % of all nuclei, a line at the peak rate (classical run)
+// and the atomistic run's, when one is loaded for these conditions: orange band (lower half of each chart) and a
+// dashed line at its peak, so the two nucleation intervals can be compared directly
+function nucShapes() {
+  const out = [];
+  const w = R && R.nucleation_window;
+  if (w) {
+    const g = css("--series-3");
+    out.push({ type: "rect", xref: "x", yref: "paper", x0: w.t10, x1: w.t90, y0: 0.5, y1: 1, fillcolor: g, opacity: 0.15, line: { width: 0 }, layer: "below" },
+             { type: "line", xref: "x", yref: "paper", x0: w.t_peak, x1: w.t_peak, y0: 0.5, y1: 1, line: { color: g, width: 1.5 } });
+  }
+  const aw = A && A.nucleation_window;
+  if (aw && same({ ...conds(), ...atomOpts() }, aConds)) {
+    const o = css("--series-2");
+    out.push({ type: "rect", xref: "x", yref: "paper", x0: aw.t10, x1: aw.t90, y0: 0, y1: 0.5, fillcolor: o, opacity: 0.15, line: { width: 0 }, layer: "below" },
+             { type: "line", xref: "x", yref: "paper", x0: aw.t_peak, x1: aw.t_peak, y0: 0, y1: 0.5, line: { color: o, width: 1.5, dash: "dash" } });
+  }
+  return out;
+}
 const same = (a, b) => !!b && JSON.stringify(a) === JSON.stringify(b);
 
 function syncToggles() {
@@ -300,7 +343,16 @@ function requestRun() {
     try {
       const r = await api("/api/classical/run", { conditions: conds(), material: material() });
       if (tok !== runTok) return;
-      R = r; $("runInfo").textContent = `${r.seconds} s · ${r.steps} steps · mass balance ${fmt(r.conservation.MA)}`;
+      R = r;
+      const w = R.nucleation_window;
+      const aw = A && same({ ...conds(), ...atomOpts() }, aConds) ? A.nucleation_window : null;
+      $("toPeak").disabled = !w;
+      $("nucWin").innerHTML = (w ? `<b>Nucleation, classical</b> (green band, upper half of the charts): 10 % of the nuclei by ${fmt(w.t10)} s, peak rate at ${fmt(w.t_peak)} s, 90 % by ${fmt(w.t90)} s`
+        : "<b>Nucleation, classical</b>: no nuclei in this run")
+        + (A ? (aw ? `<br><b>Nucleation, atomistic</b> (orange band, lower half): 10 % by ${fmt(aw.t10)} s, peak rate at ${fmt(aw.t_peak)} s, 90 % by ${fmt(aw.t90)} s`
+                   : (same({ ...conds(), ...atomOpts() }, aConds) ? "<br><b>Nucleation, atomistic</b>: no nuclei" : "<br>The atomistic run is for other conditions: run it again to compare."))
+             : "");
+      $("runInfo").textContent = `${r.seconds} s · ${r.steps} steps · mass balance ${fmt(r.conservation.MA)}`;
       const s = $("tslider"); s.max = R.snapshots.length - 1;
       if (snapIdx > s.max || snapIdx === 0) snapIdx = +s.max;
       s.value = snapIdx; draw();
@@ -313,8 +365,8 @@ async function compare() {
   $("compare").disabled = true; $("cmpStatus").className = "status"; $("cmpStatus").textContent = "Running the atomistic model…";
   try {
     A = await api("/api/run", body); aConds = body; $("stale").hidden = true; $("legAt").hidden = false;
-    $("cmpStatus").textContent = `${A.seconds} s · ${A.growth_law === "shape" ? "facet shape rule" : "Wulff shape"} · ${body.nucleation_omega === "grid" ? "grid nucleation" : "continuum nucleation"}`;
-    draw();
+    $("cmpStatus").textContent = `${A.seconds} s · ${A.growth_law === "shape" ? "facet shape rule" : "Wulff shape"} · ${body.nucleation_omega === "grid" ? "grid nucleation" : "continuum nucleation"} · ${{ mixed: "mixed", diffusion: "diffusion-limited", reaction: "reaction-limited" }[A.growth_control]} growth`;
+    requestRun();                                                // redraws, with the atomistic nucleation times
   } catch (e) { $("cmpStatus").className = "status err"; $("cmpStatus").textContent = e.message; }
   $("compare").disabled = false;
 }
@@ -332,6 +384,31 @@ async function fill(first) {
     requestRun();
   } catch (e) { $("fillStatus").className = "status err"; $("fillStatus").textContent = e.message; }
   $("fill").disabled = false;
+}
+
+// literature preset: the values a survey of colloidal-nanocrystal models reports for one material (null: not
+// reported, kept); the source table lists each value's source and flag
+let PRESETS = null;
+function applyPreset(name) {
+  const p = PRESETS && PRESETS[name];
+  if (!p) return;
+  const keys = { gamma_J_m2: "gamma", C_inf_M: "C_inf", D_cm2_s: "D", k_r_A_s: "k_r", Vm_A3: "Vm" };
+  const rows = [];
+  for (const c of MAT) {
+    const v = p[c.key];
+    if (v != null) setVal(c, v);
+    const src = (p.sources || {})[keys[c.key]] || "";
+    const flag = (p.flags || {})[keys[c.key]];
+    rows.push(`<tr><td>${c.label}</td><td class="n">${v != null ? fmt(v, 4) : "kept " + fmt(val(c), 3)}</td><td>${v != null ? src + (flag ? ` <em style="color:var(--warn-ink)">(${flag})</em>` : "") : "not reported for " + name}</td></tr>`);
+  }
+  if (p.control) $({ mixed: "gc_mixed", diffusion: "gc_diff", reaction: "gc_react" }[p.control]).checked = true;
+  rows.push(`<tr><td>Growth control</td><td class="n">${p.control || "kept"}</td><td>${(p.sources || {}).control || ""}</td></tr>`);
+  if (p.flags && p.flags.alternatives) rows.push(`<tr><td>Alternatives</td><td></td><td>${p.flags.alternatives}</td></tr>`);
+  $("srcRows").innerHTML = rows.join("");
+  $("mapWhen").textContent = `literature preset: ${name}`;
+  $("fillStatus").className = "status";
+  $("fillStatus").textContent = `${name} literature preset${name !== "CdSe" ? " (with the CdSe conditions and the CdSe atomistic comparison)" : ""}`;
+  requestRun();
 }
 
 function showSources(m) {
@@ -388,7 +465,7 @@ function draw() {
   Plotly.react("cG", L5, G, PCONF);
   Plotly.react("cR", [ln(t, S.map((r) => r.r_star_nm), "r*", c1)], layout("linear"), PCONF);
   for (const id of ["cLaMer", "cSJ", "cN", "cD", "cG", "cR"]) {
-    Plotly.relayout(id, { shapes: [vline(tNow)] });
+    Plotly.relayout(id, { shapes: [vline(tNow), ...nucShapes()] });
     $(id).removeAllListeners?.("plotly_click"); $(id).on("plotly_click", (ev) => setTimeTo(ev.points[0].x));
   }
   readouts(); drawPSD(); drawDG();
@@ -471,13 +548,17 @@ function drawPSD() {
   Plotly.react("cPSD", tr, L, PCONF);
 }
 
+function syncLook() {
+  if (R && $("n_t_look")) setVal(LOOK, R.snapshots[snapIdx].t);
+}
 function setTimeTo(t) {
   let best = 0;
   R.snapshots.forEach((s, i) => { if (Math.abs(Math.log(s.t / t)) < Math.abs(Math.log(R.snapshots[best].t / t))) best = i; });
-  snapIdx = best; $("tslider").value = best; draw();
+  snapIdx = best; $("tslider").value = best; draw(); syncLook();
 }
 
-$("tslider").addEventListener("input", (e) => { snapIdx = +e.target.value; draw(); });
+$("tslider").addEventListener("input", (e) => { snapIdx = +e.target.value; draw(); syncLook(); });
+$("toPeak").addEventListener("click", () => { if (R && R.nucleation_window) { setTimeTo(R.nucleation_window.t_peak); syncLook(); } });
 $("compare").addEventListener("click", compare);
 $("fill").addEventListener("click", () => fill(false));
 
@@ -490,6 +571,8 @@ $("fill").addEventListener("click", () => fill(false));
   for (const c of MAT) addSlider($("matControls"), c, D.classical_limits[c.key], D.mapped.material[c.key], requestRun);
   addSlider($("j0Control"), J0C, D.classical_limits.J0_M_s, D.mapped.material.J0_M_s ?? 1e10, requestRun);
   addSlider($("durcontrol"), DCTL, D.limits.t_end, D.conditions.t_end, requestRun);
+  addSlider($("lookcontrol"), LOOK, [1e-3, D.limits.t_end[1]], 10.0, () => R && setTimeTo(val(LOOK)));
+  document.querySelectorAll('input[name="gctl"]').forEach((r) => r.addEventListener("change", requestRun));
   $("inject").addEventListener("change", () => {
     if ($("inject").checked && val(DCTL) < 1.5 * val(INJ[3])) setVal(DCTL, Math.min(1.5 * val(INJ[3]), D.limits.t_end[1]));
     requestRun();
@@ -498,6 +581,13 @@ $("fill").addEventListener("click", () => fill(false));
   document.querySelectorAll('input[name="j0"], input[name="nuc"], input[name="shape"]').forEach((r) => r.addEventListener("change", requestRun));
   document.querySelectorAll('input[name="dgx"]').forEach((r) => r.addEventListener("change", () => R && drawDG()));
   await fill(true);
+  try {
+    PRESETS = await api("/api/classical/presets");
+    for (const name of Object.keys(PRESETS).filter((k) => !k.startsWith("_"))) {
+      const o = document.createElement("option"); o.value = name; o.textContent = name; $("preset").appendChild(o);
+    }
+    $("preset").addEventListener("change", (e) => applyPreset(e.target.value));
+  } catch (e) { $("preset").disabled = true; }
 })();
 </script>
 </body>

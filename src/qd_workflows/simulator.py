@@ -102,6 +102,7 @@ class Simulator:
                                **PAGE_DEFAULTS, "T_growth": c["T"],
                                "beta_scale": float(kin.get("beta_scale", 1.0))},
                 "growth_law": kin.get("growth_law", "size"), "facet_kinetics": kin.get("facets") or {},
+                "growth_control": kin.get("growth_control", "mixed"),
                 "k_r_mode": "facets" if k_r == "facets" else "set",
                 "m0": self._m0({**c, "eps": eps})[0],
                 "solvation_note": self.params.get("solvation", {}).get("note", ""),
@@ -160,6 +161,8 @@ class Simulator:
         for k in ("gamma_MA", "gamma_MX"):
             c[k] = self._clip(cond, k, 1.0)
         P["kinetics"]["beta_scale"] = self._clip(cond, "beta_scale", P["kinetics"].get("beta_scale", 1.0))
+        if cond.get("growth_control") in ("mixed", "diffusion", "reaction"):
+            P["kinetics"]["growth_control"] = cond["growth_control"]   # transport and surface reaction, or one of them
         if cond.get("nucleation_omega") in ("grid", "continuum"):
             P["nucleation"]["omega"] = cond["nucleation_omega"]   # continuum: CNT with the Wulff sigma (comparison)
         if cond.get("growth_law") in ("shape", "size"):
@@ -205,10 +208,12 @@ class Simulator:
                             "facets": {f: a / A for f, a in co["area"].items() if a > 0}})
             snaps.append({"t": s["t"], "cohorts": cos})
         keep = ("t", "T", "V_L", "P", "C_M", "C_X", "c_MX_free", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots",
-                "m_mean", "m_std", "theta", "theta_eq", "gamma", "k_eff")
+                "m_mean", "m_std", "theta", "theta_eq", "gamma", "k_eff", "nucleated_M")
         used = g.F                                           # derived: solvation, binding at T, match_m0 rescaling
         return {"run_id": rid, "seconds": round(time.time() - t0, 2), "conditions": P["conditions"],
                 "growth_law": P["kinetics"].get("growth_law", "size"),
+                "growth_control": P["kinetics"].get("growth_control", "mixed"),
+                "nucleation_window": res.get("nucleation_window"),
                 "match_m0": res["match_m0"], "modified": modified,
                 "surface_used": {f: {"gamma0": used[f]["gamma0"], "eps0": used[f].get("eps0"),
                                      "dG_bind": used[f]["dG_bind"]} for f in used},
@@ -531,12 +536,15 @@ class Simulator:
                 P["material"][k] = min(max(float(v), lo), hi)
             elif k in ("J0_mode",) and v in ("zeldovich", "set"):
                 P["material"][k] = v
+            elif k == "control" and v in ("mixed", "diffusion", "reaction"):
+                P["material"][k] = v
             elif k == "T_ref" and v is not None:
                 P["material"][k] = float(v)
         t0 = time.time()
         m = cl.Classical(P)
         res = m.run()
         return {"seconds": round(time.time() - t0, 2), "material": P["material"], "conditions": P["conditions"],
+                "nucleation_window": res.get("nucleation_window"),
                 "series": [{k: _finite(v) for k, v in r.items()} for r in res["series"]],
                 "snapshots": res["snapshots"], "conservation": cl.conservation(res)[-1], "steps": m.steps}
 
@@ -575,6 +583,12 @@ def make_app(sim: Simulator):
         except ValueError as exc:
             raise HTTPException(400, str(exc))
         return {**d, "classical_limits": CLASSICAL_LIMITS, "mapped": mapped}
+
+    @app.get("/api/classical/presets")
+    def classical_presets():
+        """Literature values of the classical parameters per material (survey of II-VI, III-V, IV-VI nanocrystal
+        models; null where not reported), with their sources and flags."""
+        return json.loads((CLASSICAL_PAGE.parent / "literature_presets.json").read_text())
 
     @app.post("/api/classical/from_atomistic")
     def classical_from_atomistic(body: dict = Body(...)):

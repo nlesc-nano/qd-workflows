@@ -199,6 +199,12 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
         <label><input type="radio" name="law" value="shape" id="law_shape"> facet shape rule (the facet rates share the growth)</label>
         <label><input type="radio" name="law" value="size" id="law_size"> Wulff shape at γ(C)</label>
       </div>
+      <div class="lawpick" role="radiogroup" aria-label="Growth control" style="margin-top:4px">
+        <span>Growth control:</span>
+        <label><input type="radio" name="gctl" value="mixed" id="gc_mixed" checked> computed (transport and surface reaction in series)</label>
+        <label><input type="radio" name="gctl" value="diffusion" id="gc_diff"> diffusion-limited</label>
+        <label><input type="radio" name="gctl" value="reaction" id="gc_react"> reaction-limited</label>
+      </div>
       <div class="cap">Uses the conditions on the left. Growth duration is how long the kinetics is integrated after
         injection; it is independent of the time you look at Ω above. Each dot grows or dissolves by
         dm/dt = A·N<sub>A</sub>(C − C<sub>eq</sub>(m)) / (A/4πDr + 1/k<sub>eff</sub>) (diffusion in series with the
@@ -208,6 +214,7 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
         relative speeds ρ<sub>f</sub>k<sub>f</sub>(1 − θ<sub>f</sub>)[1 − e<sup>−(μ<sub>s</sub>−μ<sub>f</sub>)/kT</sup>]P<sub>f</sub>
         (P<sub>f</sub>: layer nucleation from the island step β<sub>f</sub>); otherwise every dot keeps the Wulff shape.</div>
       <div class="status" id="runStatus"></div>
+      <div class="poolline" id="nucWin" hidden></div>
       <div id="growth" hidden>
         <div class="stale" id="stale" hidden>The conditions changed since this run: press Run kinetic growth again to update it.</div>
         <div class="chart-title">Time in the growth run</div>
@@ -358,8 +365,17 @@ function setVal(c, x, from) {
   h.textContent = c.hint || "";
 }
 const law = () => ($("law_size").checked ? "size" : "shape");
+const gctl = () => ($("gc_diff").checked ? "diffusion" : $("gc_react").checked ? "reaction" : "mixed");
+// when the nuclei formed in the growth run: a band from 10 % to 90 % of all nuclei and a line at the peak rate
+function nucShapes() {
+  const w = R && R.nucleation_window;
+  if (!w || !sameConds(conds(), runConds)) return [];
+  const band = css("--series-3");
+  return [{ type: "rect", xref: "x", yref: "paper", x0: w.t10, x1: w.t90, y0: 0, y1: 1, fillcolor: band, opacity: 0.13, line: { width: 0 }, layer: "below" },
+          { type: "line", xref: "x", yref: "paper", x0: w.t_peak, x1: w.t_peak, y0: 0, y1: 1, line: { color: band, width: 1.5 } }];
+}
 const conds = () => ({ ...Object.fromEntries(ALLCTLS.map((c) => [c.key, val(c)])),
-  inject: $("inject").checked, two_T: $("twoT").checked, growth_law: law() });
+  inject: $("inject").checked, two_T: $("twoT").checked, growth_law: law(), growth_control: gctl() });
 function syncToggles() {
   const inj = $("inject").checked, two = $("twoT").checked;
   $("injControls").hidden = !inj; $("tprogControls").hidden = !two;
@@ -458,7 +474,7 @@ function drawNucleation(o) {
   const B = layout("linear", { hovermode: "x unified" });
   B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4 };
   B.xaxis.title = { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 };
-  B.shapes = [vline(o.t)];
+  B.shapes = [vline(o.t), ...nucShapes()];
   // the growth run of these conditions, when there is one: the barrier with the monomer the dots consume
   const run = runOmega();
   const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "precursor only (no nuclei)", c1,
@@ -490,7 +506,7 @@ function drawNucleation(o) {
   const M = layout("linear", { hovermode: "closest", margin: { l: 44, r: 8, t: 6, b: 32 } });
   M.xaxis = { type: "log", title: { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, exponentformat: "power" };
   M.yaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, range: [0.5, o.m0 + 0.5] };
-  M.shapes = [vline(o.t)];
+  M.shapes = [vline(o.t), ...nucShapes()];
   Plotly.react("cOmegaT", [map, zero, path], M, PCONF);
   onClick("cOmegaT", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
 }
@@ -525,6 +541,11 @@ async function run() {
     $("growth").hidden = false; $("stale").hidden = true;
     const s = $("tslider"); s.max = R.snapshots.length - 1;
     snapIdx = R.snapshots.length - 1; s.value = snapIdx;
+    const w = R.nucleation_window;
+    $("nucWin").hidden = false;
+    $("nucWin").innerHTML = w
+      ? `<b>Nucleation</b> (green band on the charts): 10 % of the nuclei formed by ${fmt(w.t10)} s, the rate peaks at ${fmt(w.t_peak)} s, half by ${fmt(w.t50)} s, 90 % by ${fmt(w.t90)} s`
+      : "<b>Nucleation</b>: no nuclei formed in this run";
     drawSeries(); onTime();
     if (L0) drawNucleation(L0);                                  // the run's barrier joins the live curve
     const nEnd = R.series[R.series.length - 1].N_dots;
@@ -556,7 +577,7 @@ function setTimeTo(t) {
 
 function onTime() {
   const t = R.snapshots[snapIdx].t;
-  for (const id of TIME_CHARTS) Plotly.relayout(id, { shapes: [vline(t)] });
+  for (const id of TIME_CHARTS) Plotly.relayout(id, { shapes: [vline(t), ...nucShapes()] });
   $("tval").textContent = `${fmt(t)} s`;
   const row = R.series.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
   $("poolLine").textContent = `${row.T != null ? row.T.toFixed(0) + " K · " : ""}${row.V_L != null && R.conditions.injection ? fmt(1000 * row.V_L) + " mL · " : ""}Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier == null ? "none (no supersaturation)" : row.barrier.toFixed(3) + " eV"}${row.k_eff != null ? ` · surface reaction k_eff ${fmt(row.k_eff)} Å/s${D.k_r_mode === "facets" ? " (from the facet rates)" : ""}` : ""}`;
@@ -743,7 +764,8 @@ $("dlxyz").addEventListener("click", () => {
   $("twoT").addEventListener("change", onCtl);
   document.querySelectorAll('input[name="mapsrc"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
   $(D.growth_law === "size" ? "law_size" : "law_shape").checked = true;
-  document.querySelectorAll('input[name="law"]').forEach((r) => r.addEventListener("change", () => {
+  $({ mixed: "gc_mixed", diffusion: "gc_diff", reaction: "gc_react" }[D.growth_control || "mixed"]).checked = true;
+  document.querySelectorAll('input[name="law"], input[name="gctl"]').forEach((r) => r.addEventListener("change", () => {
     if (R) $("stale").hidden = sameConds(conds(), runConds);
   }));
   addSlider($("tcontrol"), TCTL, requestLive);
