@@ -417,6 +417,23 @@ def test_growth_control_and_nucleation_window():
     assert abs(res["series"][-1]["nucleated_M"] * res["series"][-1]["V_L"] - w["nuclei_mol"]) < 1e-12
 
 
+def test_a_fast_facet_grows_out_of_the_surface_reaction():
+    facets = {"100": {"k_f": 1e4}, "111A": {"k_f": 4e11}, "111B": {"k_f": 3e3}, "110": {"k_f": 2e11}}
+    g = gr.Growth(_thermo(), _params(kinetics={"k_r": "facets", "facets": facets}))
+    th = {f: 0.0 for f in g.F}
+    assert g.kinetic_survivors(th) == {"111B"}                               # the slowest family alone
+    # a cube with a thin {111}A sliver: the sliver adds nothing, the slowest exposed facet ({100}) sets the rate
+    area = {"100": 990.0, "111A": 10.0, "111B": 0.0, "110": 0.0}
+    assert math.isclose(g.facet_keff(area, th), 1e4)
+    # {100} and {111}B together: {100} grows out, {111}B alone counts
+    area = {"100": 800.0, "111A": 10.0, "111B": 200.0, "110": 0.0}
+    assert math.isclose(g.facet_keff(area, th), 3e3)
+    # comparable rates stay together: area-weighted over both
+    g2 = gr.Growth(_thermo(), _params(kinetics={"k_r": "facets", "facets": {**facets, "100": {"k_f": 4e3}}}))
+    assert g2.kinetic_survivors(th) == {"100", "111B"}
+    assert math.isclose(g2.facet_keff(area, th), (4e3 * 800 + 3e3 * 200) / 1000)
+
+
 def test_growth_does_not_change_its_params():
     P = _params()
     before = copy.deepcopy(P)

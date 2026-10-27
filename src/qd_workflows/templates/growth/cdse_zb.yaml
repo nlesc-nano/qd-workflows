@@ -1,8 +1,8 @@
 # Growth-model parameters: every value is a PLACEHOLDER until the shape-library fits replace it.
 conditions:
   T: 500.0
-  c_P0: 0.1
-  c_MX0: 0.2
+  c_P0: 0.025
+  c_MX0: 0.03
   k_conv_500K: 1.0
   Ea_conv: 0.0
   t_end: 600.0
@@ -47,43 +47,51 @@ kinetics:
       k_f: 2.4e+11
 families:
   '100':
-    gamma0: 11.3
-    eps0: 1.38
-    Gamma_max: 3.05
-    w: 0.738
+    gamma0: 15.6
+    eps0: 1.45
+    Gamma_max: 3.03
+    w: 0.89
     tau: 14.0
     k0: 10000.0
     x_X: 0.0
     site_area: 19.238381192648
   111A:
-    gamma0: 25.3
-    eps0: 1.06
+    gamma0: 22.22
+    eps0: 2.06
     Gamma_max: 1.26
-    w: 0.305
+    w: 1.3
     tau: 14.0
     k0: 10000.0
     x_X: 0.0
     site_area: 16.660926840521935
   111B:
-    gamma0: 21.9
-    eps0: 1.08
-    Gamma_max: 0.66
-    w: 0.16
+    gamma0: 13.6
+    eps0: 0.93
+    Gamma_max: 3.9
+    w: 0.9
     tau: 14.0
     k0: 10000.0
     x_X: 0.0
     site_area: 16.660926840521935
   '110':
-    gamma0: 21.5
-    eps0: 1.28
-    Gamma_max: 1.21
-    w: 0.293
+    gamma0: 18.14
+    eps0: 0.61
+    Gamma_max: 3.3
+    w: 0.8
     tau: 14.0
     k0: 10000.0
     x_X: 0.0
     site_area: 27.20717960074628
 provenance:
-  families: fit of 108 QD_builder dots (MACE-MH-1)
+  families: 'per-site-class refit (2026-10-27) of the 92 QD_builder library dots with >= 100 atoms (MACE-MH-1 omat_pbe,
+    rattle-polished bases; rms 15 meV/atom saturated, 10 meV/atom bare). CdCl2 counted per site class of the facet-net
+    partition (facet centre / edge / vertex): centre units by the Fowler-Guggenheim shell of each facet, edge and vertex
+    units with their own fitted binding (1.0-1.1 eV, as the measured local removals). Gamma_max: Z-type sites per
+    atom-fitted area from the site counts ({100} 10 CdCl2 per face, bridging Cl above the Cd layer; {111}A ~0.25 per Cd,
+    none in the centre; {111}B 13 per 21 Se; {110} 0.8-0.9 per Se). eps0, w: {100} and {111}A from greedy strips within
+    the facet''s own Cl on the polished 3x3x3 dot (eps0 refitted with the library), {111}B and {110} eps0 from
+    zero-coverage intact Z-type additions on facet centres; gamma0 fitted jointly, gamma > 0 at all coverages'
+  conditions: 'default synthesis: 0.025 M Se precursor, 0.03 M CdCl2, 500 K'
   shell_offset: 'the same 108 dots (builder geometries): R_h = capacitance of the van der Waals body (CdCl2 included),
     R_se = solvent-excluded radius (2 A probe), against the convex hull of the Cd/Se core scaled to m Omega_m;
     dR = a + b sigma (A), sigma = k / A_P (MX_q per A^2), rms 0.37 A (R_h) and 0.32 A (R_se), 3 % of R_h'

@@ -896,7 +896,8 @@ class Growth:
         """Per cohort: total area A (A^2), equivalent radius r (A), the dot's chemical potential mu_dot - g_bulk (eV)
         of its Wulff shape at gamma(C), mu_dot = g_bulk + (2/3) Omega_m sum_f gamma_f A_f / V, and the area-weighted
         Z-type coverage of its facets (th: the dots' coverage per family). With kinetics.k_r = "facets" also each
-        dot's surface reaction from the facet rates, k_eff = sum_f A_f k_f (1 - theta_f) / A (self._keff, A/s)."""
+        dot's surface reaction from the facet rates over the facets that survive in the kinetic shape (facet_keff),
+        k_eff = sum_f A_f k_f (1 - theta_f) / sum_f A_f (self._keff, A/s)."""
         n = len(cohorts)
         A, r, dmu_dot, th_bar = (np.zeros(n) for _ in range(4))
         facets_kr = self.P["kinetics"].get("k_r") == "facets"
@@ -905,7 +906,6 @@ class Growth:
             missing = [f for f in self.F if "k_f" not in FK.get(f, {})]
             if missing:
                 raise ValueError(f"k_r = 'facets' needs kinetics.facets with k_f for every family (missing {missing})")
-            kf = {f: float(FK[f]["k_f"]) for f in self.F}
         self._keff = np.zeros(n) if facets_kr else None
         if self.sphere:                                   # ideal growth: spheres of one gamma, no shell
             m = np.array([max(co["m"], 1e-12) for co in cohorts])
@@ -927,7 +927,7 @@ class Growth:
                 + self.junction(co["m"])
             th_bar[i] = sum(th[f] * area[f] for f in self.F) / a if a > 0 else 0.0
             if facets_kr:
-                self._keff[i] = sum(kf[f] * (1.0 - th[f]) * area[f] for f in self.F) / a if a > 0 else 0.0
+                self._keff[i] = self.facet_keff(area, th)
         return A, r, dmu_dot, th_bar
 
     def mean_keff(self, cohorts, th):
@@ -939,13 +939,43 @@ class Growth:
         k_r = self.P["kinetics"].get("k_r")
         if k_r != "facets":
             return float(k_r) if k_r is not None else None
-        FK = self.P["kinetics"]["facets"]
         tot = 0.0
         for co in cohorts:
-            a = sum(co["area"].values())
-            if a > 0:
-                tot += co["N"] * sum(float(FK[f]["k_f"]) * (1.0 - th[f]) * co["area"][f] for f in self.F) / a
+            if sum(co["area"].values()) > 0:
+                tot += co["N"] * self.facet_keff(co["area"], th)
         return tot / N
+
+    KIN_SPREAD = 1e3                                     # facets more than this much faster than the slowest: far out
+
+    def kinetic_survivors(self, th):
+        """The facet families of the kinetic shape: the polyhedron with each family at a distance proportional to its
+        incorporation rate v_f = k_f (1 - theta_f). A family with no area there grows out of a dot (it advances faster
+        than its neighbours allow) and takes no part in the dot's surface reaction. Cached per coverage (to 0.001)."""
+        key = tuple(round(float(th[f]), 3) for f in self.F)
+        cache = self.__dict__.setdefault("_kin_cache", {})
+        if key not in cache:
+            FK = self.P["kinetics"]["facets"]
+            v = {f: float(FK[f]["k_f"]) * max(1.0 - th[f], 1e-6) for f in self.F}
+            vmin = min(v.values())
+            area, _v, _s = self.shape({f: min(v[f] / vmin, self.KIN_SPREAD) for f in self.F})
+            tot = sum(area.values())
+            cache[key] = {f for f in self.F if area[f] > 1e-9 * tot}
+        return cache[key]
+
+    def facet_keff(self, area, th):
+        """A dot's surface reaction rate (A/s) from the facet incorporation rates, over the facets it exposes that
+        survive in the kinetic shape (kinetic_survivors): sum A_f k_f (1 - theta_f) / sum A_f. A facet much faster
+        than its neighbours grows out and does not add its rate; when none of the exposed facets survives (a dot
+        held in a shape the kinetics would change), the slowest exposed facet sets the rate."""
+        FK = self.P["kinetics"]["facets"]
+        v = {f: float(FK[f]["k_f"]) * (1.0 - th[f]) for f in self.F}
+        exposed = [f for f in self.F if area.get(f, 0.0) > 0]
+        if not exposed:
+            return 0.0
+        keep = [f for f in exposed if f in self.kinetic_survivors(th)]
+        if not keep:
+            return min(v[f] for f in exposed)
+        return sum(v[f] * area[f] for f in keep) / sum(area[f] for f in keep)
 
     def _merge(self, cohorts: list):
         """Merge neighbouring cohorts (in ln m) that are within material.merge_tol (1 %) of each other, and the
