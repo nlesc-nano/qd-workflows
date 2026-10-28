@@ -117,6 +117,28 @@ def test_carboxylate_grid_nucleation_only():
     assert d3["barrier"] == o["barrier"] and d3["per_m"] == o["per_m"]
 
 
+def test_nodes_without_thermo_show_their_structure(tmp_path):
+    # a grid node the thermo skipped (no Hessian): listed, its lowest state's structure and energy from the grid,
+    # marked thermo False, and never in Omega
+    th = _thermo()
+    (m, k) = (3, 1)
+    th["nodes"] = [n for n in th["nodes"] if (n["m"], n["k"]) != (m, k)]
+    th["skipped"] = [[m, k]]
+    (tmp_path / "grid" / "nodes").mkdir(parents=True)
+    (tmp_path / "grid" / "grid.json").write_text(json.dumps({"nodes": [{"m": m, "k": k, "formula": "Cd4Se3Cl2",
+                                                                      "E_eV": -12.5, "states": [{"E_eV": -12.5}]}]}))
+    (tmp_path / "grid" / "nodes" / "m03_k01.xyz").write_text("1\nm=3 k=1 E=-12.5 eV\nCd 0 0 0\n")
+    sim = sm.Simulator(th, _params(nucleation={"J0": 1e-4}), PRESET, thermo_dir=tmp_path)
+    assert sim.defaults()["no_thermo"] == [[m, k]]
+    s = sim.structure(m, k)
+    assert s["thermo"] is False and s["E_eV"] == -12.5 and s["file"] == "grid/nodes/m03_k01.xyz"
+    o = sim.omega_live({"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t": 10.0})
+    i, j = o["ms"].index(m), o["ks"].index(k)
+    assert o["Omega"][i][j] is None and o["P_k"][i][j] == 0.0
+    with pytest.raises(KeyError):
+        sim.structure(3, 99)
+
+
 def test_facet_overrides_are_checked_and_marked():
     sim = _sim()
     d = sim.defaults()["surface"]

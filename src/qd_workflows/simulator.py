@@ -137,6 +137,18 @@ class Simulator:
             st = min(nd["states"], key=lambda s: s["E_eV"]) if nd.get("states") else None
             if st and "R_se_A" in st:
                 self._rse[(nd["m"], nd["k"])] = float(st["R_se_A"])
+        # grid nodes without thermochemistry (thermo_merged "skipped": not annealed, so no Hessian): their lowest state's
+        # energy and structure from the grid (grid/grid.json, grid/nodes/mMM_kKK.xyz), shown but never in Omega
+        self.no_thermo = {}
+        gj = self.thermo_dir / "grid" / "grid.json" if self.thermo_dir else None
+        if thermo.get("skipped") and gj and gj.is_file():
+            gnodes = {(n["m"], n["k"]): n for n in json.loads(gj.read_text())["nodes"]}
+            for m, k in thermo["skipped"]:
+                f = f"grid/nodes/m{m:02d}_k{k:02d}.xyz"
+                if (m, k) in gnodes and (self.thermo_dir / f).is_file():
+                    n = gnodes[(m, k)]
+                    self.no_thermo[(m, k)] = {"E_eV": float(n["E_eV"]), "formula": n["formula"], "file": f,
+                                              "n_states": len(n.get("states", [])) or 1}
         self.runs: OrderedDict[str, dict] = OrderedDict()
         self._grids: dict = {}
         self._handovers: dict = {}
@@ -165,6 +177,7 @@ class Simulator:
                 "material": self.cfg.get("material", ""), "phase": self.cfg.get("phase", ""),
                 "ligand": {"name": self.ligand, "label": self.xl["label"]}, "nucleation_only": self.nucleation_only,
                 "g_bulk_shift_eV": float(self.params["material"].get("g_bulk_shift_eV", 0.0)),
+                "no_thermo": sorted([m, k] for m, k in self.no_thermo),
                 "surface": {"source": self.params.get("provenance", {}).get("families", "placeholder"),
                             "match_m0": bool(self.params["material"].get("match_m0", False)),
                             "editable": {k: {"min": lo, "max": hi, "unit": u} for k, (lo, hi, u) in EDITABLE.items()},
@@ -644,16 +657,23 @@ class Simulator:
                 "snapshots": res["snapshots"], "conservation": cl.conservation(res)[-1], "steps": m.steps}
 
     def structure(self, m: int, k: int) -> dict:
-        """xyz of the grid node's lowest state (the structure file named in the thermo, relative to its folder)."""
+        """xyz of the grid node's lowest state (the structure file named in the thermo, relative to its folder); a node
+        without thermochemistry (no_thermo) from the grid itself, with thermo False."""
         node = next((n for n in self.thermo["nodes"] if n["m"] == m and n["k"] == k), None)
-        if node is None:
+        if node is None and (m, k) in self.no_thermo:
+            nt = self.no_thermo[(m, k)]
+            st, node, thermo = {"file": nt["file"], "E_eV": nt["E_eV"], "source": "grid"}, {"formula": nt["formula"]}, False
+            n_states = nt["n_states"]
+        elif node is None:
             raise KeyError(f"no grid node m = {m}, k = {k}")
-        st = node["states"][0]
+        else:
+            st, thermo, n_states = node["states"][0], True, len(node["states"])
         path = Path(st["file"]) if self.thermo_dir is None else self.thermo_dir / st["file"]
         if not path.exists():
             raise FileNotFoundError(f"structure file {st['file']} is not in {self.thermo_dir}")
-        return {"m": m, "k": k, "formula": self._formula(node["formula"]), "E_eV": st["E_eV"], "source": st.get("source", "grid"),
-                "n_states": len(node["states"]), "file": st["file"], "xyz": path.read_text()}
+        return {"m": m, "k": k, "formula": self._formula(node["formula"]), "E_eV": st["E_eV"],
+                "source": st.get("source", "grid"), "n_states": n_states, "file": st["file"], "thermo": thermo,
+                "xyz": path.read_text()}
 
 
 def make_app(sim: Simulator):

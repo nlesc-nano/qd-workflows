@@ -177,7 +177,8 @@ body.nuc-only .growth { display: none; }
           <div class="chart-title">Shell distribution P(k | m)</div>
           <div class="chart tall" id="cHeat"></div>
           <div class="cap">Click any cell (every grid node, P ≈ 0 included) to see that cluster [CdSe]m(<span class="xl">CdCl₂</span>)k in 3D
-            below; k* of each m outlined in orange, the cluster shown in black.</div>
+            below; k* of each m outlined in orange, the cluster shown in black. Grey: grid nodes without thermochemistry
+            (not annealed, so no Hessian): energy only, not in Ω.</div>
         </div>
       </div>
       <div class="cluster" id="clusterBox" hidden>
@@ -495,9 +496,14 @@ function drawNucleation(o) {
   const H = layout("linear", { hovermode: "closest", margin: { l: 40, r: 8, t: 6, b: 32 } });
   H.xaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
   H.yaxis = { dtick: 2, title: { text: "k", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
+  // grid nodes without thermochemistry (not annealed, so no Hessian): grey, energy only, never in Omega
+  const nt = new Set((D.no_thermo || []).map(([m, k]) => `${m},${k}`));
+  const grey = { x: o.ms, y: o.ks, z: o.ks.map((k) => o.ms.map((m) => (nt.has(`${m},${k}`) ? 1 : null))), type: "heatmap",
+    colorscale: [[0, css("--text-muted")], [1, css("--text-muted")]], zmin: 0, zmax: 1, showscale: false, opacity: 0.6,
+    xgap: 2, ygap: 2, hoverongaps: false, hovertemplate: "m = %{x}, k = %{y}<br>no thermo: energy only, not in Ω<extra></extra>" };
   H.shapes = selShape();
-  Plotly.react("cHeat", [heat, ks], H, PCONF);
-  onClick("cHeat", (ev) => { const p = ev.points[0]; if (p.data.type !== "heatmap" || p.z != null) showCluster(p.x, p.y, o); });
+  Plotly.react("cHeat", nt.size ? [heat, grey, ks] : [heat, ks], H, PCONF);
+  onClick("cHeat", (ev) => { const p = ev.points.find((q) => q.data.type === "heatmap" && q.z != null); if (p) showCluster(p.x, p.y, o); });
   // barrier along the time after injection
   const B = layout("linear", { hovermode: "x unified" });
   const cS = css("--series-3");
@@ -556,7 +562,8 @@ async function showCluster(m, k, o) {
     const s = await api(`/api/structure?m=${m}&k=${k}`);
     sel = { m, k, s };
     render(s.xyz, "cviewer");
-    $("cwhat").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(${XL})<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE).`;
+    $("cwhat").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(${XL})<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE)`
+      + (s.thermo === false ? `. <b>No thermochemistry</b> (not annealed, no Hessian): energy only, not in Ω.` : ".");
     clusterInfo(o || L0);
     Plotly.relayout("cHeat", { shapes: selShape() });
   } catch (e) { $("cwhat").innerHTML = `<span class="status err">${e.message}</span>`; }
@@ -564,9 +571,10 @@ async function showCluster(m, k, o) {
 // the cluster's Omega and P(k | m) at the conditions on the left (they follow the time and sliders)
 function clusterInfo(o) {
   const { m, k, s } = sel, i = o ? o.ms.indexOf(m) : -1, j = o ? o.ks.indexOf(k) : -1;
-  const om = i >= 0 && j >= 0 ? o.Omega[i][j] : null, pk = i >= 0 && j >= 0 ? o.P_k[i][j] : null;
-  $("cInfo").innerHTML = `<span>Ω(m, k) here</span><span>${om == null ? "–" : om.toFixed(3) + " eV"}</span>
-    <span>P(k | m) here</span><span>${pk == null ? "–" : fmt(pk)}</span>
+  const om = i >= 0 && j >= 0 ? o.Omega[i][j] : null, pk = om != null ? o.P_k[i][j] : null;
+  const none = s.thermo === false ? "– (no thermo)" : "–";
+  $("cInfo").innerHTML = `<span>Ω(m, k) here</span><span>${om == null ? none : om.toFixed(3) + " eV"}</span>
+    <span>P(k | m) here</span><span>${pk == null ? none : fmt(pk)}</span>
     <span>E</span><span>${s.E_eV.toFixed(3)} eV</span><span>Atoms</span><span>${parseInt(s.xyz, 10)}</span>
     <span>Source</span><span>${s.source}</span><span>File</span><span>${s.file}</span>`;
 }
