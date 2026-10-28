@@ -382,6 +382,25 @@ def test_shape_capacitances_are_shared_by_runs(monkeypatch):
     assert g2.dot_capacitance({"m": m, "h": h, "area": area}) == want
 
 
+def test_shapes_within_the_key_share_a_capacitance():
+    gr.SHAPE_CAPS.clear()
+    g = gr.Growth(_thermo(), _params())
+    g._arrays()
+    _pl, fam = g.chem(1e-3, 0.1)
+    g._R1 = 3.0
+    h = {"100": 20.0, "111A": 19.0, "111B": 21.0, "110": 23.0}
+    m, _k, area, _s = g.dot(h, fam)
+    r = (3 * m * g.Om / (4 * math.pi)) ** (1 / 3)
+    c, _ = g.dot_capacitance({"m": m, "h": h, "area": area})
+    # {110} moved out by 0.01 r_eq: within the 0.05 key, the same C(P) per r_eq (only r_eq itself differs)
+    h2 = dict(h, **{"110": h["110"] + 0.01 * r})
+    c2, _ = g.dot_capacitance({"m": m, "h": h2, "area": area})
+    assert len(gr.SHAPE_CAPS) == 1 and c2 == c
+    # moved by 0.1 r_eq: a new shape
+    g.dot_capacitance({"m": m, "h": dict(h, **{"110": h["110"] + 0.1 * r}), "area": area})
+    assert len(gr.SHAPE_CAPS) == 2
+
+
 def test_bulk_free_energy_table_replaces_the_einstein_estimate():
     g = gr.Growth(_thermo(), _params(material={"g_bulk_T": {"T": [300.0, 700.0], "G_eV": [-5.3, -5.7]}}))
     assert math.isclose(g.gb, -5.3 + (g.T - 300.0) / 400.0 * -0.4)

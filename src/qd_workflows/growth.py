@@ -625,11 +625,12 @@ class Growth:
         return self._capf_cache[key]
 
     CAP_RHO = 0.1                                       # grid in R_1 / r_eq of the contact capacitance (linear between)
+    CAP_KEY = 0.05                                      # shape key of the capacitance cache: h_f / r_eq to 0.05
 
     def dot_capacitance(self, co):
         """The dot's hydrodynamic radius R_h = C(P) + dR_h and its contact capacitance C(P + B(R_1 + dR_se)) (A): P the
         polyhedron of its facet distances h, grown by the monomer's contact radius R_1 and the dot's own shell dR_se
-        (where a monomer centre touches the dot). Scale-free: per shape (h_f / r_eq of the exposed families, to 0.01)
+        (where a monomer centre touches the dot). Scale-free: per shape (h_f / r_eq of the exposed families, to CAP_KEY)
         one walk-on-spheres run for C(P) and one per point of the (R_1 + dR_se) / r_eq grid. These depend on the
         rounded shape alone (fixed seed), so they are cached for every run of the process (SHAPE_CAPS)."""
         from .transport import capacitance_polyhedron
@@ -642,7 +643,11 @@ class Growth:
         sig = co.get("k", 0.0) / area if area > 0 else 0.0
         d_h = (so["R_h_A"][0] + so["R_h_A"][1] * sig) if "R_h_A" in so else 0.0
         d_se = (so["R_se_A"][0] + so["R_se_A"][1] * sig) if "R_se_A" in so else 0.0
-        key = tuple((f, round(co["h"][f] / r, 2)) for f in self.F if co["area"].get(f, 0.0) > 0)
+        # 0.05 in h_f / r_eq: C(P) moves by far less than the walk-on-spheres noise itself (a 10000-walker run's seed
+        # shifts the diffusion-limited N_dots by up to 1 % at the end, this rounding by 0.1 %), and the default page
+        # run meets 55 shapes (40 s instead of 190 s at 0.01)
+        key = tuple((f, round(round(co["h"][f] / r / self.CAP_KEY) * self.CAP_KEY, 6))
+                    for f in self.F if co["area"].get(f, 0.0) > 0)
         e = SHAPE_CAPS.get(key)
         if e is None:
             normals, dists = [], []
