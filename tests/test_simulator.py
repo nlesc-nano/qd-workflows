@@ -91,6 +91,45 @@ def test_live_omega_is_the_pre_nucleation_pool():
     assert abs(early["mu_MA"] - live["mu_MA"]) < 0.02
 
 
+def test_burst_is_the_nuclei_formed_before_nucleation():
+    # the burst from N = 1e-9 to 1e-6 M of nuclei, N = int J dt along the pool before nucleation: the sampled,
+    # sharpened integral matches a dense trapezoid of the same J
+    import math
+    import numpy as np
+    sim = _sim()
+    cond = {"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0}
+    b = sim.burst(cond)
+    assert b["reached"] and b["t_on"] < b["t_burst"] and 0 < b["alpha_on"] < b["alpha_burst"] < 1 and b["R"] == 2.0
+    P = sim.params_for(cond)
+    ts = np.geomspace(1e-3, b["t_burst"] * 1.2, 4000)
+    js = [o["J"] for o in (sim._omega_at(T, cm, cx, b["m0"], 1.0, P["conditions"]) for T, cm, cx in sim.pre_pool(P, ts))]
+    n = np.concatenate([[0.0], np.cumsum(0.5 * (np.array(js[1:]) + np.array(js[:-1])) * np.diff(ts))])
+    for key, x in (("t_on", 1e-9), ("t_burst", 1e-6)):
+        assert math.isclose(b[key], float(np.interp(x, n, ts)), rel_tol=0.02)
+    # a Se precursor in excess (R < 1) is fine before nucleation; the growth run still refuses it
+    assert math.isclose(sim.burst({**cond, "c_MX0": 0.08})["R"], 0.8)
+    with pytest.raises(ValueError, match="must exceed"):
+        sim.params_for({**cond, "c_MX0": 0.08})
+
+
+def test_fit_window_moves_the_free_knobs_toward_the_targets():
+    sim = _sim()
+    cond = {"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0}
+    b = sim.burst(cond)
+    tg = {"t_s": [3 * b["t_burst"], 10 * b["t_burst"]], "alpha": [0.0, 0.9], "R": [1.0, 3.0], "width_s": 1e3,
+          "max_evals": 120}
+    r = sim.fit_window(cond, tg, free=["k_conv_500K", "Ea_conv"])
+    assert set(r["conditions"]) == {"k_conv_500K", "Ea_conv"} and r["evals"] <= 120
+    assert r["conditions"]["k_conv_500K"] < 1.0                     # a slower conversion moves the burst later
+    assert r["met"] and r["missed"] == [] and tg["t_s"][0] <= r["after"]["t_on"] <= r["after"]["t_burst"] <= tg["t_s"][1]
+    lo, hi = sm.LIMITS["k_conv_500K"]
+    assert lo <= r["conditions"]["k_conv_500K"] <= hi and abs(r["before"]["t_burst"] / b["t_burst"] - 1) < 1e-6
+    # the syringe's knobs only with the syringe on; a window must be lo < hi
+    assert sim.fit_window(cond, {**tg, "max_evals": 10}, free=["rate_mL_h"])["conditions"] == {}
+    with pytest.raises(ValueError, match="lo < hi"):
+        sim.fit_window(cond, {"alpha": [0.3, 0.2]})
+
+
 def test_carboxylate_grid_nucleation_only():
     # a carboxylate grid (its MX_q reference monomer is CdCl2-acetate): labels and formulas follow the ligand; without
     # its own growth parameters the page serves the nucleation panel alone, at a fixed m0

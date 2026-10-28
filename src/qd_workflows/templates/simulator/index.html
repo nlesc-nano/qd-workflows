@@ -125,6 +125,11 @@ button:disabled { opacity: .55; cursor: progress; }
 .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .row label { font-size: 12px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; }
 details { margin-top: 10px; font-size: 12px; }
+.fitgrid { display: grid; gap: 6px; margin-top: 8px; }
+.fitgrid label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-secondary); }
+.fitgrid .num input { width: 4.2em; }
+.fitout { font-size: 12px; color: var(--text-secondary); margin-top: 6px; display: grid; gap: 2px; }
+.fitout .miss { color: var(--err-ink); }
 pre { background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; max-height: 220px; font-size: 11px; }
 body.nuc-only main { grid-template-columns: 270px minmax(0, 1fr); }
 body.nuc-only .growth { display: none; }
@@ -152,6 +157,23 @@ body.nuc-only .growth { display: none; }
       <h3>Look at Ω at</h3>
       <div id="tcontrol"></div>
       <div class="status" id="liveStatus"></div>
+      <h3>Nucleation window</h3>
+      <div class="row"><button class="primary" id="fitBtn">Find the best conditions</button></div>
+      <details id="fitBox"><summary>Targets and the knobs it may move</summary>
+        <div class="fitgrid">
+          <label>Conversion at the burst <span class="num"><input id="fa_lo" aria-label="lowest conversion (%)"> – <input id="fa_hi" aria-label="highest conversion (%)"> %</span></label>
+          <label>Time of the burst <span class="num"><input id="ft_lo" aria-label="earliest burst (s)"> – <input id="ft_hi" aria-label="latest burst (s)"> s</span></label>
+          <label>Longest burst <span class="num"><input id="fw" aria-label="longest burst (s)"> s</span></label>
+          <label>R = <span class="xl">CdCl₂</span> / Se <span class="num"><input id="fr_lo" aria-label="lowest R"> – <input id="fr_hi" aria-label="highest R"></span></label>
+          <label>Pull back to the sliders λ <span class="num"><input id="flam" aria-label="regularisation strength"></span></label>
+        </div>
+        <div class="row" id="fitFree" aria-label="knobs the fit may move"></div>
+        <div class="hint">The burst runs from 10⁻⁹ M to 10⁻⁶ M of nuclei in the pool before nucleation (J along the
+          time, no depletion). Each knob is pulled back to its slider value; the grid's thermochemistry, the activity
+          coefficients and the solvent never move.</div>
+      </details>
+      <div class="status" id="fitStatus"></div>
+      <div class="fitout" id="fitOut"></div>
       <h3><label class="tog"><input type="checkbox" id="inject"> Inject the Se precursor with a syringe</label></h3>
       <div id="injControls" hidden></div>
       <div class="hint" id="injInfo"></div>
@@ -410,6 +432,7 @@ const conds = () => ({ ...Object.fromEntries(ALLCTLS.map((c) => [c.key, val(c)])
 function syncToggles() {
   const inj = $("inject").checked, two = $("twoT").checked;
   $("injControls").hidden = !inj; $("tprogControls").hidden = !two;
+  if (D.fit) fitSync();
   // with a syringe the flask starts without Se: the syringe delivers all of it
   for (const id of ["s_c_P0", "n_c_P0"]) $(id).disabled = inj;
   $("s_c_P0").closest(".ctl").classList.toggle("off", inj);
@@ -466,6 +489,48 @@ function requestLive() {
   }, 30);
 }
 const sameConds = (a, b) => !!b && JSON.stringify(a) === JSON.stringify(b);
+
+// ---------- the nucleation-window fit ----------
+const FIT_LABELS = { T: "T", c_P0: "Se c_P,0", c_MX0: "CdCl₂ c_MX,0", k_conv_500K: "conversion k", Ea_conv: "Ea",
+  c_syringe_M: "syringe Se", rate_mL_h: "infusion rate", inj_duration_s: "injection time" };
+const FIT_SYR = ["c_syringe_M", "rate_mL_h", "inj_duration_s"];
+function fitSetup() {
+  const tg = D.fit.targets;
+  $("fa_lo").value = 100 * tg.alpha[0]; $("fa_hi").value = 100 * tg.alpha[1];
+  $("ft_lo").value = tg.t_s[0]; $("ft_hi").value = tg.t_s[1]; $("fw").value = tg.width_s;
+  $("fr_lo").value = tg.R[0]; $("fr_hi").value = tg.R[1]; $("flam").value = tg.lambda;
+  $("fitFree").innerHTML = D.fit.knobs.map((k) => `<label data-k="${k}"><input type="checkbox" id="ff_${k}"${D.fit.free.includes(k) ? " checked" : ""}>
+    ${FIT_LABELS[k].replace("CdCl₂", XL)}</label>`).join("");
+  $("fitBtn").addEventListener("click", fitWindow);
+}
+function fitSync() {                        // the syringe's knobs only with the syringe, the flask's Se only without
+  const inj = $("inject").checked;
+  for (const k of D.fit.knobs) $("fitFree").querySelector(`[data-k="${k}"]`).hidden = FIT_SYR.includes(k) ? !inj : (k === "c_P0" && inj);
+}
+const fitNum = (id) => Number(String($(id).value).replace(",", ".").trim());
+async function fitWindow() {
+  const targets = { alpha: [fitNum("fa_lo") / 100, fitNum("fa_hi") / 100], t_s: [fitNum("ft_lo"), fitNum("ft_hi")],
+    width_s: fitNum("fw"), R: [fitNum("fr_lo"), fitNum("fr_hi")], lambda: fitNum("flam") };
+  if (Object.values(targets).flat().some((x) => !Number.isFinite(x))) {
+    $("fitStatus").className = "status err"; $("fitStatus").textContent = "Fill every target with a number."; return;
+  }
+  const free = D.fit.knobs.filter((k) => $(`ff_${k}`).checked && !$("fitFree").querySelector(`[data-k="${k}"]`).hidden);
+  $("fitBtn").disabled = true; $("fitOut").innerHTML = "";
+  $("fitStatus").className = "status"; $("fitStatus").textContent = `Searching ${free.length} knobs (about 20–40 s)…`;
+  try {
+    const r = await api("/api/fit_window", { conditions: conds(), targets, free });
+    for (const [k, v] of Object.entries(r.conditions)) setVal(ALLCTLS.find((c) => c.key === k), v);
+    setVal(TCTL, Math.min(Math.max(r.after.t_on, D.limits.t[0]), D.limits.t[1]));     // look at Omega when the burst starts
+    syncToggles(); requestLive();
+    const b = r.before, a = r.after;
+    const desc = (m) => m.reached ? `${fmt(m.t_on)}–${fmt(m.t_burst)} s, ${fmt(100 * m.alpha_on)}–${fmt(100 * m.alpha_burst)} % converted, ${fmt(m.width_s)} s wide, R ${fmt(m.R)}`
+                                  : `no burst by ${fmt(m.t_max)} s (${fmt(m.missing_decades, 2)} decades of nuclei short), R ${fmt(m.R)}`;
+    $("fitStatus").textContent = `${r.met ? "All targets met" : "Best compromise: some targets cannot be met with this grid"} (${r.evals} evaluations, ${fmt(r.seconds)} s). The sliders are set.`;
+    $("fitOut").innerHTML = `<div>before: ${desc(b)}</div><div>after: ${desc(a)}</div>` +
+      r.missed.map((x) => `<div class="miss">missed: ${x.label} ${fmt(x.value)} ${x.unit}${x.window[1] != null ? ` (target ${fmt(x.window[0])}–${fmt(x.window[1])} ${x.unit})` : ""}</div>`).join("");
+  } catch (e) { $("fitStatus").className = "status err"; $("fitStatus").textContent = e.message; }
+  $("fitBtn").disabled = false;
+}
 
 // the growth run's Omega along its time, only while the run belongs to the conditions on the left
 function runOmega() {
@@ -935,6 +1000,7 @@ $("cclose").addEventListener("click", () => { sel = null; $("clusterBox").hidden
   addSlider($("durcontrol"), DCTL);
   if (D.k_r_mode !== "facets") addSlider($("durcontrol"), KCTL);
   buildSurface();
+  fitSetup();
   syncToggles();
   requestLive();
 })();

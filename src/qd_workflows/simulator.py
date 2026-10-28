@@ -92,6 +92,25 @@ def refine(keys, ev, split, max_pts: int = REFINE_MAX) -> list:
     return [(k, pts[k]) for k in sorted(pts) if pts[k] is not None]
 
 
+# the nucleation-window fit (the page's "Find the nucleation window" button) on any grid: the knobs it may move, each
+# in its scale (log10 or linear) with the width sigma of its pull back to the page's value, and the default targets
+FIT_KNOBS = {"T": ("lin", 50.0), "c_P0": ("log", 0.5), "c_MX0": ("log", 0.5), "k_conv_500K": ("log", 1.0),
+             "Ea_conv": ("lin", 0.5), "c_syringe_M": ("log", 0.5), "rate_mL_h": ("log", 1.0),
+             "inj_duration_s": ("log", 1.0)}
+FIT_SYRINGE = ("c_syringe_M", "rate_mL_h", "inj_duration_s")
+FIT_FREE = ("T", "c_P0", "c_MX0", "k_conv_500K") + FIT_SYRINGE      # free by default (Ea: the precursor, locked)
+FIT_TARGETS = {"alpha": [0.15, 0.25],       # conversion window: the burst starts and ends inside it
+               "t_s": [10.0, 30.0],          # time window of the burst (s from the start)
+               "width_s": 1.0,               # longest burst (s)
+               "R": [0.8, 1.0],              # MX_q / all the Se precursor
+               "N_on_M": 1e-9, "N_burst_M": 1e-6,   # nuclei formed (M) at the burst's start and end
+               "lambda": 0.1,                # pull back to the page's values (1: one sigma costs a missed window)
+               "max_evals": 400}
+FIT_SCOUTS = (16, 32)                       # Sobol points within 2 sigma of the page's values, and over the whole
+                                            # slider ranges (a slow syringe is decades from a fast one), before Nelder-Mead
+BURST_PTS = 60                              # Omega evaluations of a burst's first pass (one ~ 0.6 ms)
+FIT_INSIDE = 0.1                            # the fit aims this fraction of each window inside its edges
+
 SETTINGS = ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "t_end")   # the conditions block of growth.PARAMS
 EDITABLE = {                                # facet parameters the page may change (advanced, checked on the server)
     "gamma0": (1.0, 200.0, "meV/A^2"),      # bare facet energy
@@ -178,6 +197,7 @@ class Simulator:
                 "ligand": {"name": self.ligand, "label": self.xl["label"]}, "nucleation_only": self.nucleation_only,
                 "g_bulk_shift_eV": float(self.params["material"].get("g_bulk_shift_eV", 0.0)),
                 "no_thermo": sorted([m, k] for m, k in self.no_thermo),
+                "fit": {"targets": FIT_TARGETS, "free": list(FIT_FREE), "knobs": list(FIT_KNOBS)},
                 "surface": {"source": self.params.get("provenance", {}).get("families", "placeholder"),
                             "match_m0": bool(self.params["material"].get("match_m0", False)),
                             "editable": {k: {"min": lo, "max": hi, "unit": u} for k, (lo, hi, u) in EDITABLE.items()},
@@ -214,12 +234,13 @@ class Simulator:
         lo, hi = self.limits[k]
         return min(max(float(x), lo), hi)
 
-    def params_for(self, cond: dict) -> dict:
+    def params_for(self, cond: dict, need_mx: bool = True) -> dict:
         """The growth parameters for the page's conditions: T, concentrations, conversion, solvent, k_r; the
         calibration factors (gamma_MA, gamma_MX, beta_scale); the syringe (inject: c_syringe_M, rate_mL_h, V0_mL,
         inj_duration_s; the flask's own precursor is then c_P0, 0 for a pure injection) and the temperature program
         (two_T: T_growth, t_switch_s, ramp_s); growth_law "shape", "size" or "sphere" (ideal growth, with
-        gamma_J_m2 and k_r_A_s; left out, both come from the facets)."""
+        gamma_J_m2 and k_r_A_s; left out, both come from the facets). need_mx: refuse less MX_q than Se precursor (the
+        growth run, where every conversion takes one MX_q to the end); the pool before nucleation does not need it."""
         P = copy.deepcopy(self.params)
         c = P["conditions"]
         for k in SETTINGS:
@@ -251,14 +272,31 @@ class Simulator:
             c["T_growth"] = self._clip(cond, "T_growth", c["T"])
             c["t_switch_s"] = self._clip(cond, "t_switch_s", PAGE_DEFAULTS["t_switch_s"])
             c["ramp_s"] = self._clip(cond, "ramp_s", PAGE_DEFAULTS["ramp_s"])
-        inj = c.get("injection")
-        n_p = c["c_P0"] * (inj["V0_L"] if inj else 1.0) + (inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0
-                                                           * inj["duration_s"] if inj else 0.0)
-        n_x = c["c_MX0"] * (inj["V0_L"] if inj else 1.0)
-        if n_x <= n_p:
+        n_p, n_x = self._amounts(c)
+        if need_mx and n_x <= n_p:
             raise ValueError(f"{self.xl['label']} must exceed all the Se precursor (in the flask and from the syringe): "
                              "every conversion takes one MX_q")
         return P
+
+    @staticmethod
+    def _amounts(c: dict) -> tuple:
+        """All the Se precursor (flask and syringe) and the MX_q, mol (per L of flask without a syringe)."""
+        inj = c.get("injection")
+        n_p = c["c_P0"] * (inj["V0_L"] if inj else 1.0) + (inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0
+                                                           * inj["duration_s"] if inj else 0.0)
+        return n_p, c["c_MX0"] * (inj["V0_L"] if inj else 1.0)
+
+    @staticmethod
+    def _alpha(c: dict, tt: float, c_m: float) -> float:
+        """Conversion at tt without nuclei: precursor converted / precursor delivered by tt."""
+        inj = c.get("injection")
+        if inj:
+            t_in = min(tt, inj["duration_s"])
+            n_p = c["c_P0"] * inj["V0_L"] + inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0 * t_in
+            v_t = inj["V0_L"] + inj["rate_L_h"] / 3600.0 * t_in
+        else:
+            n_p, v_t = c["c_P0"], 1.0
+        return c_m * v_t / n_p if n_p > 0 else 0.0
 
     def _growth_allowed(self):
         if self.nucleation_only:
@@ -529,7 +567,7 @@ class Simulator:
         qdw nucleation Omega page), with the syringe, the temperature program and the activity coefficients; and
         the barrier along t for the same conditions: a log grid of n_curve times, refined where the barrier, S or m*
         move (refine)."""
-        P = self.params_for(cond)
+        P = self.params_for(cond, need_mx=False)
         c = P["conditions"]
         t = min(max(float(cond.get("t", 10.0)), self.limits["t"][0]), self.limits["t"][1])
         eps = solvent_eps(cond.get("eps", self.params.get("solvation", {}).get("eps", 1.0)))
@@ -539,16 +577,7 @@ class Simulator:
         T, cm, cx = self.pre_pool(P, [t])[0]
         out = self._omega(T, cm, cx, m0, eps, g_ma, g_mx)
         inj = c.get("injection")
-
-        def alpha(tt, c_m):                     # precursor converted / precursor delivered by tt (no nuclei)
-            if inj:
-                t_in = min(tt, inj["duration_s"])
-                n_p = c["c_P0"] * inj["V0_L"] + inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0 * t_in
-                v_t = inj["V0_L"] + inj["rate_L_h"] / 3600.0 * t_in
-            else:
-                n_p, v_t = c["c_P0"], 1.0
-            return c_m * v_t / n_p if n_p > 0 else 0.0
-        out.update(t=t, T_now=T, alpha=alpha(t, out["C_M"]), conditions={**c, "eps": eps},
+        out.update(t=t, T_now=T, alpha=self._alpha(c, t, out["C_M"]), conditions={**c, "eps": eps},
                    handover=handover, injection=bool(inj))
         curve, heat = [], []
         ms = [r["m"] for r in out["per_m"] if r["m"] <= out["m0"]]
@@ -560,13 +589,184 @@ class Simulator:
         for lt, o in pts:
             curve.append({"t": 10.0 ** lt, "T": o["T"], "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
                           "C_M": o["C_M"], "C_X": o["C_X"], "c_X_free": o["c_MX_free"], "S": o["S"],
-                          "alpha": alpha(10.0 ** lt, o["C_M"])})
+                          "alpha": self._alpha(c, 10.0 ** lt, o["C_M"])})
             om1 = o["per_m"][0]["Omega_m"]
             heat.append([r["Omega_m"] - om1 for r in o["per_m"] if r["m"] <= out["m0"]])
         out["curve"] = curve
         # Delta Omega(m, t) = Omega(m) - Omega(1) along the time: rows m = 1..m0, columns the curve's t
         out["heat"] = {"t": [c["t"] for c in curve], "m": ms, "dOmega": [list(col) for col in zip(*heat)]}
         return out
+
+    def burst(self, cond: dict, targets: dict | None = None) -> dict:
+        """The nucleation burst of the pool before nucleation, on any grid: the nuclei formed N(t) = int J dt (no
+        depletion: right while the nuclei hold a small part of the monomer), the burst from N = N_on_M to N =
+        N_burst_M; its times, the conversion then, its width, and R = MX_q / all the Se precursor. J is taken
+        exponential between the sampled times (refine: the barrier moves by at most 0.05 eV between them), up to
+        three times the end of the time window. A burst not reached by then is put at that time, with the decades of
+        nuclei missing."""
+        tg = {**FIT_TARGETS, **(targets or {})}
+        P = self.params_for(cond, need_mx=False)
+        c = P["conditions"]
+        eps = solvent_eps(cond.get("eps", self.params.get("solvation", {}).get("eps", 1.0)))
+        m0, _ = self._m0({**c, "eps": eps})
+        t_max = 3.0 * float(tg["t_s"][1])
+
+        thr = {"on": float(tg["N_on_M"]), "end": float(tg["N_burst_M"])}
+
+        def ev(lts):
+            return [self._omega_at(Tt, cm, cx, m0, eps, c) for Tt, cm, cx in self.pre_pool(P, [10.0 ** x for x in lts])]
+
+        def nuclei(pts):                        # N(t) and the times and conversions where it crosses the thresholds
+            ts = [10.0 ** k for k, _ in pts]
+            js = [min(max(o["J"], 1e-300), 1e300) if math.isfinite(o["J"]) else 1e300 for _, o in pts]
+            al = [self._alpha(c, t, o["C_M"]) for t, (_, o) in zip(ts, pts)]
+            hit, n = {}, 0.0
+            for i in range(1, len(ts)):
+                dt, ja = ts[i] - ts[i - 1], js[i - 1]
+                b = math.log(js[i] / ja) / dt
+                inc = ja * dt if abs(b * dt) < 1e-9 else ja * math.expm1(min(b * dt, 700.0)) / b
+                for name, x in thr.items():
+                    if name not in hit and n + inc >= x:
+                        need = x - n
+                        s_ = need / ja if abs(b * dt) < 1e-9 else (math.log(ja + b * need) - math.log(ja)) / b
+                        s_ = min(max(s_, 0.0), dt)
+                        hit[name] = (ts[i - 1] + s_, al[i - 1] + (al[i] - al[i - 1]) * s_ / dt, i)
+                n += inc
+            return hit, n, ts, al
+        # a coarse pass finds the burst; the refined pass stops two coarse steps after its end
+        keys = list(np.linspace(-3.0, math.log10(t_max), 25))
+        coarse = [(k, o) for k, o in zip(keys, ev(keys)) if o is not None]
+        hit, _, _, _ = nuclei(coarse)
+        if "end" in hit:
+            cut = coarse[min(hit["end"][2] + 2, len(coarse) - 1)][0]
+            keys = [k for k in keys if k <= cut]
+        pts = dict(refine(keys, ev, lambda a, b: 0.5 * (a + b) if b - a > 1e-4 else None, max_pts=BURST_PTS))
+        # then where N crosses the thresholds (it is set by the last few steps before): split until J changes by at
+        # most a factor e per step
+        for _ in range(12):
+            ks = sorted(pts)
+            hit, _, _, _ = nuclei([(k, pts[k]) for k in ks])
+            new = set()
+            for _, _, i in hit.values():
+                for j in range(max(i - 2, 1), i + 1):
+                    a, b = pts[ks[j - 1]], pts[ks[j]]
+                    if ks[j] - ks[j - 1] > 1e-7 and abs(math.log(max(b["J"], 1e-300) / max(a["J"], 1e-300))) > 1.0:
+                        new.add(0.5 * (ks[j - 1] + ks[j]))
+            if not new:
+                break
+            new = sorted(new)
+            pts.update((k, o) for k, o in zip(new, ev(new)) if o is not None)
+        hit, n, ts, al = nuclei(sorted(pts.items()))
+        miss = max(0.0, math.log10(thr["end"] / max(n, 1e-300))) if "end" not in hit else 0.0
+        (t_on, a_on, _), (t_end, a_end, _) = (hit.get(k, (ts[-1], al[-1], None)) for k in ("on", "end"))
+        n_p, n_x = self._amounts(c)
+        return {"t_on": float(t_on), "t_burst": float(t_end), "alpha_on": float(a_on), "alpha_burst": float(a_end),
+                "width_s": float(t_end - t_on), "R": n_x / n_p if n_p > 0 else math.inf, "N_end_M": float(n),
+                "missing_decades": miss, "t_max": t_max,
+                "reached": not miss, "m0": m0, "points": len(ts)}
+
+    @staticmethod
+    def _fit_terms(m: dict, tg: dict, inside: float = 0.0) -> dict:
+        """Flat-bottomed penalties of a burst (burst()) against the targets: 0 inside a window, ((distance) / (window
+        width))^2 outside, the times in log10 (a burst 100 times too early is far off, not 10 s off); inside: aim
+        this fraction of each window inside its edges."""
+        def h(y, lo, hi):
+            w = hi - lo
+            lo, hi = lo + inside * w, hi - inside * w
+            return ((lo - y) / w) ** 2 if y < lo else ((y - hi) / w) ** 2 if y > hi else 0.0
+        a, w = tg["alpha"], float(tg["width_s"])
+        lt = [math.log10(x) for x in tg["t_s"]]
+        return {"alpha_on": h(m["alpha_on"], *a), "alpha_burst": h(m["alpha_burst"], *a),
+                "t_on": h(math.log10(m["t_on"]), *lt), "t_burst": h(math.log10(m["t_burst"]), *lt),
+                "width": (max(0.0, m["width_s"] - (1.0 - inside) * w) / w) ** 2,
+                "R": h(m["R"], *tg["R"]), "no_burst": m["missing_decades"]}
+
+    def fit_window(self, cond: dict, targets: dict | None = None, free=None) -> dict:
+        """The conditions closest to the page's that put the nucleation burst (burst()) inside the target windows:
+        minimise sum of the target penalties + lambda sum_i ((u_i - u_i,page) / sigma_i)^2 over the free knobs
+        (FIT_KNOBS, in their log10 or linear scale, inside the page's limits; the syringe's only with the syringe on,
+        the flask's Se only without): FIT_SCOUTS Sobol points within two sigma of the page's values and over the
+        sliders' whole ranges, then Nelder-Mead from the best of them and once more from its result. The grid's
+        thermochemistry, the activity coefficients and the solvent are never moved. Returns the new values, the
+        burst before and after, and every target still missed."""
+        from scipy.optimize import minimize
+        from scipy.stats import qmc
+        t0 = time.time()
+        tg = {**FIT_TARGETS, **(targets or {})}
+        for k in ("alpha", "t_s", "R"):
+            lo, hi = (float(x) for x in tg[k])
+            if not (0 <= lo < hi and (lo > 0 or k != "t_s")):
+                raise ValueError(f"target {k}: give a window lo < hi (got {tg[k]})")
+            tg[k] = [lo, hi]
+        inj = bool(cond.get("inject"))
+        free = [k for k in (FIT_FREE if free is None else free)
+                if k in FIT_KNOBS and (inj or k not in FIT_SYRINGE) and not (inj and k == "c_P0")]
+        base = {**self.params["conditions"], **PAGE_DEFAULTS, **{k: v for k, v in cond.items() if v is not None}}
+        lim = {k: [math.log10(x) for x in self.limits[k]] if FIT_KNOBS[k][0] == "log" else self.limits[k] for k in free}
+
+        def tr(k, x):
+            return math.log10(x) if FIT_KNOBS[k][0] == "log" else float(x)
+
+        def untr(k, y):
+            return 10.0 ** y if FIT_KNOBS[k][0] == "log" else y
+        u0 = {k: tr(k, self._clip(base, k)) for k in free}
+        z0 = np.array([(u0[k] - lim[k][0]) / (lim[k][1] - lim[k][0]) for k in free])
+
+        def conds_at(z):
+            return {**base, **{k: untr(k, lim[k][0] + float(np.clip(zi, 0, 1)) * (lim[k][1] - lim[k][0]))
+                               for k, zi in zip(free, z)}}
+        best = {"f": math.inf}
+        n_ev = [0]
+
+        def f(z):
+            n_ev[0] += 1
+            cc = conds_at(z)
+            try:
+                m = self.burst(cc, tg)
+            except ValueError:
+                return 1e6
+            reg = sum(((tr(k, cc[k]) - u0[k]) / FIT_KNOBS[k][1]) ** 2 for k in free)
+            val = sum(self._fit_terms(m, tg, FIT_INSIDE).values()) + float(tg["lambda"]) * reg
+            if val < best["f"]:
+                best.update(f=val, z=np.array(z, dtype=float), m=m, reg=reg)
+            return val
+        before = self.burst(base, tg)
+        if free:
+            budget = int(tg["max_evals"])
+            f(z0)
+            sig_z = np.array([FIT_KNOBS[k][1] / (lim[k][1] - lim[k][0]) for k in free])
+            for q in qmc.Sobol(len(free), seed=0).random(FIT_SCOUTS[0]):
+                f(np.clip(z0 + (2.0 * q - 1.0) * 2.0 * sig_z, 0.0, 1.0))
+            for q in qmc.Sobol(len(free), seed=1).random(FIT_SCOUTS[1]):
+                f(q)
+            for rnd in range(2):
+                z = best["z"]
+                simplex = [z] + [np.clip(z + 0.08 * np.eye(len(z))[i] * (1 if z[i] < 0.5 else -1), 0, 1)
+                                 for i in range(len(z))]
+                left = budget - n_ev[0]
+                if left < len(z) + 2:
+                    break
+                minimize(f, z, method="Nelder-Mead", bounds=[(0.0, 1.0)] * len(z),
+                         options={"maxfev": left // 2 if rnd == 0 else left,
+                                  "initial_simplex": np.array(simplex), "xatol": 1e-4, "fatol": 1e-7})
+        z = best.get("z", z0)
+        new = {k: v for k, v in conds_at(z).items() if k in free}
+        after = best.get("m", before)
+        terms = self._fit_terms(after, tg)
+        labels = {"alpha_on": ("conversion at the burst's start", 100 * after["alpha_on"], "%", [100 * x for x in tg["alpha"]]),
+                  "alpha_burst": ("conversion at the burst's end", 100 * after["alpha_burst"], "%", [100 * x for x in tg["alpha"]]),
+                  "t_on": ("burst start", after["t_on"], "s", tg["t_s"]),
+                  "t_burst": ("burst end", after["t_burst"], "s", tg["t_s"]),
+                  "width": ("burst width", after["width_s"], "s", [0, tg["width_s"]]),
+                  "R": ("R = MX_q / Se", after["R"], "", tg["R"])}
+        missed = [{"term": k, "label": labels[k][0], "value": labels[k][1], "unit": labels[k][2], "window": labels[k][3]}
+                  for k in labels if terms[k] > 0]
+        if terms["no_burst"] > 0:
+            missed.append({"term": "no_burst", "label": "nuclei by the end of the search", "value": after["N_end_M"],
+                           "unit": "M", "window": [tg["N_burst_M"], None]})
+        return {"conditions": new, "free": free, "targets": tg, "before": before, "after": after,
+                "met": not missed, "missed": missed, "loss": best.get("f"), "regularisation": best.get("reg"),
+                "evals": n_ev[0], "seconds": round(time.time() - t0, 2)}
 
     def omega(self, rid: str, t: float) -> dict:
         """Omega at time t of a growth run: the run's pool (precursor converted, minus what nuclei and dots took),
@@ -752,6 +952,13 @@ def make_app(sim: Simulator):
     def omega_live(body: dict = Body(...)):
         try:
             return sim.omega_live(body)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc).strip("'\""))
+
+    @app.post("/api/fit_window")
+    def fit_window(body: dict = Body(...)):
+        try:
+            return sim.fit_window(body.get("conditions") or {}, body.get("targets"), body.get("free"))
         except (KeyError, ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc).strip("'\""))
 
