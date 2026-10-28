@@ -536,3 +536,17 @@ def test_atomistic_transport_enters_flux_and_dots():
     plain = gr.Growth(_thermo(), _params(kinetics={"transport": "stokes"}))
     plain._arrays()
     assert not plain.stokes                                             # no geometry: the fixed D
+
+
+def test_steps_resolve_the_pool_potentials():
+    # no step moves the pool's mu_MA or mu_MX by more than dmu_step_kT kT (beyond the floor dt): the record of the
+    # step-end pools resolves them; without the limit the same run takes larger jumps
+    def run(dmu):
+        g = gr.Growth(_thermo(), _params(material={"dmu_step_kT": dmu, "dt_rel_max": 0.05}))
+        g.run()
+        mus = [g.pool(cm, cx) for _t, _T, cm, cx in g.pools]
+        return g, max(max(abs(b["mu_MA"] - a["mu_MA"]), abs(b["mu_MX"] - a["mu_MX"])) / g.kt for a, b in zip(mus, mus[1:]))
+    g, jump = run(0.1)
+    _g0, jump0 = run(0.0)
+    assert len(g.pools) == len(g.steps) and all(a[0] < b[0] for a, b in zip(g.pools, g.pools[1:]))
+    assert jump0 > 0.1 and jump < jump0

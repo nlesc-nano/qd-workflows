@@ -51,9 +51,28 @@ def test_supersaturation_along_the_time_is_the_runs():
     assert all(c["S"] > 0 for c in o["curve"])
     out = sim.run({"t_end": 30.0})
     rows = [r for r in sim.runs[out["run_id"]]["res"]["series"] if r["C_M"] > 1e-20]
-    S = out["omega_run"]["S"]
-    assert len(S) == len(out["omega_run"]["t"]) == len(rows)
-    assert all(abs(math.log(a / r["S_bulk"])) < 0.05 for a, r in zip(S, rows))
+    run = out["omega_run"]
+    S = dict(zip(run["t"], run["S"]))
+    assert len(run["S"]) == len(run["t"]) >= len(rows)              # the output times, and steps between them
+    assert all(abs(math.log(S[r["t"]] / r["S_bulk"])) < 0.05 for r in rows)
+
+
+def test_omega_along_the_time_is_refined():
+    # the live curve and the run's curve are split until the barrier moves by <= REFINE_DBARRIER between points
+    # (or the interval cannot be split: the run's own steps, the log-t floor, the point cap)
+    sim = _sim()
+    o = sim.omega_live({"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t": 10.0})
+    cv = o["curve"]
+    assert len(cv) > 41 and all(a["t"] < b["t"] for a, b in zip(cv, cv[1:]))
+    assert len(cv) == sm.REFINE_MAX or all(abs(a["barrier"] - b["barrier"]) <= sm.REFINE_DBARRIER + 1e-12
+                                           for a, b in zip(cv, cv[1:]))
+    assert len(o["heat"]["t"]) == len(cv) and all(len(r) == len(cv) for r in o["heat"]["dOmega"])
+    # refine on a step function: the jump is bracketed to the split floor
+    pts = sm.refine([0.0, 1.0], lambda ks: [{"barrier": 1.0 if k < 0.3 else 0.0, "m_star": 1, "S": 1.0} for k in ks],
+                    lambda a, b: 0.5 * (a + b) if b - a > 1e-3 else None)
+    ks = [k for k, _ in pts]
+    lo = max(k for k in ks if k < 0.3)
+    assert min(k for k in ks if k >= 0.3) - lo <= 1e-3
 
 
 def test_live_omega_is_the_pre_nucleation_pool():

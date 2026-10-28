@@ -79,6 +79,8 @@ PARAMS = {
         "m0_min": 10,                           # smallest nucleus the automatic hand-over may pick
         "m_dissolve": 4,                        # a dot below this many CdSe units dissolves back into the pool
         "dt_rel_max": 0.01,                     # a step is at most 1 % of t (CdSe batch: within 7 % of 0.3 %)
+        "dmu_step_kT": 0.2,                     # ... and moves the pool's mu_MA and mu_MX by at most this many kT (a
+                                                # collapse of the free MX_q, e.g. carboxylate complexes, in many steps)
         "birth_interval": 0.05,                 # nuclei become a new cohort every 5 % of t ...
         "birth_share": 0.05,                    # ... or once they reach 5 % of the dots present
         "merge_tol": 0.01,                      # cohorts past 4 m_top within 1 % in m merge (N, m, k kept) ...
@@ -1192,6 +1194,7 @@ class Growth:
         coverage, their MX_q on top of c_MX0), for ripening and focusing checks without nucleation."""
         self._arrays()
         self.steps = []                                                                  # (t, dt, limit) per step
+        self.pools = []                                     # (t, T, C_M, C_X) at the end of every step (a record only)
         c = self.P["conditions"]
         P_, C_M, C_X = float(c["c_P0"]), float(c.get("c_M0", 1e-12)), float(c["c_MX0"])     # c_M0: monomer at t = 0
         t, t_end = 0.0, float(c["t_end"])
@@ -1219,6 +1222,10 @@ class Growth:
         n_nuc, track = 0.0, [(0.0, 0.0, 0.0)]           # moles of nuclei so far; (t, moles of nuclei, J V) per step
         t_last_birth = 0.0
         birth_frac = float(self.P["material"].get("birth_interval", 0.05))   # new cohort every 5 % of t
+        # the step solves the pool implicitly in C_M at the step's start speciation (mu_MX, the MX_q complexes): a step
+        # whose end pool moves mu_MA or mu_MX by more than dmu_step_kT kT is halved, and the next one starts from it
+        dmu_max = float(self.P["material"].get("dmu_step_kT", 0.2))
+        dt_pool = None
         birth_share = float(self.P["material"].get("birth_share", 0.05))     # or at 5 % of the dots present
         t_breaks = self.temperature_breaks() + ([inj["t0"], inj["t0"] + inj["duration"]] if inj else [])
         while outs:
@@ -1314,6 +1321,8 @@ class Growth:
             dt_rel = self.P["material"].get("dt_rel_max", 0.01)
             if dt_rel and t > 0:
                 dt = min(dt, float(dt_rel) * t)             # resolution in log time (material.dt_rel_max)
+            if dt_pool:
+                dt = min(dt, dt_pool)                       # the last pool-limited step, doubling back each step
             nxt = [b for b in t_breaks if b > t + 1e-12]
             if nxt:
                 dt = min(dt, nxt[0] - t)                    # land on the temperature and injection breakpoints
@@ -1324,6 +1333,7 @@ class Growth:
             if injecting:
                 dt = min(dt, 0.02 * V / inj["rate"])        # the volume grows by < 2 % a step
             q_inst = Q
+            pool_limited = False
             while True:
                 # conversion over the step at the step's MX_q: P -> P e^(-k C_X dt), Q the mean rate
                 kx = self.k_conv * C_X
@@ -1407,9 +1417,15 @@ class Growth:
                         break
                     lam *= 0.25
                 C_M_new = C_M + (Q - m_b * J) * dt - up_m
-                if (C_M_new > 0 and C_X_new > 0) or dt < 1e-9:
+                ok = C_M_new > 0 and C_X_new > 0
+                if ok and dmu_max > 0 and dt > 1e-9:
+                    pn = self.pool(C_M_new, C_X_new)
+                    if max(abs(pn["mu_MA"] - mu0), abs(pn["mu_MX"] - mu_mx)) > dmu_max * self.kt:
+                        ok, pool_limited = False, True
+                if ok or dt < 1e-9:
                     break
                 dt *= 0.5
+            dt_pool = dt if pool_limited else (2.0 * dt_pool if dt_pool and 2.0 * dt_pool < t else None)
             th_dots = th_eff
             for co, n in zip(cohorts, new):
                 co.update(n)
@@ -1438,6 +1454,7 @@ class Growth:
                 V += dV
             self.steps.append((t, dt, vmax, Q, C_M, C_X_new, J))
             t += dt
+            self.pools.append((t, self.T, C_M, C_X))
             at_out = t >= outs[0] - 1e-12
             n_dots = sum(co["N"] for co in cohorts)
             if at_out or t - t_last_birth >= birth_frac * t or pending >= birth_share * (n_dots + pending):

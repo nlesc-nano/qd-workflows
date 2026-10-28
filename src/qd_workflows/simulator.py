@@ -64,6 +64,34 @@ def _finite(x):
     return None if isinstance(x, float) and not math.isfinite(x) else x
 
 
+# the Omega curves along the time are sampled adaptively: an interval is split while the barrier moves by more than
+# REFINE_DBARRIER eV, S by more than REFINE_DLOGS decades, or m* changes, up to REFINE_MAX points (one Omega ~ 1 ms)
+REFINE_DBARRIER, REFINE_DLOGS, REFINE_MAX = 0.05, 0.5, 400
+
+
+def refine(keys, ev, split, max_pts: int = REFINE_MAX) -> list:
+    """Adaptive sampling of the Omega along the time: ev(keys) -> Omega results (None where there is none), split(a,
+    b) -> a key between a and b (None: cannot split). Starts from keys and splits every interval whose ends differ
+    by more than the REFINE_ thresholds. Returns [(key, result)] sorted, results not None."""
+    pts = dict(zip(keys, ev(list(keys))))
+
+    def coarse(a, b):
+        if a is None or b is None:
+            return False
+        return (abs(a["barrier"] - b["barrier"]) > REFINE_DBARRIER or a["m_star"] != b["m_star"]
+                or abs(math.log10(max(a["S"], 1e-300)) - math.log10(max(b["S"], 1e-300))) > REFINE_DLOGS)
+
+    while len(pts) < max_pts:
+        ks = sorted(pts)
+        new = {m for a, b in zip(ks, ks[1:]) if coarse(pts[a], pts[b]) and (m := split(a, b)) is not None
+               and m not in pts}
+        if not new:
+            break
+        new = sorted(new)[: max_pts - len(pts)]
+        pts.update(zip(new, ev(new)))
+    return [(k, pts[k]) for k in sorted(pts) if pts[k] is not None]
+
+
 SETTINGS = ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "t_end")   # the conditions block of growth.PARAMS
 EDITABLE = {                                # facet parameters the page may change (advanced, checked on the server)
     "gamma0": (1.0, 200.0, "meV/A^2"),      # bare facet energy
@@ -261,30 +289,39 @@ class Simulator:
                 "dG_thermal": g.dg_th, "m0": res["m0"], "handover": res["handover"],
                 "series": [{k: _finite(r[k]) for k in keep} for r in res["series"]],
                 "snapshots": snaps, "conservation": gr.conservation(res)[-1],
-                "omega_run": self._omega_along(P, res)}
+                "omega_run": self._omega_along(P, res, g.pools)}
 
-    def _omega_along(self, P: dict, res: dict) -> dict:
+    def _omega_along(self, P: dict, res: dict, pools=()) -> dict:
         """The grid's Omega(m) along a growth run, at the pool the run leaves (precursor converted minus what the
         nuclei and dots took), with the same definition as the live panel (grid up to m0, barrier = largest
-        Omega(m) - Omega(1)): the barrier and m* per output time and Delta Omega(m, t) for the map."""
+        Omega(m) - Omega(1)): the barrier and m* per output time and Delta Omega(m, t) for the map. Between the
+        output times, the run's own steps (pools: (t, T, C_M, C_X) per step) where the barrier, S or m* move
+        (refine)."""
         c = P["conditions"]
         eps = float(P.get("solvation", {}).get("eps", 1.0))
         m0 = self._m0({**c, "eps": eps})[0]
+        state = {float(p[0]): (p[1], p[2], p[3]) for p in pools}
+        state.update({float(r["t"]): (r.get("T", c["T"]), r["C_M"], r["C_X"]) for r in res["series"]})  # outputs win
+        steps = np.array(sorted(float(p[0]) for p in pools))
+
+        def ev(ts):
+            return [self._omega_at(*state[t], m0, eps, c) for t in ts]
+
+        def split(a, b):                        # the run's step nearest the middle (in log t) of the interval
+            i, j = np.searchsorted(steps, a, side="right"), np.searchsorted(steps, b, side="left")
+            if j <= i:
+                return None
+            mid = math.sqrt(a * b) if a > 0 else 0.5 * (a + b)
+            return float(steps[i + int(np.argmin(np.abs(steps[i:j] - mid)))])
+        pts = refine([float(r["t"]) for r in res["series"]], ev, split)
         out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "S": [], "m": None, "dOmega": [], "R_se_A": []}
         cols, rcols = [], []
-        for row in res["series"]:
-            if row["C_M"] <= 1e-20:
-                continue
-            try:
-                o = self._omega(row.get("T", c["T"]), row["C_M"], row["C_X"], m0, eps,
-                                float(c.get("gamma_MA", 1.0)), float(c.get("gamma_MX", 1.0)))
-            except ValueError:
-                continue
+        for t, o in pts:
             rows = [r for r in o["per_m"] if r["m"] <= o["m0"]]
-            out["t"].append(row["t"])
+            out["t"].append(t)
             out["barrier"].append(o["barrier"])
             out["m_star"].append(o["m_star"])
-            out["C_M"].append(row["C_M"])
+            out["C_M"].append(o["C_M"])
             out["S"].append(o["S"])
             out["m"] = [r["m"] for r in rows]
             cols.append([r["Omega_m"] - rows[0]["Omega_m"] for r in rows])
@@ -292,6 +329,15 @@ class Simulator:
         out["dOmega"] = [list(col) for col in zip(*cols)]              # rows m = 1..m0, columns the run's times
         out["R_se_A"] = [list(col) for col in zip(*rcols)]             # the clusters' radius, same layout
         return out
+
+    def _omega_at(self, T, C_M, C_X, m0, eps, c) -> dict | None:
+        """_omega at a pool, None where there is no monomer or the pool has no solution."""
+        if C_M <= 1e-20:
+            return None
+        try:
+            return self._omega(T, C_M, C_X, m0, eps, float(c.get("gamma_MA", 1.0)), float(c.get("gamma_MX", 1.0)))
+        except ValueError:
+            return None
 
     def build(self, rid: str, t: float, cohort: int | None, which: str = "mode", full: bool = False) -> dict:
         """Build the dot with QD_builder's target mode: the construction centres only (about a second), or with
@@ -465,7 +511,8 @@ class Simulator:
     def omega_live(self, cond: dict, n_curve: int = 41) -> dict:
         """Omega at time t from the start, from the precursor alone (no nuclei yet: the pre-nucleation pool, the
         qdw nucleation Omega page), with the syringe, the temperature program and the activity coefficients; and
-        the barrier along t on a log grid for the same conditions."""
+        the barrier along t for the same conditions: a log grid of n_curve times, refined where the barrier, S or m*
+        move (refine)."""
         P = self.params_for(cond)
         c = P["conditions"]
         t = min(max(float(cond.get("t", 10.0)), self.limits["t"][0]), self.limits["t"][1])
@@ -473,8 +520,7 @@ class Simulator:
         m0, handover = self._m0({**c, "eps": eps})
         g_ma, g_mx = c["gamma_MA"], c["gamma_MX"]
         grid_t = list(np.geomspace(1e-3, 1e4, n_curve))
-        pools = self.pre_pool(P, [t] + grid_t)
-        T, cm, cx = pools[0]
+        T, cm, cx = self.pre_pool(P, [t])[0]
         out = self._omega(T, cm, cx, m0, eps, g_ma, g_mx)
         inj = c.get("injection")
         if inj:
@@ -487,14 +533,13 @@ class Simulator:
                    handover=handover, injection=bool(inj))
         curve, heat = [], []
         ms = [r["m"] for r in out["per_m"] if r["m"] <= out["m0"]]
-        for tt, (Tt, cm_t, cx_t) in zip(grid_t, pools[1:]):
-            if cm_t <= 1e-20:
-                continue
-            try:
-                o = self._omega(Tt, cm_t, cx_t, m0, eps, g_ma, g_mx)
-            except ValueError:
-                continue
-            curve.append({"t": float(tt), "T": Tt, "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
+
+        def ev(lts):                            # keys: log10 t
+            return [self._omega_at(Tt, cm_t, cx_t, m0, eps, c)
+                    for Tt, cm_t, cx_t in self.pre_pool(P, [10.0 ** x for x in lts])]
+        pts = refine([math.log10(x) for x in grid_t], ev, lambda a, b: 0.5 * (a + b) if b - a > 1e-4 else None)
+        for lt, o in pts:
+            curve.append({"t": 10.0 ** lt, "T": o["T"], "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
                           "C_M": o["C_M"], "S": o["S"]})
             om1 = o["per_m"][0]["Omega_m"]
             heat.append([r["Omega_m"] - om1 for r in o["per_m"] if r["m"] <= out["m0"]])
