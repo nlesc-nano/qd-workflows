@@ -810,7 +810,7 @@ $("cclose").addEventListener("click", () => { sel = null; $("clusterBox").hidden
   if (D.nucleation_only) {
     document.body.classList.add("nuc-only");
     $("nucOnly").hidden = false;
-    $("nucOnly").textContent = `nucleation only: no growth (facet) parameters for this ${XL} grid yet, so no kinetic growth or dot builds; m0 = ${D.m0} fixed`;
+    $("nucOnly").textContent = `nucleation only: no growth (facet) parameters for this ${XL} grid yet, so no kinetic growth or dot builds; m0 = ${D.m0} fixed${D.g_bulk_shift_eV ? `; g_bulk shifted by ${D.g_bulk_shift_eV.toFixed(3)} eV to the grid's level of theory` : ""}`;
   }
   for (const c of CTLS) addSlider($("controls"), c, requestLive);
   const onCtl = () => { syncToggles(); requestLive(); };

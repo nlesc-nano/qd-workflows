@@ -467,16 +467,18 @@ class Growth:
     def g_bulk(self):
         """Bulk free energy per MA unit at T: material.g_bulk_T = {"T": [...], "G_eV": [...]} (the bulk phonon free
         energy, interpolated in T), else the 0 K energy plus an Einstein estimate of the bulk phonons (3 x
-        atoms-per-unit modes at omega_E)."""
+        atoms-per-unit modes at omega_E). material.g_bulk_shift_eV (default 0) is added: a grid at another level of
+        theory than the table (e.g. with D3) takes the bulk energy difference at that level."""
         mat = self.P["material"]
+        shift = float(mat.get("g_bulk_shift_eV", 0.0))
         tab = mat.get("g_bulk_T")
         if tab:
-            return float(np.interp(self.T, tab["T"], tab["G_eV"]))
+            return float(np.interp(self.T, tab["T"], tab["G_eV"])) + shift
         hw = float(mat.get("omega_E_cm1", 0.0)) * 1.239841984e-4                       # eV
         if hw <= 0:
-            return float(mat["g_bulk"])
+            return float(mat["g_bulk"]) + shift
         modes = 3 * int(mat.get("atoms_per_unit", 2))
-        return float(mat["g_bulk"]) + modes * (0.5 * hw + self.kt * math.log1p(-math.exp(-hw / self.kt)))
+        return float(mat["g_bulk"]) + shift + modes * (0.5 * hw + self.kt * math.log1p(-math.exp(-hw / self.kt)))
 
     def _match_m0(self):
         """Cluster-continuum matching at the nucleus: scale every gamma^0 by s so that the continuum chemical

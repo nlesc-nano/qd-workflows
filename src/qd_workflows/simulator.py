@@ -86,17 +86,21 @@ def grid_ligand(thermo: dict) -> str:
 class Simulator:
     def __init__(self, thermo: dict, params: dict, preset_cfg: dict, max_atoms: int = MAX_ATOMS,
                  thermo_dir: str | Path | None = None, ligand: str | None = None, nucleation_only: bool = False,
-                 m0: int | None = None):
+                 m0: int | None = None, g_bulk_shift: float | None = None):
         """nucleation_only: the page's nucleation panel alone (a grid without growth parameters of its own, e.g. a
         carboxylate grid while the facet parameters are CdCl2's); m0 then fixes the nucleus size (the automatic
-        hand-over needs the facets)."""
+        hand-over needs the facets); g_bulk_shift (eV per MA) moves the bulk free energy of the parameters to the
+        grid's level of theory (S only: the grid's Omega does not use it)."""
         self.thermo, self.params, self.cfg = thermo, params, preset_cfg
         self.ligand = ligand or grid_ligand(thermo)
         self.xl = LIGANDS[self.ligand]
         self.nucleation_only = bool(nucleation_only)
-        if m0 is not None:
+        if m0 is not None or g_bulk_shift:
             self.params = params = copy.deepcopy(params)
+        if m0 is not None:
             params["material"]["m0"] = int(m0)
+        if g_bulk_shift:
+            params["material"]["g_bulk_shift_eV"] = float(g_bulk_shift)
         self.thermo_dir = Path(thermo_dir) if thermo_dir else None      # the grid's structure files are relative to it
         self.max_atoms = max_atoms
         # solvent-excluded radius of each grid node's lowest state (transport.add_geometry), A
@@ -132,6 +136,7 @@ class Simulator:
                 "limits": self.limits, "families": list(F), "max_atoms": self.max_atoms,
                 "material": self.cfg.get("material", ""), "phase": self.cfg.get("phase", ""),
                 "ligand": {"name": self.ligand, "label": self.xl["label"]}, "nucleation_only": self.nucleation_only,
+                "g_bulk_shift_eV": float(self.params["material"].get("g_bulk_shift_eV", 0.0)),
                 "surface": {"source": self.params.get("provenance", {}).get("families", "placeholder"),
                             "match_m0": bool(self.params["material"].get("match_m0", False)),
                             "editable": {k: {"min": lo, "max": hi, "unit": u} for k, (lo, hi, u) in EDITABLE.items()},
@@ -713,6 +718,8 @@ def main(argv=None) -> int:
                          "parameters do not exist yet)")
     ap.add_argument("--m0", type=int, help="fixed nucleus size (default: the parameters' m0; needed with "
                                            "--nucleation-only when m0 is auto)")
+    ap.add_argument("--g-bulk-shift", type=float, help="eV per MA added to the parameters' g_bulk(T), for a grid at "
+                    "another level of theory (e.g. MACE + D3 bulk minus MACE bulk)")
     a = ap.parse_args(argv)
     import uvicorn
     params = yaml.safe_load(Path(a.params).read_text()) if a.params else copy.deepcopy(gr.PARAMS)
@@ -720,7 +727,7 @@ def main(argv=None) -> int:
     if a.nucleation_only and a.m0 is None and params["material"]["m0"] == "auto":
         ap.error("--nucleation-only needs --m0: the automatic hand-over uses the growth (facet) parameters")
     sim = Simulator(json.loads(Path(a.thermo).read_text()), params, cfg, a.max_atoms, Path(a.thermo).resolve().parent,
-                    a.ligand, a.nucleation_only, a.m0)
+                    a.ligand, a.nucleation_only, a.m0, a.g_bulk_shift)
     uvicorn.run(make_app(sim), host=a.host, port=a.port, log_level="warning")
     return 0
 

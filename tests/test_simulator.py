@@ -89,6 +89,13 @@ def test_carboxylate_grid_nucleation_only():
             call()
     with pytest.raises(ValueError, match="Cd\\(OAc\\)₂ must exceed"):
         sim.params_for({"c_P0": 0.3, "c_MX0": 0.2})
+    # the bulk at the grid's level of theory moves S only: e^(-shift/kT), the grid's Omega unchanged
+    import math
+    cond = {"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t": 10.0}
+    d3 = sm.Simulator(th, _params(nucleation={"J0": 1e-4}), PRESET, nucleation_only=True, m0=3,
+                      g_bulk_shift=-0.1).omega_live(cond)
+    assert math.isclose(d3["S"] / o["S"], math.exp(0.1 / (sm.KB_EV * 500.0)), rel_tol=1e-9)
+    assert d3["barrier"] == o["barrier"] and d3["per_m"] == o["per_m"]
 
 
 def test_facet_overrides_are_checked_and_marked():
