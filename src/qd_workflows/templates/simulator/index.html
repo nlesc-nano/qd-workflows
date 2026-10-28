@@ -15,7 +15,7 @@
   --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e2e1dc;
   --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #8a8984;
   --grid: #ecebe7; --accent: #2a78d6; --accent-ink: #ffffff;
-  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #8a5cc7;
   --seq-1: #cde2fb; --seq-3: #86b6ef; --seq-5: #3987e5; --seq-7: #1c5cab; --seq-9: #0d366b;
   --div-neg-2: #1c5cab; --div-neg-1: #86b6ef; --div-mid: #f0efec; --div-pos-1: #f2a09f; --div-pos-2: #b8302f;
   --warn-bg: #fff4d6; --warn-ink: #6b4a00; --err-ink: #b42323;
@@ -26,7 +26,7 @@
     --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
     --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
-    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #a382dc;
     --seq-1: #1d2633; --seq-3: #184f95; --seq-5: #256abf; --seq-7: #3987e5; --seq-9: #cde2fb;
     --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835; --div-pos-1: #9e3534; --div-pos-2: #e66767;
     --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
@@ -37,7 +37,7 @@
   --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
   --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
   --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
-  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #a382dc;
   --seq-1: #1d2633; --seq-3: #184f95; --seq-5: #256abf; --seq-7: #3987e5; --seq-9: #cde2fb;
   --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835; --div-pos-1: #9e3534; --div-pos-2: #e66767;
   --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
@@ -170,8 +170,9 @@ body.nuc-only .growth { display: none; }
         <div>
           <div class="chart-title">ΔΩ(m) = Ω(m) − Ω(1), with Ω(m) = −kT ln Σ<sub>k</sub> e<sup>−Ω(m,k)/kT</sup>, grid up to m0</div>
           <div class="chart tall" id="cOmega"></div>
-          <div class="cap">Click a point to show the lowest cluster of that m (at its k*). The badge is the
-            supersaturation S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> at this time.</div>
+          <div class="cap">Click a point to show the lowest cluster of that m (at its k*). Circle: where the clusters are. Below
+            a barrier, the most populated size, c(m) = c° e<sup>−Ω(m)/kT</sup>, among the sizes below the top; without a
+            barrier, m0: the clusters grow past the grid. Triangle: the barrier top m*. The badge is the supersaturation S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> at this time.</div>
         </div>
         <div>
           <div class="chart-title">Shell distribution P(k | m)</div>
@@ -189,10 +190,12 @@ body.nuc-only .growth { display: none; }
           <div class="row"><button id="cdl">Download .xyz</button><button id="cclose">Close</button></div>
         </div>
       </div>
-      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* (left) and supersaturation S (right, log) along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
-      <div class="chart" id="cBarLive" style="height:210px"></div>
-      <div class="cap">Blue: ΔΩ* (left axis); green: S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> (right axis). Solid: precursor
-        only; dashed: the growth run for these conditions, when there is one. Click the curve to move the time there.</div>
+      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* (left), supersaturation S and the pool's concentrations (right, log) along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
+      <div class="chart" id="cBarLive" style="height:330px"></div>
+      <div class="cap">ΔΩ* on the left axis; S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> and the concentrations (M) on the two
+        right axes: the CdSe monomer supply, the <span class="xl">CdCl₂</span> left in solution and the free
+        <span class="xl">CdCl₂</span> (dotted), below 10⁻¹² M cut off. Solid: precursor only; dashed: the growth run for these
+        conditions, when there is one. Click the curve to move the time there.</div>
       <div class="chart-title" style="margin-top:6px">ΔΩ(m, t) = Ω(m) − Ω(1) along the time (red uphill, blue downhill, gray zero)</div>
       <div class="lawpick" role="radiogroup" aria-label="Pool of the map">
         <span>Pool:</span>
@@ -426,6 +429,14 @@ function layout(ytype, extra = {}) {
 }
 const line = (x, y, name, color, extra = {}) => ({ x, y, name, type: "scatter", mode: "lines", line: { color, width: 2 }, ...extra });
 const vline = (x) => ({ type: "line", xref: "x", yref: "paper", x0: x, x1: x, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } });
+// the pool's concentrations along the time, on the third axis (y3): CdSe supply, MX_q left, free MX_q
+function concTraces(t, cm, cx, cf, dash, pre) {
+  const cC = css("--series-2"), cX = css("--series-4");
+  const tr = (y, name, color, d, w) => line(t, y.map((v) => (v > 0 ? v : null)), `${name}${pre ? ", run" : ""}`, color,
+    { yaxis: "y3", line: { color, width: w, dash: d }, hovertemplate: `${pre}${name} %{y:.2e} M<extra></extra>` });
+  return [tr(cm, "CdSe monomer", cC, dash || "solid", 1.5), tr(cx, `${XL} left`, cX, dash || "solid", 1.5),
+          tr(cf, `free ${XL}`, cX, dash ? "dashdot" : "dot", 1.5)];
+}
 function onClick(id, fn) { $(id).removeAllListeners?.("plotly_click"); $(id).on("plotly_click", fn); }
 
 // ---------- 1. nucleation, live ----------
@@ -467,11 +478,24 @@ function drawNucleation(o) {
   const rows = o.per_m.filter((r) => r.m <= o.m0), om1 = rows[0].Omega_m;
   const tr = { x: rows.map((r) => r.m), y: rows.map((r) => r.Omega_m - om1), type: "scatter", mode: "lines+markers", name: "ΔΩ(m)",
     line: { color: c1, width: 2 }, marker: { size: 9, color: c1, line: { color: css("--surface-1"), width: 2 } },
-    customdata: rows.map((r) => [r.k_star, r.formula, r.Omega_m]),
-    hovertemplate: "m = %{x}: ΔΩ = %{y:.3f} eV (Ω = %{customdata[2]:.3f} eV)<br>k* = %{customdata[0]} (%{customdata[1]})<extra></extra>" };
+    // c(m) in equilibrium with the pool only below a barrier (without one there is no finite equilibrium)
+    customdata: rows.map((r) => [r.k_star, r.formula, r.Omega_m, o.barrier > 0 && r.m <= o.m_star
+      ? `<br>c(m) = 10^${(-r.Omega_m / (8.617333e-5 * o.T_now) / Math.LN10).toFixed(1)} M in equilibrium with the pool` : ""]),
+    hovertemplate: "m = %{x}: ΔΩ = %{y:.3f} eV (Ω = %{customdata[2]:.3f} eV)<br>k* = %{customdata[0]} (%{customdata[1]})%{customdata[3]}<extra></extra>" };
   const star = rows.find((r) => r.m === o.m_star);
   const top = { x: [o.m_star], y: [star.Omega_m - om1], type: "scatter", mode: "markers", hoverinfo: "skip",
-    marker: { size: 16, symbol: "circle-open", color: css("--series-2"), line: { width: 2.5 } } };
+    marker: { size: 13, symbol: "triangle-up-open", color: css("--text-secondary"), line: { width: 2 } } };
+  // where the clusters are: below a barrier the pool gives each size c(m) = c° e^(-Omega(m)/kT) (c(1) = the monomer
+  // supply) and the circle is the most populated of them; without a barrier nothing holds the clusters: they grow
+  // past the grid (no finite equilibrium), and the circle sits at m0
+  const kt = 8.617333e-5 * o.T_now;
+  const pop = o.barrier > 0 ? rows.filter((r) => r.m <= o.m_star).reduce((a, b) => (b.Omega_m < a.Omega_m ? b : a))
+                            : rows[rows.length - 1];
+  const popTr = { x: [pop.m], y: [pop.Omega_m - om1], type: "scatter", mode: "markers",
+    marker: { size: 17, symbol: "circle-open", color: css("--series-2"), line: { width: 2.5 } },
+    hovertemplate: (o.barrier > 0
+      ? `most populated: m = ${pop.m}, c(m) = 10^${(-pop.Omega_m / kt / Math.LN10).toFixed(1)} M`
+      : `no barrier: the clusters grow past the grid (m0 = ${o.m0})`) + "<extra></extra>" };
   const L = layout("linear", { hovermode: "closest" });
   L.xaxis = { dtick: 1, gridcolor: grid, zeroline: false, title: { text: "m (CdSe units)", standoff: 4 }, range: [0.5, o.m0 + 0.5] };
   L.yaxis = { gridcolor: grid, zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
@@ -482,7 +506,7 @@ function drawNucleation(o) {
   L.annotations.push({ xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
     text: `S = <b>${fmt(o.S)}</b> at ${fmt(o.t)} s`, font: { size: 11, color: css("--text-primary") },
     bgcolor: css("--surface-0"), bordercolor: css("--series-2"), borderwidth: 1.5, borderpad: 4 });
-  Plotly.react("cOmega", [tr, top], L, PCONF);
+  Plotly.react("cOmega", [tr, top, popTr], L, PCONF);
   onClick("cOmega", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) showCluster(p.x, p.customdata[0], o); });
   // P(k | m)
   const z = o.ks.map((_, j) => o.ms.map((_, i) => (o.Omega[i][j] == null ? null : o.P_k[i][j])));
@@ -511,22 +535,35 @@ function drawNucleation(o) {
   B.yaxis2 = { type: "log", overlaying: "y", side: "right", showgrid: false, zeroline: false, exponentformat: "power",
     title: { text: "S", standoff: 8, font: { color: cS } }, tickfont: { color: cS } };
   B.xaxis.title = { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 };
+  B.xaxis.domain = [0, 0.86];
+  B.yaxis2.anchor = "x";
+  // third axis (log, M): the CdSe monomer supply, the MX_q left in solution and the free MX_q
+  const ink2 = css("--text-secondary");
+  B.yaxis3 = { type: "log", overlaying: "y", side: "right", anchor: "free", position: 1.0, showgrid: false, zeroline: false,
+    exponentformat: "power", title: { text: "c (M)", standoff: 6, font: { color: ink2 } }, tickfont: { color: ink2 } };
   B.shapes = [vline(o.t), ...nucShapes()];
   // the growth run of these conditions, when there is one: the barrier with the monomer the dots consume
   const run = runOmega();
   // color: the quantity (barrier, S); dash: the pool (precursor only, growth run)
-  const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*, precursor only (no nuclei)", c1,
+  const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*", c1,
     { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }),
-    line(o.curve.map((r) => r.t), o.curve.map((r) => r.S), "S, precursor only", cS,
-      { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "S = %{y:.3g}<extra></extra>" })];
+    line(o.curve.map((r) => r.t), o.curve.map((r) => r.S), "S", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "S = %{y:.3g}<extra></extra>" }),
+    ...concTraces(o.curve.map((r) => r.t), o.curve.map((r) => r.C_M), o.curve.map((r) => r.C_X), o.curve.map((r) => r.c_X_free), "", "")];
   if (run) {
-    barTraces.push(line(run.t, run.barrier, "ΔΩ*, growth run (dots consume the monomer)", c1,
+    barTraces.push(line(run.t, run.barrier, "ΔΩ*, run", c1,
       { line: { color: c1, width: 2, dash: "dash" }, customdata: run.t.map((_, i) => [run.m_star[i], run.C_M[i]]),
         hovertemplate: "run: ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }));
-    if (run.S) barTraces.push(line(run.t, run.S, "S, growth run", cS,
+    if (run.S) barTraces.push(line(run.t, run.S, "S, run", cS,
       { yaxis: "y2", line: { color: cS, width: 1.5, dash: "dash" }, hovertemplate: "run: S = %{y:.3g}<extra></extra>" }));
+    if (run.C_X) barTraces.push(...concTraces(run.t, run.C_M, run.C_X, run.c_X_free, "dash", "run: "));
   }
-  B.margin = { l: 50, r: 62, t: 6, b: 32 };
+  // the concentration axis: from the largest value down to 10^-12 M at most (free MX_q falls far lower late)
+  const cs = barTraces.filter((tr) => tr.yaxis === "y3").flatMap((tr) => tr.y).filter((v) => v > 0);
+  if (cs.length) B.yaxis3.range = [Math.max(Math.floor(Math.log10(Math.min(...cs))), -12), Math.log10(Math.max(...cs)) + 0.3];
+  B.showlegend = true;
+  B.legend = { orientation: "h", x: 0, y: -0.3, yanchor: "top", font: { size: 10 }, entrywidth: run ? 0.45 : 0.3, entrywidthmode: "fraction" };
+  B.margin = { l: 50, r: 52, t: 6, b: 32 };
   Plotly.react("cBarLive", barTraces, B, PCONF);
   onClick("cBarLive", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
   if (sel) clusterInfo(o);

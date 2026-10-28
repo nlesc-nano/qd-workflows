@@ -327,7 +327,8 @@ class Simulator:
             mid = math.sqrt(a * b) if a > 0 else 0.5 * (a + b)
             return float(steps[i + int(np.argmin(np.abs(steps[i:j] - mid)))])
         pts = refine([float(r["t"]) for r in res["series"]], ev, split)
-        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "S": [], "m": None, "dOmega": [], "R_se_A": []}
+        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "C_X": [], "c_X_free": [], "S": [], "m": None, "dOmega": [],
+               "R_se_A": []}
         cols, rcols = [], []
         for t, o in pts:
             rows = [r for r in o["per_m"] if r["m"] <= o["m0"]]
@@ -335,6 +336,8 @@ class Simulator:
             out["barrier"].append(o["barrier"])
             out["m_star"].append(o["m_star"])
             out["C_M"].append(o["C_M"])
+            out["C_X"].append(o["C_X"])
+            out["c_X_free"].append(o["c_MX_free"])
             out["S"].append(o["S"])
             out["m"] = [r["m"] for r in rows]
             cols.append([r["Omega_m"] - rows[0]["Omega_m"] for r in rows])
@@ -553,7 +556,7 @@ class Simulator:
         pts = refine([math.log10(x) for x in grid_t], ev, lambda a, b: 0.5 * (a + b) if b - a > 1e-4 else None)
         for lt, o in pts:
             curve.append({"t": 10.0 ** lt, "T": o["T"], "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
-                          "C_M": o["C_M"], "S": o["S"]})
+                          "C_M": o["C_M"], "C_X": o["C_X"], "c_X_free": o["c_MX_free"], "S": o["S"]})
             om1 = o["per_m"][0]["Omega_m"]
             heat.append([r["Omega_m"] - om1 for r in o["per_m"] if r["m"] <= out["m0"]])
         out["curve"] = curve
