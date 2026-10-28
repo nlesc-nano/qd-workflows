@@ -70,12 +70,33 @@ EDITABLE = {                                # facet parameters the page may chan
     "eps0": (0.0, 3.0, "eV"),               # binding energy of one MX_q on the empty facet (> 0: bound)
 }
 MAX_ATOMS = 8000                            # the builder button refuses dots above this many atoms (23k atoms: 4 min)
+# X-type unit MX_q of the grid: the page's label and the X in the grid's formulas, which keep the Cl placeholders
+# (the nucleation workflow dresses them with the carboxylate; its "CdCl2" reference is then CdX2)
+LIGANDS = {"CdCl2": {"label": "CdCl₂", "x": "Cl"}, "acetate": {"label": "Cd(OAc)₂", "x": "(OAc)"},
+           "oleate": {"label": "Cd(OA)₂", "x": "(OA)"}}
+
+
+def grid_ligand(thermo: dict) -> str:
+    """The grid's X-type ligand: the nucleation workflow names the MX_q reference monomer CdCl2-<ligand>."""
+    src = str((thermo.get("references") or {}).get("CdCl2", {}).get("source", ""))
+    name = Path(src).parent.name
+    return name.split("-", 1)[1] if name.startswith("CdCl2-") and name.split("-", 1)[1] in LIGANDS else "CdCl2"
 
 
 class Simulator:
     def __init__(self, thermo: dict, params: dict, preset_cfg: dict, max_atoms: int = MAX_ATOMS,
-                 thermo_dir: str | Path | None = None):
+                 thermo_dir: str | Path | None = None, ligand: str | None = None, nucleation_only: bool = False,
+                 m0: int | None = None):
+        """nucleation_only: the page's nucleation panel alone (a grid without growth parameters of its own, e.g. a
+        carboxylate grid while the facet parameters are CdCl2's); m0 then fixes the nucleus size (the automatic
+        hand-over needs the facets)."""
         self.thermo, self.params, self.cfg = thermo, params, preset_cfg
+        self.ligand = ligand or grid_ligand(thermo)
+        self.xl = LIGANDS[self.ligand]
+        self.nucleation_only = bool(nucleation_only)
+        if m0 is not None:
+            self.params = params = copy.deepcopy(params)
+            params["material"]["m0"] = int(m0)
         self.thermo_dir = Path(thermo_dir) if thermo_dir else None      # the grid's structure files are relative to it
         self.max_atoms = max_atoms
         # solvent-excluded radius of each grid node's lowest state (transport.add_geometry), A
@@ -110,6 +131,7 @@ class Simulator:
                 "solvation_note": self.params.get("solvation", {}).get("note", ""),
                 "limits": self.limits, "families": list(F), "max_atoms": self.max_atoms,
                 "material": self.cfg.get("material", ""), "phase": self.cfg.get("phase", ""),
+                "ligand": {"name": self.ligand, "label": self.xl["label"]}, "nucleation_only": self.nucleation_only,
                 "surface": {"source": self.params.get("provenance", {}).get("families", "placeholder"),
                             "match_m0": bool(self.params["material"].get("match_m0", False)),
                             "editable": {k: {"min": lo, "max": hi, "unit": u} for k, (lo, hi, u) in EDITABLE.items()},
@@ -188,11 +210,19 @@ class Simulator:
                                                            * inj["duration_s"] if inj else 0.0)
         n_x = c["c_MX0"] * (inj["V0_L"] if inj else 1.0)
         if n_x <= n_p:
-            raise ValueError("CdCl2 must exceed all the Se precursor (in the flask and from the syringe): "
+            raise ValueError(f"{self.xl['label']} must exceed all the Se precursor (in the flask and from the syringe): "
                              "every conversion takes one MX_q")
         return P
 
+    def _growth_allowed(self):
+        if self.nucleation_only:
+            raise ValueError(f"nucleation only: there are no growth (facet) parameters for the {self.ligand} grid yet")
+
+    def _formula(self, f: str) -> str:
+        return f if self.xl["x"] == "Cl" else f.replace("Cl", self.xl["x"])
+
     def run(self, cond: dict) -> dict:
+        self._growth_allowed()
         P = self.params_for(cond)
         modified = self._overrides(P, cond.get("families"))
         t0 = time.time()
@@ -262,6 +292,7 @@ class Simulator:
         """Build the dot with QD_builder's target mode: the construction centres only (about a second), or with
         full=True also the layer roundings h_f + r delta_f, r in {-1, 0, 1} (closer to m, ten times slower)."""
         from builder.scripts.generate_library import _build
+        self._growth_allowed()
         if rid not in self.runs:
             raise KeyError("run not found (the server keeps the last 8 runs): run the model again")
         res = self.runs[rid]["res"]
@@ -367,7 +398,7 @@ class Simulator:
             wsum = sum(w for w, r in rk if r is not None)
             r_se = sum(w * r for w, r in rk if r is not None) / wsum if wsum > 0 else None
             rows.append({"m": m, "Omega_m": float(om_m[i]), "k_star": int(ks[j]), "Omega_min": float(v[i, j]),
-                         "mean_k": float((P[i] * ks).sum()), "formula": node["formula"],
+                         "mean_k": float((P[i] * ks).sum()), "formula": self._formula(node["formula"]),
                          "source": node["states"][0].get("source", "grid"), "R_se_A": r_se})
         below = [r for r in rows if r["m"] <= m0]
         top = max(below, key=lambda r: r["Omega_m"])
@@ -486,6 +517,7 @@ class Simulator:
         coverage; C_inf where the pool's mu_MA meets g_bulk(T), and its enthalpy from T +- 10 K; D of the monomer
         complexes (Stokes-Einstein); k_r of the Wulff dot from the facet rates; J0 = J e^(dOmega*/kT) of the grid."""
         from .classical import J_M2
+        self._growth_allowed()
         P = self.params_for(cond)
         g = gr.Growth(self.thermo, P)
         g._arrays()
@@ -539,6 +571,7 @@ class Simulator:
         """The classical twin at the page's conditions (syringe and temperature program included) and the
         material parameters of the sliders (clipped to CLASSICAL_LIMITS)."""
         from . import classical as cl
+        self._growth_allowed()
         P = copy.deepcopy(cl.PARAMS)
         P["conditions"].update({k: v for k, v in self.params_for(cond)["conditions"].items()
                                 if k not in ("gamma_MA", "gamma_MX")})
@@ -569,7 +602,7 @@ class Simulator:
         path = Path(st["file"]) if self.thermo_dir is None else self.thermo_dir / st["file"]
         if not path.exists():
             raise FileNotFoundError(f"structure file {st['file']} is not in {self.thermo_dir}")
-        return {"m": m, "k": k, "formula": node["formula"], "E_eV": st["E_eV"], "source": st.get("source", "grid"),
+        return {"m": m, "k": k, "formula": self._formula(node["formula"]), "E_eV": st["E_eV"], "source": st.get("source", "grid"),
                 "n_states": len(node["states"]), "file": st["file"], "xyz": path.read_text()}
 
 
@@ -674,11 +707,20 @@ def main(argv=None) -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8772)
     ap.add_argument("--max-atoms", type=int, default=MAX_ATOMS)
+    ap.add_argument("--ligand", choices=sorted(LIGANDS), help="X-type ligand of the grid (default: from its references)")
+    ap.add_argument("--nucleation-only", action="store_true",
+                    help="the nucleation panel alone: no growth run, build or classical twin (a grid whose own growth "
+                         "parameters do not exist yet)")
+    ap.add_argument("--m0", type=int, help="fixed nucleus size (default: the parameters' m0; needed with "
+                                           "--nucleation-only when m0 is auto)")
     a = ap.parse_args(argv)
     import uvicorn
     params = yaml.safe_load(Path(a.params).read_text()) if a.params else copy.deepcopy(gr.PARAMS)
     cfg = yaml.safe_load(Path(a.preset).read_text())
-    sim = Simulator(json.loads(Path(a.thermo).read_text()), params, cfg, a.max_atoms, Path(a.thermo).resolve().parent)
+    if a.nucleation_only and a.m0 is None and params["material"]["m0"] == "auto":
+        ap.error("--nucleation-only needs --m0: the automatic hand-over uses the growth (facet) parameters")
+    sim = Simulator(json.loads(Path(a.thermo).read_text()), params, cfg, a.max_atoms, Path(a.thermo).resolve().parent,
+                    a.ligand, a.nucleation_only, a.m0)
     uvicorn.run(make_app(sim), host=a.host, port=a.port, log_level="warning")
     return 0
 

@@ -126,6 +126,8 @@ button:disabled { opacity: .55; cursor: progress; }
 .row label { font-size: 12px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; }
 details { margin-top: 10px; font-size: 12px; }
 pre { background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; max-height: 220px; font-size: 11px; }
+body.nuc-only main { grid-template-columns: 270px minmax(0, 1fr); }
+body.nuc-only .growth { display: none; }
 @media (max-width: 1250px) { main { grid-template-columns: 250px minmax(0, 1fr); } .col3 { grid-column: 1 / -1; } .sticky { position: static; } }
 @media (max-width: 780px) { main { grid-template-columns: minmax(0, 1fr); padding: 8px 16px 16px; } header { padding: 14px 16px 6px; }
   .charts, .two, .runrow, .cluster { grid-template-columns: minmax(0, 1fr); } }
@@ -139,7 +141,8 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
     monomer and grow past m0. 3. Look at any grid cluster or build any dot.
     Compare with <a href="/classical" style="color: var(--accent)">ideal growth</a> (the same nucleation, spherical dots of one γ and one k_r)
     or the <a href="/cnt" style="color: var(--accent)">textbook CNT model</a>.
-    <span class="badge" id="solvBadge">implicit solvent only: explicit solvent and ligands (oleic acid, amines, phosphines) come later</span></p>
+    <span class="badge" id="solvBadge">implicit solvent only: explicit solvent and ligands (oleic acid, amines, phosphines) come later</span>
+    <span class="badge" id="nucOnly" hidden></span></p>
 </header>
 <main>
   <div class="col">
@@ -173,7 +176,7 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
         <div>
           <div class="chart-title">Shell distribution P(k | m)</div>
           <div class="chart tall" id="cHeat"></div>
-          <div class="cap">Click any cell (every grid node, P ≈ 0 included) to see that cluster [CdSe]m(CdCl₂)k in 3D
+          <div class="cap">Click any cell (every grid node, P ≈ 0 included) to see that cluster [CdSe]m(<span class="xl">CdCl₂</span>)k in 3D
             below; k* of each m outlined in orange, the cluster shown in black.</div>
         </div>
       </div>
@@ -202,7 +205,7 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
         for these conditions: the dots consume the monomer and the barrier rises again.</div>
     </section>
 
-    <section class="card">
+    <section class="card growth">
       <h2>2 · Kinetic growth <small>nucleation from Ω, monomer consumption, size-law growth, facet shape</small></h2>
       <div class="runrow">
         <div id="durcontrol"></div>
@@ -258,12 +261,12 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
       </div>
     </section>
 
-    <section class="card">
+    <section class="card growth">
       <h2>Facet parameters of the growth model <small id="surfSource"></small></h2>
-      <div class="cap" style="margin:0 0 6px">They enter only the kinetic growth (Wulff shape, Gibbs–Thomson, CdCl₂ coverage); the
+      <div class="cap" style="margin:0 0 6px">They enter only the kinetic growth (Wulff shape, Gibbs–Thomson, <span class="xl">CdCl₂</span> coverage); the
         nucleation panel uses the grid's own energies. Coverage: K c = θ/(1 − θ) e<sup>wθ/kT</sup>, K = e<sup>−ΔG<sub>bind</sub>/kT</sup>,
         ΔG<sub>bind</sub> = −ε₀ + ΔG<sub>th</sub>(T) (thermal part from the grid's Hessians);
-        γ(C) = γ⁰ + Γ<sup>max</sup>[kT ln(1 − θ) − wθ²/2], at the free CdCl₂ c of the time shown.</div>
+        γ(C) = γ⁰ + Γ<sup>max</sup>[kT ln(1 − θ) − wθ²/2], at the free <span class="xl">CdCl₂</span> c of the time shown.</div>
       <div class="tbl" style="overflow-x:auto">
         <table class="ptable">
           <thead><tr><th>facet</th><th>γ⁰ (meV/Å²)</th><th>ε₀ (eV)</th><th>ΔG<sub>bind</sub>(T) (eV)</th>
@@ -284,7 +287,7 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
     </section>
   </div>
 
-  <div class="col col3">
+  <div class="col col3 growth">
     <section class="card sticky">
       <h2>3 · Structure</h2>
       <div class="what" id="what">A built dot (Build this dot). Grid clusters show in the nucleation card.</div>
@@ -333,6 +336,7 @@ const KCTL = { key: "k_r", label: "Surface reaction k_r", unit: "Å/s", log: tru
   hint: "attachment rate constant (placeholder); 1e10 ≈ the diffusion limit" };
 const OM = 6.202964 ** 3 / 4;
 let D = null, L0 = null, R = null, runConds = null, snapIdx = 0, which = "mode", cohort = null, viewer = null, lastXyz = null, lastName = "structure";
+let XL = "CdCl₂";                          // the X-type unit MX_q of the grid (from /api/defaults)
 let sel = null;                             // the grid cluster shown in the nucleation card: {m, k, s (structure)}
 
 async function api(path, body) {
@@ -456,8 +460,8 @@ function drawNucleation(o) {
   $("nucRO").innerHTML = ro("barrier ΔΩ* (eV)", o.barrier == null ? "–" : o.barrier.toFixed(3)) + ro("critical m*", o.m_star)
     + ro(`k* at m0 = ${o.m0}`, o.k_star_m0)
     + (o.handover ? ro("grid → continuum at m0", `${o.handover.m0} (Δμ ${o.handover.mismatch_eV >= 0 ? "+" : ""}${o.handover.mismatch_eV.toFixed(3)} eV)`) : "") + ro("J, Becker–Döring (M/s)", fmt(o.J)) + ro("J₀ = J e^(ΔΩ*/kT) (M/s)", fmt(o.J0))
-    + ro("CdSe supply (M)", fmt(o.C_M)) + ro("CdCl₂ left / free (M)", `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
-    + ro("μ CdSe / μ CdCl₂ (eV)", `${o.mu_MA.toFixed(3)} / ${o.mu_MX.toFixed(3)}`) + ro("⟨n⟩ in Cd(Se)(CdCl₂)ₙ", o.mean_n.toFixed(2));
+    + ro("CdSe supply (M)", fmt(o.C_M)) + ro(`${XL} left / free (M)`, `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
+    + ro(`μ CdSe / μ ${XL} (eV)`, `${o.mu_MA.toFixed(3)} / ${o.mu_MX.toFixed(3)}`) + ro(`⟨n⟩ in Cd(Se)(${XL})ₙ`, o.mean_n.toFixed(2));
   // Delta Omega(m) = Omega(m) - Omega(1) on the grid, m = 1..m0: its maximum is the barrier of the time curve and the map
   const rows = o.per_m.filter((r) => r.m <= o.m0), om1 = rows[0].Omega_m;
   const tr = { x: rows.map((r) => r.m), y: rows.map((r) => r.Omega_m - om1), type: "scatter", mode: "lines+markers", name: "ΔΩ(m)",
@@ -552,7 +556,7 @@ async function showCluster(m, k, o) {
     const s = await api(`/api/structure?m=${m}&k=${k}`);
     sel = { m, k, s };
     render(s.xyz, "cviewer");
-    $("cwhat").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(CdCl₂)<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE).`;
+    $("cwhat").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(${XL})<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE).`;
     clusterInfo(o || L0);
     Plotly.relayout("cHeat", { shapes: selShape() });
   } catch (e) { $("cwhat").innerHTML = `<span class="status err">${e.message}</span>`; }
@@ -593,7 +597,7 @@ async function run() {
     drawSeries(); onTime();
     if (L0) drawNucleation(L0);                                  // the run's barrier joins the live curve
     const nEnd = R.series[R.series.length - 1].N_dots;
-    $("runStatus").textContent = (R.modified ? "Edited facet parameters · " : "") + (R.growth_law === "shape" ? "facet shape rule · " : "Wulff shape · ") + `${R.seconds} s · ${fmt(nEnd)} M dots in ${R.snapshots[snapIdx].cohorts.length} cohorts at ${fmt(R.snapshots[snapIdx].t)} s · mass balance ${fmt(R.conservation.MA)} (CdSe), ${fmt(R.conservation.MX)} (CdCl₂)`;
+    $("runStatus").textContent = (R.modified ? "Edited facet parameters · " : "") + (R.growth_law === "shape" ? "facet shape rule · " : "Wulff shape · ") + `${R.seconds} s · ${fmt(nEnd)} M dots in ${R.snapshots[snapIdx].cohorts.length} cohorts at ${fmt(R.snapshots[snapIdx].t)} s · mass balance ${fmt(R.conservation.MA)} (CdSe), ${fmt(R.conservation.MX)} (${XL})`;
     $("growth").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
   $("run").disabled = false;
@@ -606,7 +610,7 @@ function drawSeries() {
   const L = layout("log", { showlegend: true, legend: { orientation: "h", y: 1.02, yanchor: "bottom", x: 0, font: { size: 10 } }, margin: { l: 50, r: 8, t: 22, b: 32 } });
   L.yaxis.range = [-6, 0.2];
   Plotly.react("cConc", [line(t, S.map((r) => floor(r.P)), "Se precursor", c1), line(t, S.map((r) => floor(r.C_M)), "CdSe in solution", c2),
-                         line(t, S.map((r) => floor(r.c_MX_free)), "free CdCl₂", c3)], L, PCONF);
+                         line(t, S.map((r) => floor(r.c_MX_free)), `free ${XL}`, c3)], L, PCONF);
   Plotly.react("cDots", [line(t, S.map((r) => r.N_dots || null), "dots", c1)], layout("log"), PCONF);
   Plotly.react("cSize", [line(t, S.map((r) => (r.m_mean > 0 ? Math.cbrt(6 * r.m_mean * OM / Math.PI) / 10 : null)), "number-mean d", c1)], layout("log"), PCONF);
   Plotly.react("cBar", [line(t, S.map((r) => r.barrier), "barrier", c1)], layout("linear"), PCONF);
@@ -624,7 +628,7 @@ function onTime() {
   for (const id of TIME_CHARTS) Plotly.relayout(id, { shapes: [vline(t), ...nucShapes()] });
   $("tval").textContent = `${fmt(t)} s`;
   const row = R.series.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
-  $("poolLine").textContent = `${row.T != null ? row.T.toFixed(0) + " K · " : ""}${row.V_L != null && R.conditions.injection ? fmt(1000 * row.V_L) + " mL · " : ""}Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · CdCl₂ left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier == null ? "none (no supersaturation)" : row.barrier.toFixed(3) + " eV"}${row.k_eff != null ? ` · surface reaction k_eff ${fmt(row.k_eff)} Å/s${D.k_r_mode === "facets" ? " (from the facet rates)" : ""}` : ""}`;
+  $("poolLine").textContent = `${row.T != null ? row.T.toFixed(0) + " K · " : ""}${row.V_L != null && R.conditions.injection ? fmt(1000 * row.V_L) + " mL · " : ""}Se precursor ${fmt(row.P)} M · CdSe in solution ${fmt(row.C_M)} M · ${XL} left ${fmt(row.C_X)} M (free ${fmt(row.c_MX_free)} M) · dots ${fmt(row.N_dots)} M · barrier ${row.barrier == null ? "none (no supersaturation)" : row.barrier.toFixed(3) + " eV"}${row.k_eff != null ? ` · surface reaction k_eff ${fmt(row.k_eff)} Å/s${D.k_r_mode === "facets" ? " (from the facet rates)" : ""}` : ""}`;
   drawDist();
   fillSurface(row);
 }
@@ -729,7 +733,7 @@ function showDot(co) {
   if (!co) { box.innerHTML = "<span>No dots at this time</span><span></span>"; $("build").disabled = true; return; }
   const fac = Object.entries(co.facets).map(([f, a]) => `{${f}} ${(100 * a).toFixed(0)}%`).join(", ");
   box.innerHTML = `<span>Born at</span><span>${fmt(co.t_b)} s</span><span>Dots</span><span>${fmt(co.N)} M</span>
-    <span>m (CdSe), k (CdCl₂)</span><span>${co.m.toFixed(1)}, ${co.k.toFixed(1)}</span>
+    <span>m (CdSe), k (${XL})</span><span>${co.m.toFixed(1)}, ${co.k.toFixed(1)}</span>
     <span>Diameter</span><span>${co.d_nm.toFixed(2)} nm (equivalent sphere), ~${co.n_atoms} atoms</span>
     <span>Facets</span><span>${fac}</span>`;
   const big = co.n_atoms > D.max_atoms;
@@ -798,7 +802,16 @@ $("cclose").addEventListener("click", () => { sel = null; $("clusterBox").hidden
 
 (async () => {
   D = await api("/api/defaults");
-  if (D.material) $("title").textContent = `${D.material} nucleation and growth simulator`;
+  XL = D.ligand?.label || XL;
+  if (D.material) $("title").textContent = `${D.material}${D.ligand && D.ligand.name !== "CdCl2" ? " / " + XL : ""} nucleation ${D.nucleation_only ? "" : "and growth "}simulator`;
+  document.title = $("title").textContent;
+  document.querySelectorAll(".xl").forEach((e) => { e.textContent = XL; });
+  for (const c of ALLCTLS) { c.label = c.label.replace("CdCl₂", XL); if (c.hint) c.hint = c.hint.replace("CdCl₂", XL); }
+  if (D.nucleation_only) {
+    document.body.classList.add("nuc-only");
+    $("nucOnly").hidden = false;
+    $("nucOnly").textContent = `nucleation only: no growth (facet) parameters for this ${XL} grid yet, so no kinetic growth or dot builds; m0 = ${D.m0} fixed`;
+  }
   for (const c of CTLS) addSlider($("controls"), c, requestLive);
   const onCtl = () => { syncToggles(); requestLive(); };
   for (const c of INJ) addSlider($("injControls"), c, onCtl);

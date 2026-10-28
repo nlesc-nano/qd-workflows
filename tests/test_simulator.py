@@ -72,6 +72,25 @@ def test_live_omega_is_the_pre_nucleation_pool():
     assert abs(early["mu_MA"] - live["mu_MA"]) < 0.02
 
 
+def test_carboxylate_grid_nucleation_only():
+    # a carboxylate grid (its MX_q reference monomer is CdCl2-acetate): labels and formulas follow the ligand; without
+    # its own growth parameters the page serves the nucleation panel alone, at a fixed m0
+    th = _thermo()
+    th["references"]["CdCl2"]["source"] = "/x/refs/omat_pbe/monomers/CdCl2-acetate/monomer.json"
+    assert sm.grid_ligand(th) == "acetate" and sm.grid_ligand(_thermo()) == "CdCl2"
+    sim = sm.Simulator(th, _params(nucleation={"J0": 1e-4}), PRESET, nucleation_only=True, m0=3)
+    d = sim.defaults()
+    assert d["ligand"] == {"name": "acetate", "label": "Cd(OAc)₂"} and d["nucleation_only"] and d["m0"] == 3
+    o = sim.omega_live({"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t": 10.0})
+    assert o["m0"] == 3 and all("Cl" not in r["formula"] for r in o["per_m"])
+    assert any("(OAc)" in r["formula"] for r in o["per_m"])
+    for call in (lambda: sim.run({"t_end": 10.0}), lambda: sim.from_atomistic({})):
+        with pytest.raises(ValueError, match="nucleation only"):
+            call()
+    with pytest.raises(ValueError, match="Cd\\(OAc\\)₂ must exceed"):
+        sim.params_for({"c_P0": 0.3, "c_MX0": 0.2})
+
+
 def test_facet_overrides_are_checked_and_marked():
     sim = _sim()
     d = sim.defaults()["surface"]
