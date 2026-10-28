@@ -539,13 +539,16 @@ class Simulator:
         T, cm, cx = self.pre_pool(P, [t])[0]
         out = self._omega(T, cm, cx, m0, eps, g_ma, g_mx)
         inj = c.get("injection")
-        if inj:
-            t_in = min(t, inj["duration_s"])
-            n_p = c["c_P0"] * inj["V0_L"] + inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0 * t_in
-            v_t = inj["V0_L"] + inj["rate_L_h"] / 3600.0 * t_in
-        else:
-            n_p, v_t = c["c_P0"], 1.0
-        out.update(t=t, T_now=T, alpha=out["C_M"] * v_t / n_p if n_p > 0 else 0.0, conditions={**c, "eps": eps},
+
+        def alpha(tt, c_m):                     # precursor converted / precursor delivered by tt (no nuclei)
+            if inj:
+                t_in = min(tt, inj["duration_s"])
+                n_p = c["c_P0"] * inj["V0_L"] + inj["c_syringe_M"] * inj["rate_L_h"] / 3600.0 * t_in
+                v_t = inj["V0_L"] + inj["rate_L_h"] / 3600.0 * t_in
+            else:
+                n_p, v_t = c["c_P0"], 1.0
+            return c_m * v_t / n_p if n_p > 0 else 0.0
+        out.update(t=t, T_now=T, alpha=alpha(t, out["C_M"]), conditions={**c, "eps": eps},
                    handover=handover, injection=bool(inj))
         curve, heat = [], []
         ms = [r["m"] for r in out["per_m"] if r["m"] <= out["m0"]]
@@ -556,7 +559,8 @@ class Simulator:
         pts = refine([math.log10(x) for x in grid_t], ev, lambda a, b: 0.5 * (a + b) if b - a > 1e-4 else None)
         for lt, o in pts:
             curve.append({"t": 10.0 ** lt, "T": o["T"], "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
-                          "C_M": o["C_M"], "C_X": o["C_X"], "c_X_free": o["c_MX_free"], "S": o["S"]})
+                          "C_M": o["C_M"], "C_X": o["C_X"], "c_X_free": o["c_MX_free"], "S": o["S"],
+                          "alpha": alpha(10.0 ** lt, o["C_M"])})
             om1 = o["per_m"][0]["Omega_m"]
             heat.append([r["Omega_m"] - om1 for r in o["per_m"] if r["m"] <= out["m0"]])
         out["curve"] = curve

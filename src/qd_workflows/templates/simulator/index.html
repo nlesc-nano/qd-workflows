@@ -195,11 +195,12 @@ body.nuc-only .growth { display: none; }
         </div>
       </div>
       <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* (left), ln S and the pool's concentrations (right, concentrations on a log axis) along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
-      <div class="chart" id="cBarLive" style="height:330px"></div>
+      <div class="chart" id="cBarLive" style="height:390px"></div>
       <div class="cap">ΔΩ* on the left axis; ln S = (μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT (zero at saturation) and the concentrations (M) on the two
         right axes: the CdSe monomer supply, the <span class="xl">CdCl₂</span> left in solution and the free
         <span class="xl">CdCl₂</span> (dotted), below 10⁻¹² M cut off. Solid: precursor only; dashed: the growth run for these
-        conditions, when there is one. Click the curve to move the time there.</div>
+        conditions, when there is one. The strip below: the precursor converted, as % of what has been delivered.
+        Click the curve to move the time there.</div>
       <div class="chart-title" style="margin-top:6px">ΔΩ(m, t) = Ω(m) − Ω(1) along the time (red uphill, blue downhill, gray zero)</div>
       <div class="lawpick" role="radiogroup" aria-label="Pool of the map">
         <span>Pool:</span>
@@ -588,11 +589,19 @@ function drawNucleation(o) {
   B.yaxis3 = { type: "log", overlaying: "y", side: "right", anchor: "free", position: 1.0, showgrid: false, zeroline: false,
     exponentformat: "power", title: { text: "c (M)", standoff: 6, font: { color: ink2 } }, tickfont: { color: ink2 } };
   B.shapes = [vline(o.t), ...nucShapes()];
+  // a strip under the chart: the precursor conversion (converted / delivered, no nuclei), linear 0-100 %
+  const DOM = [0.3, 1];
+  B.yaxis.domain = DOM;
+  B.yaxis2.domain = DOM;
+  B.yaxis3.domain = DOM;
+  B.yaxis4 = { domain: [0, 0.2], anchor: "x", range: [0, 100], dtick: 50, gridcolor: css("--grid"), zeroline: false,
+    title: { text: "conv. %", standoff: 4, font: { size: 10 } }, tickfont: { size: 10 } };
+  B.xaxis.anchor = "y4";                                   // the time axis under the strip
   // the growth run of these conditions, when there is one: the barrier with the monomer the dots consume
   const run = runOmega();
   // color: the quantity (barrier, S); dash: the pool (precursor only, growth run)
   const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*", c1,
-    { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }),
+    { customdata: o.curve.map((r) => [r.m_star, r.C_M, 100 * r.alpha]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M, %{customdata[2]:.1f} % converted<extra></extra>" }),
     line(o.curve.map((r) => r.t), o.curve.map((r) => Math.log(r.S)), "ln S", cS,
       { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "ln S = %{y:.2f}<extra></extra>" }),
     ...concTraces(o.curve.map((r) => r.t), o.curve.map((r) => r.C_M), o.curve.map((r) => r.C_X), o.curve.map((r) => r.c_X_free), "", "")];
@@ -608,7 +617,9 @@ function drawNucleation(o) {
   const cs = barTraces.filter((tr) => tr.yaxis === "y3").flatMap((tr) => tr.y).filter((v) => v > 0);
   if (cs.length) B.yaxis3.range = [Math.max(Math.floor(Math.log10(Math.min(...cs))), -12), Math.log10(Math.max(...cs)) + 0.3];
   B.showlegend = true;
-  B.legend = { orientation: "h", x: 0, y: -0.3, yanchor: "top", font: { size: 10 }, entrywidth: 0.5, entrywidthmode: "fraction" };
+  B.legend = { orientation: "h", x: 0, y: -0.2, yanchor: "top", font: { size: 10 }, entrywidth: 0.5, entrywidthmode: "fraction" };
+  barTraces.push(line(o.curve.map((r) => r.t), o.curve.map((r) => 100 * r.alpha), "conversion", css("--text-secondary"),
+    { yaxis: "y4", line: { color: css("--text-secondary"), width: 1.5 }, hovertemplate: "%{y:.1f} % converted<extra></extra>" }));
   B.margin = { l: 50, r: 52, t: 6, b: 32 };
   Plotly.react("cBarLive", barTraces, B, PCONF);
   onClick("cBarLive", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
