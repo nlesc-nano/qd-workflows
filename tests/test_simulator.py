@@ -41,6 +41,21 @@ def test_omega_at_the_pool_of_a_time():
         sim.structure(late["m0"], 0)                                                 # the synthetic grid has no files
 
 
+def test_supersaturation_along_the_time_is_the_runs():
+    # S = e^((mu_MA - g_bulk(T))/kT) of the Omega panel: the badge (live), the live curve and the run's curve, the
+    # same definition as the growth run's S_bulk
+    import math
+    sim = _sim()
+    o = sim.omega_live({"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t": 10.0})
+    assert math.isclose(o["S"], math.exp((o["mu_MA"] - o["g_bulk"]) / (sm.KB_EV * 500.0)), rel_tol=1e-12)
+    assert all(c["S"] > 0 for c in o["curve"])
+    out = sim.run({"t_end": 30.0})
+    rows = [r for r in sim.runs[out["run_id"]]["res"]["series"] if r["C_M"] > 1e-20]
+    S = out["omega_run"]["S"]
+    assert len(S) == len(out["omega_run"]["t"]) == len(rows)
+    assert all(abs(math.log(a / r["S_bulk"])) < 0.05 for a, r in zip(S, rows))
+
+
 def test_live_omega_is_the_pre_nucleation_pool():
     sim = _sim()
     o = sim.omega_live({"T": 500.0, "c_P0": 0.1, "c_MX0": 0.2, "k_conv_500K": 1.0, "Ea_conv": 0.0, "t": 10.0})

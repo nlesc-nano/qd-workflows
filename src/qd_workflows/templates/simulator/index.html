@@ -117,8 +117,10 @@ button:disabled { opacity: .55; cursor: progress; }
 .kv span:nth-child(even) { font-variant-numeric: tabular-nums; }
 .what { font-size: 13px; margin-bottom: 8px; min-height: 2.8em; }
 .what b { font-weight: 600; }
-#viewer { position: relative; width: 100%; height: 400px; border-radius: 8px; overflow: hidden;
+#viewer, #cviewer { position: relative; width: 100%; height: 400px; border-radius: 8px; overflow: hidden;
   background: var(--surface-0); border: 1px solid var(--border); }
+#cviewer { height: 300px; }
+.cluster { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 8px; align-items: start; }
 #viewer .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
 .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .row label { font-size: 12px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; }
@@ -126,7 +128,7 @@ details { margin-top: 10px; font-size: 12px; }
 pre { background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px; padding: 8px; overflow: auto; max-height: 220px; font-size: 11px; }
 @media (max-width: 1250px) { main { grid-template-columns: 250px minmax(0, 1fr); } .col3 { grid-column: 1 / -1; } .sticky { position: static; } }
 @media (max-width: 780px) { main { grid-template-columns: minmax(0, 1fr); padding: 8px 16px 16px; } header { padding: 14px 16px 6px; }
-  .charts, .two, .runrow { grid-template-columns: minmax(0, 1fr); } }
+  .charts, .two, .runrow, .cluster { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -165,17 +167,28 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
         <div>
           <div class="chart-title">ΔΩ(m) = Ω(m) − Ω(1), with Ω(m) = −kT ln Σ<sub>k</sub> e<sup>−Ω(m,k)/kT</sup>, grid up to m0</div>
           <div class="chart tall" id="cOmega"></div>
-          <div class="cap">Click a point to show the lowest cluster of that m.</div>
+          <div class="cap">Click a point to show the lowest cluster of that m (at its k*). The badge is the
+            supersaturation S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> at this time.</div>
         </div>
         <div>
           <div class="chart-title">Shell distribution P(k | m)</div>
           <div class="chart tall" id="cHeat"></div>
-          <div class="cap">Click a cell for that cluster [CdSe]m(CdCl₂)k; k* of each m outlined.</div>
+          <div class="cap">Click any cell (every grid node, P ≈ 0 included) to see that cluster [CdSe]m(CdCl₂)k in 3D
+            below; k* of each m outlined in orange, the cluster shown in black.</div>
         </div>
       </div>
-      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
-      <div class="chart short" id="cBarLive"></div>
-      <div class="cap">Click the curve to move the time there.</div>
+      <div class="cluster" id="clusterBox" hidden>
+        <div id="cviewer"></div>
+        <div>
+          <div class="what" id="cwhat"></div>
+          <div class="kv" id="cInfo"></div>
+          <div class="row"><button id="cdl">Download .xyz</button><button id="cclose">Close</button></div>
+        </div>
+      </div>
+      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* (left) and supersaturation S (right, log) along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
+      <div class="chart" id="cBarLive" style="height:210px"></div>
+      <div class="cap">Blue: ΔΩ* (left axis); green: S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> (right axis). Solid: precursor
+        only; dashed: the growth run for these conditions, when there is one. Click the curve to move the time there.</div>
       <div class="chart-title" style="margin-top:6px">ΔΩ(m, t) = Ω(m) − Ω(1) along the time (red uphill, blue downhill, gray zero)</div>
       <div class="lawpick" role="radiogroup" aria-label="Pool of the map">
         <span>Pool:</span>
@@ -274,7 +287,7 @@ pre { background: var(--surface-0); border: 1px solid var(--border); border-radi
   <div class="col col3">
     <section class="card sticky">
       <h2>3 · Structure</h2>
-      <div class="what" id="what">A grid cluster (click the nucleation charts) or a built dot (Build this dot).</div>
+      <div class="what" id="what">A built dot (Build this dot). Grid clusters show in the nucleation card.</div>
       <div id="viewer"><div class="empty">Nothing shown yet.</div></div>
       <div class="kv" id="sInfo" style="margin-top:10px"></div>
       <div class="row" id="dl" hidden><button id="dlxyz">Download .xyz</button></div>
@@ -320,6 +333,7 @@ const KCTL = { key: "k_r", label: "Surface reaction k_r", unit: "Å/s", log: tru
   hint: "attachment rate constant (placeholder); 1e10 ≈ the diffusion limit" };
 const OM = 6.202964 ** 3 / 4;
 let D = null, L0 = null, R = null, runConds = null, snapIdx = 0, which = "mode", cohort = null, viewer = null, lastXyz = null, lastName = "structure";
+let sel = null;                             // the grid cluster shown in the nucleation card: {m, k, s (structure)}
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -458,6 +472,11 @@ function drawNucleation(o) {
   L.yaxis = { gridcolor: grid, zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
   L.annotations = o.barrier > 0 ? [{ x: o.m_star, y: o.barrier, text: `ΔΩ* = ${o.barrier.toFixed(2)} eV`, showarrow: false,
     yshift: 16, font: { size: 11, color: css("--text-primary") } }] : [];
+  // badge: the supersaturation at this time, in the top margin (clear of the curve and the barrier label)
+  L.margin = { l: 50, r: 8, t: 26, b: 32 };
+  L.annotations.push({ xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
+    text: `S = <b>${fmt(o.S)}</b> at ${fmt(o.t)} s`, font: { size: 11, color: css("--text-primary") },
+    bgcolor: css("--surface-0"), bordercolor: css("--series-2"), borderwidth: 1.5, borderpad: 4 });
   Plotly.react("cOmega", [tr, top], L, PCONF);
   onClick("cOmega", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) showCluster(p.x, p.customdata[0], o); });
   // P(k | m)
@@ -472,27 +491,35 @@ function drawNucleation(o) {
   const H = layout("linear", { hovermode: "closest", margin: { l: 40, r: 8, t: 6, b: 32 } });
   H.xaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
   H.yaxis = { dtick: 2, title: { text: "k", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
+  H.shapes = selShape();
   Plotly.react("cHeat", [heat, ks], H, PCONF);
   onClick("cHeat", (ev) => { const p = ev.points[0]; if (p.data.type !== "heatmap" || p.z != null) showCluster(p.x, p.y, o); });
   // barrier along the time after injection
   const B = layout("linear", { hovermode: "x unified" });
-  B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4 };
+  const cS = css("--series-3");
+  B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4, font: { color: c1 } };
+  B.yaxis2 = { type: "log", overlaying: "y", side: "right", showgrid: false, zeroline: false, exponentformat: "power",
+    title: { text: "S", standoff: 8, font: { color: cS } }, tickfont: { color: cS } };
   B.xaxis.title = { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 };
   B.shapes = [vline(o.t), ...nucShapes()];
   // the growth run of these conditions, when there is one: the barrier with the monomer the dots consume
   const run = runOmega();
-  const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "precursor only (no nuclei)", c1,
-    { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" })];
+  // color: the quantity (barrier, S); dash: the pool (precursor only, growth run)
+  const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*, precursor only (no nuclei)", c1,
+    { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }),
+    line(o.curve.map((r) => r.t), o.curve.map((r) => r.S), "S, precursor only", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "S = %{y:.3g}<extra></extra>" })];
   if (run) {
-    barTraces.push(line(run.t, run.barrier, "growth run (dots consume the monomer)", css("--series-2"),
-      { line: { color: css("--series-2"), width: 2, dash: "dash" }, customdata: run.t.map((_, i) => [run.m_star[i], run.C_M[i]]),
+    barTraces.push(line(run.t, run.barrier, "ΔΩ*, growth run (dots consume the monomer)", c1,
+      { line: { color: c1, width: 2, dash: "dash" }, customdata: run.t.map((_, i) => [run.m_star[i], run.C_M[i]]),
         hovertemplate: "run: ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }));
-    B.showlegend = true;
-    B.legend = { orientation: "h", y: 1.02, yanchor: "bottom", x: 0, font: { size: 10 } };
-    B.margin = { l: 50, r: 8, t: 22, b: 32 };
+    if (run.S) barTraces.push(line(run.t, run.S, "S, growth run", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5, dash: "dash" }, hovertemplate: "run: S = %{y:.3g}<extra></extra>" }));
   }
+  B.margin = { l: 50, r: 62, t: 6, b: 32 };
   Plotly.react("cBarLive", barTraces, B, PCONF);
   onClick("cBarLive", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
+  if (sel) clusterInfo(o);
   // Delta Omega(m, t): diverging around zero, saturated at +-1 eV so the barrier region (tenths of an eV) stays
   // visible next to the deep downhill of late times (-10 eV at m0)
   const useRun = run && $("map_run").checked;
@@ -515,17 +542,29 @@ function drawNucleation(o) {
   onClick("cOmegaT", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
 }
 
+// the grid cluster clicked on the nucleation charts, in the nucleation card (any m, k node of the grid)
+const selShape = () => sel ? [{ type: "rect", xref: "x", yref: "y", x0: sel.m - 0.5, x1: sel.m + 0.5, y0: sel.k - 0.5, y1: sel.k + 0.5,
+  line: { color: css("--text-primary"), width: 2.5 } }] : [];
 async function showCluster(m, k, o) {
-  $("what").innerHTML = `Loading the grid cluster m = ${m}, k = ${k}…`;
+  $("clusterBox").hidden = false;
+  $("cwhat").innerHTML = `Loading the grid cluster m = ${m}, k = ${k}…`;
   try {
     const s = await api(`/api/structure?m=${m}&k=${k}`);
-    lastXyz = s.xyz; lastName = `grid_m${m}_k${k}`; render(s.xyz);
-    const om = o && o.Omega[o.ms.indexOf(m)]?.[o.ks.indexOf(k)];
-    $("what").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(CdCl₂)<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE).`;
-    $("sInfo").innerHTML = `<span>Ω here</span><span>${om == null ? "–" : om.toFixed(3) + " eV"}</span>
-      <span>E</span><span>${s.E_eV.toFixed(3)} eV</span><span>Source</span><span>${s.source}</span><span>File</span><span>${s.file}</span>`;
-    $("dl").hidden = false; $("recipeBox").hidden = true;
-  } catch (e) { $("what").innerHTML = `<span class="status err">${e.message}</span>`; }
+    sel = { m, k, s };
+    render(s.xyz, "cviewer");
+    $("cwhat").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(CdCl₂)<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s) of the nucleation grid (MACE).`;
+    clusterInfo(o || L0);
+    Plotly.relayout("cHeat", { shapes: selShape() });
+  } catch (e) { $("cwhat").innerHTML = `<span class="status err">${e.message}</span>`; }
+}
+// the cluster's Omega and P(k | m) at the conditions on the left (they follow the time and sliders)
+function clusterInfo(o) {
+  const { m, k, s } = sel, i = o ? o.ms.indexOf(m) : -1, j = o ? o.ks.indexOf(k) : -1;
+  const om = i >= 0 && j >= 0 ? o.Omega[i][j] : null, pk = i >= 0 && j >= 0 ? o.P_k[i][j] : null;
+  $("cInfo").innerHTML = `<span>Ω(m, k) here</span><span>${om == null ? "–" : om.toFixed(3) + " eV"}</span>
+    <span>P(k | m) here</span><span>${pk == null ? "–" : fmt(pk)}</span>
+    <span>E</span><span>${s.E_eV.toFixed(3)} eV</span><span>Atoms</span><span>${parseInt(s.xyz, 10)}</span>
+    <span>Source</span><span>${s.source}</span><span>File</span><span>${s.file}</span>`;
 }
 
 // ---------- 2. kinetic growth ----------
@@ -734,24 +773,28 @@ async function build() {
 }
 
 // ---------- 3. structure ----------
-function render(xyz) {
-  const el = $("viewer"); el.innerHTML = "";
-  viewer = $3Dmol.createViewer(el, { backgroundColor: css("--surface-0"), orthographic: true });
-  viewer.addModel(xyz, "xyz");
-  viewer.setStyle({}, { sphere: { colorscheme: "Jmol", scale: 0.9 } });
+function render(xyz, id = "viewer") {
+  const el = $(id); el.innerHTML = "";
+  const v = $3Dmol.createViewer(el, { backgroundColor: css("--surface-0"), orthographic: true });
+  v.addModel(xyz, "xyz");
+  v.setStyle({}, { sphere: { colorscheme: "Jmol", scale: 0.9 } });
   const n = parseInt(xyz, 10) || 0;                     // small grid clusters fill the view, large dots keep a margin
-  viewer.zoomTo(); viewer.zoom(n > 200 ? 0.8 : 1.4); viewer.render();
+  v.zoomTo(); v.zoom(n > 200 ? 0.8 : 1.4); v.render();
+  if (id === "viewer") viewer = v;
 }
 
 $("tslider").addEventListener("input", (e) => { snapIdx = +e.target.value; onTime(); });
 document.querySelectorAll(".pick button").forEach((b) => b.addEventListener("click", () => setWhich(b.dataset.which)));
 $("run").addEventListener("click", run);
 $("build").addEventListener("click", build);
-$("dlxyz").addEventListener("click", () => {
+function download(xyz, name) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([lastXyz], { type: "chemical/x-xyz" }));
-  a.download = `${lastName}.xyz`; a.click();
-});
+  a.href = URL.createObjectURL(new Blob([xyz], { type: "chemical/x-xyz" }));
+  a.download = `${name}.xyz`; a.click();
+}
+$("dlxyz").addEventListener("click", () => download(lastXyz, lastName));
+$("cdl").addEventListener("click", () => sel && download(sel.s.xyz, `grid_m${sel.m}_k${sel.k}`));
+$("cclose").addEventListener("click", () => { sel = null; $("clusterBox").hidden = true; Plotly.relayout("cHeat", { shapes: [] }); });
 
 (async () => {
   D = await api("/api/defaults");

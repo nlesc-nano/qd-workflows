@@ -23,6 +23,7 @@ import time
 import uuid
 from collections import OrderedDict
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import yaml
@@ -234,7 +235,7 @@ class Simulator:
         c = P["conditions"]
         eps = float(P.get("solvation", {}).get("eps", 1.0))
         m0 = self._m0({**c, "eps": eps})[0]
-        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "m": None, "dOmega": [], "R_se_A": []}
+        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "S": [], "m": None, "dOmega": [], "R_se_A": []}
         cols, rcols = [], []
         for row in res["series"]:
             if row["C_M"] <= 1e-20:
@@ -249,6 +250,7 @@ class Simulator:
             out["barrier"].append(o["barrier"])
             out["m_star"].append(o["m_star"])
             out["C_M"].append(row["C_M"])
+            out["S"].append(o["S"])
             out["m"] = [r["m"] for r in rows]
             cols.append([r["Omega_m"] - rows[0]["Omega_m"] for r in rows])
             rcols.append([r["R_se_A"] for r in rows])
@@ -297,6 +299,10 @@ class Simulator:
                 "search": best and {"centre": best.get("centre"), "roundings": best.get("roundings")}, "z_type": ztype,
                 "xyz": xyz.getvalue()}
 
+    def _g_bulk(self, T: float) -> float:
+        """Bulk free energy per MA unit at T, as the growth model has it (growth.Growth.g_bulk)."""
+        return gr.Growth.g_bulk(SimpleNamespace(P=self.params, T=float(T), kt=KB_EV * float(T)))
+
     def _solv(self, eps: float) -> dict:
         return {**self.params.get("solvation", {"eps": 1.0}), "eps": solvent_eps(eps)}
 
@@ -338,12 +344,14 @@ class Simulator:
                gamma_ma: float = 1.0, gamma_mx: float = 1.0) -> dict:
         """Omega(m, k) = G(m, k) - m mu_MA - k mu_MX of the grid at the pool (C_M monomer supply, C_X MX_q left),
         Omega(m) = -kT ln sum_k e^(-Omega(m,k)/kT), the barrier max_{m <= m0} Omega(m) - Omega(1), m*, k*(m),
-        P(k|m) and J (the nucleation step of the growth model); every species in implicit solvent at eps."""
+        P(k|m) and J (the nucleation step of the growth model); every species in implicit solvent at eps. The
+        supersaturation S = e^((mu_MA - g_bulk(T))/kT), as the growth run's S_bulk."""
         gr_ = self._grid(T, eps)
         th, ms, ks, Gp = gr_["th"], gr_["ms"], gr_["ks"], gr_["Gp"]
         kt = KB_EV * T
         pl = pool(th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=gamma_ma, gamma_mx=gamma_mx)
         mu_ma, mu_mx = pl["mu_MA"], pl["mu_MX"]
+        gb = self._g_bulk(T)
         v = Gp - ms[:, None] * mu_ma - ks[None, :] * mu_mx
         vmin = v.min(axis=1)
         P = np.exp(-(v - vmin[:, None]) / kt)
@@ -366,6 +374,7 @@ class Simulator:
         barrier = max(0.0, top["Omega_m"] - below[0]["Omega_m"])
         k0 = next((r["k_star"] for r in rows if r["m"] == m0), None)
         return {"T": T, "C_M": C_M, "C_X": C_X, "mu_MA": mu_ma, "mu_MX": mu_mx, "c_MX_free": pl["c_MX_free"],
+                "g_bulk": gb, "S": math.exp(min((mu_ma - gb) / kt, 700.0)),
                 "mean_n": pl["mean_n"], "speciation": {str(n): float(x) for n, x in pl["speciation"].items()},
                 "m0": m0, "barrier": barrier, "m_star": top["m"], "k_star_m0": k0,
                 "J": (J := gr.nucleation_flux(om_m, ms, m0, kt, float(self.params["material"]["Omega_m"]), self.params, barrier,
@@ -378,8 +387,6 @@ class Simulator:
         """The pool before any nucleus at each time (s): precursor conversion P -> MA at k_conv(T(t)) P C_X, the
         syringe adding precursor and diluting the flask, the temperature program. Without injection and at one
         temperature the closed form (grid_thermo.converted). Returns (T, C_M, C_X) per time."""
-        from types import SimpleNamespace
-
         from scipy.integrate import solve_ivp
         c = P["conditions"]
         prog = SimpleNamespace(P=P)
@@ -452,7 +459,7 @@ class Simulator:
             except ValueError:
                 continue
             curve.append({"t": float(tt), "T": Tt, "barrier": o["barrier"], "m_star": o["m_star"], "J": o["J"],
-                          "C_M": o["C_M"]})
+                          "C_M": o["C_M"], "S": o["S"]})
             om1 = o["per_m"][0]["Omega_m"]
             heat.append([r["Omega_m"] - om1 for r in o["per_m"] if r["m"] <= out["m0"]])
         out["curve"] = curve
