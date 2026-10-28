@@ -175,11 +175,15 @@ body.nuc-only .growth { display: none; }
             barrier, m0: the clusters grow past the grid. Triangle: the barrier top m*. The badge is ln S = (μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT at this time, and Δμ = kT ln S.</div>
         </div>
         <div>
-          <div class="chart-title">Shell distribution P(k | m)</div>
+          <div class="chart-title" id="kmapTitle">Cluster populations P(m, k), log scale</div>
+          <div class="lawpick" role="radiogroup" aria-label="Map of the grid" style="margin:0 0 2px">
+            <label><input type="radio" name="kmap" value="joint" id="kmap_joint" checked> all clusters P(m, k)</label>
+            <label><input type="radio" name="kmap" value="cond" id="kmap_cond"> shells per size P(k | m)</label>
+          </div>
           <div class="chart tall" id="cHeat"></div>
-          <div class="cap">Click any cell (every grid node, P ≈ 0 included) to see that cluster [CdSe]m(<span class="xl">CdCl₂</span>)k in 3D
-            below; k* of each m outlined in orange, the cluster shown in black. Grey: grid nodes without thermochemistry
-            (not annealed, so no Hessian): energy only, not in Ω.</div>
+          <div class="cap" id="kmapCap"></div>
+          <div class="cap">Click any cell to see that cluster [CdSe]m(<span class="xl">CdCl₂</span>)k in 3D below (the one shown is
+            outlined in black). Grey: grid nodes without thermochemistry (not annealed, so no Hessian): energy only, not in Ω.</div>
         </div>
       </div>
       <div class="cluster" id="clusterBox" hidden>
@@ -508,15 +512,48 @@ function drawNucleation(o) {
     bgcolor: css("--surface-0"), bordercolor: css("--series-2"), borderwidth: 1.5, borderpad: 4 });
   Plotly.react("cOmega", [tr, top, popTr], L, PCONF);
   onClick("cOmega", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) showCluster(p.x, p.customdata[0], o); });
-  // P(k | m)
-  const z = o.ks.map((_, j) => o.ms.map((_, i) => (o.Omega[i][j] == null ? null : o.P_k[i][j])));
+  // the grid map: all clusters P(m, k) (joint, log) or the shells of each size P(k | m)
+  const joint = $("kmap_joint").checked;
   const om = o.ks.map((_, j) => o.ms.map((_, i) => o.Omega[i][j]));
   const scale = [[0, css("--seq-1")], [0.25, css("--seq-3")], [0.5, css("--seq-5")], [0.75, css("--seq-7")], [1, css("--seq-9")]];
-  const heat = { x: o.ms, y: o.ks, z, customdata: om, type: "heatmap", colorscale: scale, zmin: 0, zmax: 1, xgap: 2, ygap: 2,
-    colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 } },
-    hovertemplate: "m = %{x}, k = %{y}<br>P(k|m) = %{z:.3f}<br>Ω = %{customdata:.3f} eV<extra></extra>", hoverongaps: false };
-  const ks = { x: o.per_m.map((r) => r.m), y: o.per_m.map((r) => r.k_star), type: "scatter", mode: "markers", hoverinfo: "skip",
-    marker: { symbol: "square-open", size: 13, color: css("--series-2"), line: { width: 2 } } };
+  let heat, ks, unreached = null;
+  if (joint) {
+    // c(m, k) = c° e^(-Omega(m,k)/kT) in equilibrium with the pool (sum over k of c(1, k) = the monomer supply),
+    // normalised over every cluster the system can reach: m <= m* below a barrier, the grid up to m0 without one
+    const ktj = 8.617333e-5 * o.T_now, top = o.barrier > 0 ? o.m_star : o.m0, LO = -12;
+    const lc = o.ks.map((_, j) => o.ms.map((m, i) => (o.Omega[i][j] == null || m > top ? null : -o.Omega[i][j] / ktj / Math.LN10)));
+    const mx = Math.max(...lc.flat().filter((v) => v != null));
+    const lsum = mx + Math.log10(lc.flat().filter((v) => v != null).reduce((a, v) => a + 10 ** (v - mx), 0));
+    const lp = lc.map((row) => row.map((v) => (v == null ? null : v - lsum)));
+    const zc = lp.map((row) => row.map((v) => (v == null ? null : Math.max(v, LO))));
+    const cd = lp.map((row, j) => row.map((v, i) => [v, lc[j][i], om[j][i]]));
+    heat = { x: o.ms, y: o.ks, z: zc, customdata: cd, type: "heatmap", colorscale: scale, zmin: LO, zmax: 0, xgap: 2, ygap: 2,
+      colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 },
+                  tickvals: [-12, -9, -6, -3, 0], ticktext: ["≤10⁻¹²", "10⁻⁹", "10⁻⁶", "10⁻³", "1"] },
+      hovertemplate: "m = %{x}, k = %{y}<br>P(m,k) = 10^%{customdata[0]:.1f}<br>c = 10^%{customdata[1]:.1f} M<br>Ω = %{customdata[2]:.3f} eV<extra></extra>",
+      hoverongaps: false };
+    let best = null;
+    lp.forEach((row, j) => row.forEach((v, i) => { if (v != null && (!best || v > best.v)) best = { v, m: o.ms[i], k: o.ks[j] }; }));
+    ks = { x: [best.m], y: [best.k], type: "scatter", mode: "markers", hoverinfo: "skip",
+      marker: { symbol: "square-open", size: 13, color: css("--series-2"), line: { width: 2 } } };
+    // nodes past the barrier top: not populated before nucleation, still clickable
+    unreached = { x: o.ms, y: o.ks, z: o.ks.map((_, j) => o.ms.map((m, i) => (o.Omega[i][j] != null && m > top ? 1 : null))),
+      type: "heatmap", colorscale: [[0, css("--grid")], [1, css("--grid")]], zmin: 0, zmax: 1, showscale: false, xgap: 2, ygap: 2,
+      hoverongaps: false, hovertemplate: "m = %{x}, k = %{y}<br>past the barrier top: not populated before nucleation<extra></extra>" };
+    $("kmapTitle").textContent = "Cluster populations P(m, k), log scale";
+    $("kmapCap").innerHTML = `Every (m, k) in equilibrium with the pool, c(m, k) = c° e<sup>−Ω(m,k)/kT</sup>, normalised over all
+      the clusters ${o.barrier > 0 ? `up to the barrier top m* = ${o.m_star} (larger ones, pale, are not populated before nucleation)`
+      : `of the grid (no barrier: the population runs to the largest size, m0 = ${o.m0})`}. Most populated: (${best.m}, ${best.k}), outlined in orange.`;
+  } else {
+    const z = o.ks.map((_, j) => o.ms.map((_, i) => (o.Omega[i][j] == null ? null : o.P_k[i][j])));
+    heat = { x: o.ms, y: o.ks, z, customdata: om, type: "heatmap", colorscale: scale, zmin: 0, zmax: 1, xgap: 2, ygap: 2,
+      colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 } },
+      hovertemplate: "m = %{x}, k = %{y}<br>P(k|m) = %{z:.3f}<br>Ω = %{customdata:.3f} eV<extra></extra>", hoverongaps: false };
+    ks = { x: o.per_m.map((r) => r.m), y: o.per_m.map((r) => r.k_star), type: "scatter", mode: "markers", hoverinfo: "skip",
+      marker: { symbol: "square-open", size: 13, color: css("--series-2"), line: { width: 2 } } };
+    $("kmapTitle").textContent = "Shell distribution P(k | m)";
+    $("kmapCap").textContent = "The shells of each size m, normalised per m (each column sums to 1); k* of each m outlined in orange.";
+  }
   const H = layout("linear", { hovermode: "closest", margin: { l: 40, r: 8, t: 6, b: 32 } });
   H.xaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
   H.yaxis = { dtick: 2, title: { text: "k", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
@@ -526,7 +563,7 @@ function drawNucleation(o) {
     colorscale: [[0, css("--text-muted")], [1, css("--text-muted")]], zmin: 0, zmax: 1, showscale: false, opacity: 0.6,
     xgap: 2, ygap: 2, hoverongaps: false, hovertemplate: "m = %{x}, k = %{y}<br>no thermo: energy only, not in Ω<extra></extra>" };
   H.shapes = selShape();
-  Plotly.react("cHeat", nt.size ? [heat, grey, ks] : [heat, ks], H, PCONF);
+  Plotly.react("cHeat", [heat, ...(unreached ? [unreached] : []), ...(nt.size ? [grey] : []), ks], H, PCONF);
   onClick("cHeat", (ev) => { const p = ev.points.find((q) => q.data.type === "heatmap" && q.z != null); if (p) showCluster(p.x, p.y, o); });
   // barrier along the time after injection
   const B = layout("linear", { hovermode: "x unified" });
@@ -869,7 +906,7 @@ $("cclose").addEventListener("click", () => { sel = null; $("clusterBox").hidden
     onCtl();
   });
   $("twoT").addEventListener("change", onCtl);
-  document.querySelectorAll('input[name="mapsrc"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
+  document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
   $(D.growth_law === "size" ? "law_size" : "law_shape").checked = true;
   $({ mixed: "gc_mixed", diffusion: "gc_diff", reaction: "gc_react" }[D.growth_control || "mixed"]).checked = true;
   document.querySelectorAll('input[name="law"], input[name="gctl"]').forEach((r) => r.addEventListener("change", () => {
