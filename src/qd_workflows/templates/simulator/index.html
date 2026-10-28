@@ -433,6 +433,14 @@ function layout(ytype, extra = {}) {
 }
 const line = (x, y, name, color, extra = {}) => ({ x, y, name, type: "scatter", mode: "lines", line: { color, width: 2 }, ...extra });
 const vline = (x) => ({ type: "line", xref: "x", yref: "paper", x0: x, x1: x, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } });
+// a number given by its log10, readable: 0.0063 down to 1e-3, else 1.3 × 10⁻⁷ (hover text, HTML)
+function sciLog(l) {
+  if (l == null || !isFinite(l)) return "–";
+  if (l >= -3) return (+(10 ** l).toPrecision(3)).toString();
+  let e = Math.floor(l), mant = 10 ** (l - e);
+  if (+mant.toFixed(1) >= 10) { mant /= 10; e += 1; }
+  return `${mant.toFixed(1)} × 10<sup>${String(e).replace("-", "−")}</sup>`;
+}
 // the pool's concentrations along the time, on the third axis (y3): CdSe supply, MX_q left, free MX_q
 function concTraces(t, cm, cx, cf, dash, pre) {
   const cC = css("--series-2"), cX = css("--series-4");
@@ -484,7 +492,7 @@ function drawNucleation(o) {
     line: { color: c1, width: 2 }, marker: { size: 9, color: c1, line: { color: css("--surface-1"), width: 2 } },
     // c(m) in equilibrium with the pool only below a barrier (without one there is no finite equilibrium)
     customdata: rows.map((r) => [r.k_star, r.formula, r.Omega_m, o.barrier > 0 && r.m <= o.m_star
-      ? `<br>c(m) = 10^${(-r.Omega_m / (8.617333e-5 * o.T_now) / Math.LN10).toFixed(1)} M in equilibrium with the pool` : ""]),
+      ? `<br>c(m) = ${sciLog(-r.Omega_m / (8.617333e-5 * o.T_now) / Math.LN10)} M in equilibrium with the pool` : ""]),
     hovertemplate: "m = %{x}: ΔΩ = %{y:.3f} eV (Ω = %{customdata[2]:.3f} eV)<br>k* = %{customdata[0]} (%{customdata[1]})%{customdata[3]}<extra></extra>" };
   const star = rows.find((r) => r.m === o.m_star);
   const top = { x: [o.m_star], y: [star.Omega_m - om1], type: "scatter", mode: "markers", hoverinfo: "skip",
@@ -498,7 +506,7 @@ function drawNucleation(o) {
   const popTr = { x: [pop.m], y: [pop.Omega_m - om1], type: "scatter", mode: "markers",
     marker: { size: 17, symbol: "circle-open", color: css("--series-2"), line: { width: 2.5 } },
     hovertemplate: (o.barrier > 0
-      ? `most populated: m = ${pop.m}, c(m) = 10^${(-pop.Omega_m / kt / Math.LN10).toFixed(1)} M`
+      ? `most populated: m = ${pop.m}, c(m) = ${sciLog(-pop.Omega_m / kt / Math.LN10)} M`
       : `no barrier: the clusters grow past the grid (m0 = ${o.m0})`) + "<extra></extra>" };
   const L = layout("linear", { hovermode: "closest" });
   L.xaxis = { dtick: 1, gridcolor: grid, zeroline: false, title: { text: "m (CdSe units)", standoff: 4 }, range: [0.5, o.m0 + 0.5] };
@@ -526,11 +534,11 @@ function drawNucleation(o) {
     const lsum = mx + Math.log10(lc.flat().filter((v) => v != null).reduce((a, v) => a + 10 ** (v - mx), 0));
     const lp = lc.map((row) => row.map((v) => (v == null ? null : v - lsum)));
     const zc = lp.map((row) => row.map((v) => (v == null ? null : Math.max(v, LO))));
-    const cd = lp.map((row, j) => row.map((v, i) => [v, lc[j][i], om[j][i]]));
+    const cd = lp.map((row, j) => row.map((v, i) => [sciLog(v), sciLog(lc[j][i]), om[j][i]]));
     heat = { x: o.ms, y: o.ks, z: zc, customdata: cd, type: "heatmap", colorscale: scale, zmin: LO, zmax: 0, xgap: 2, ygap: 2,
       colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 },
                   tickvals: [-12, -9, -6, -3, 0], ticktext: ["≤10⁻¹²", "10⁻⁹", "10⁻⁶", "10⁻³", "1"] },
-      hovertemplate: "m = %{x}, k = %{y}<br>P(m,k) = 10^%{customdata[0]:.1f}<br>c = 10^%{customdata[1]:.1f} M<br>Ω = %{customdata[2]:.3f} eV<extra></extra>",
+      hovertemplate: "m = %{x}, k = %{y}<br>P(m,k) = %{customdata[0]}<br>c = %{customdata[1]} M<br>Ω = %{customdata[2]:.3f} eV<extra></extra>",
       hoverongaps: false };
     let best = null;
     lp.forEach((row, j) => row.forEach((v, i) => { if (v != null && (!best || v > best.v)) best = { v, m: o.ms[i], k: o.ks[j] }; }));
