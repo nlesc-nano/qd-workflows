@@ -172,7 +172,7 @@ body.nuc-only .growth { display: none; }
           <div class="chart tall" id="cOmega"></div>
           <div class="cap">Click a point to show the lowest cluster of that m (at its k*). Circle: where the clusters are. Below
             a barrier, the most populated size, c(m) = c° e<sup>−Ω(m)/kT</sup>, among the sizes below the top; without a
-            barrier, m0: the clusters grow past the grid. Triangle: the barrier top m*. The badge is the supersaturation S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> at this time.</div>
+            barrier, m0: the clusters grow past the grid. Triangle: the barrier top m*. The badge is ln S = (μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT at this time, and Δμ = kT ln S.</div>
         </div>
         <div>
           <div class="chart-title">Shell distribution P(k | m)</div>
@@ -190,9 +190,9 @@ body.nuc-only .growth { display: none; }
           <div class="row"><button id="cdl">Download .xyz</button><button id="cclose">Close</button></div>
         </div>
       </div>
-      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* (left), supersaturation S and the pool's concentrations (right, log) along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
+      <div class="chart-title" style="margin-top:6px">Barrier ΔΩ* (left), ln S and the pool's concentrations (right, concentrations on a log axis) along the time, for these conditions (precursor delivery and conversion only, no nuclei)</div>
       <div class="chart" id="cBarLive" style="height:330px"></div>
-      <div class="cap">ΔΩ* on the left axis; S = e<sup>(μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT</sup> and the concentrations (M) on the two
+      <div class="cap">ΔΩ* on the left axis; ln S = (μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT (zero at saturation) and the concentrations (M) on the two
         right axes: the CdSe monomer supply, the <span class="xl">CdCl₂</span> left in solution and the free
         <span class="xl">CdCl₂</span> (dotted), below 10⁻¹² M cut off. Solid: precursor only; dashed: the growth run for these
         conditions, when there is one. Click the curve to move the time there.</div>
@@ -504,7 +504,7 @@ function drawNucleation(o) {
   // badge: the supersaturation at this time, in the top margin (clear of the curve and the barrier label)
   L.margin = { l: 50, r: 8, t: 26, b: 32 };
   L.annotations.push({ xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
-    text: `S = <b>${fmt(o.S)}</b> at ${fmt(o.t)} s`, font: { size: 11, color: css("--text-primary") },
+    text: `ln S = <b>${Math.log(o.S).toFixed(2)}</b> (Δμ = ${(8.617333e-5 * o.T_now * Math.log(o.S)).toFixed(3)} eV) at ${fmt(o.t)} s`, font: { size: 11, color: css("--text-primary") },
     bgcolor: css("--surface-0"), bordercolor: css("--series-2"), borderwidth: 1.5, borderpad: 4 });
   Plotly.react("cOmega", [tr, top, popTr], L, PCONF);
   onClick("cOmega", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) showCluster(p.x, p.customdata[0], o); });
@@ -532,8 +532,9 @@ function drawNucleation(o) {
   const B = layout("linear", { hovermode: "x unified" });
   const cS = css("--series-3");
   B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4, font: { color: c1 } };
-  B.yaxis2 = { type: "log", overlaying: "y", side: "right", showgrid: false, zeroline: false, exponentformat: "power",
-    title: { text: "S", standoff: 8, font: { color: cS } }, tickfont: { color: cS } };
+  // ln S = (mu_CdSe - g_bulk)/kT: zero at saturation (dotted)
+  B.yaxis2 = { type: "linear", overlaying: "y", side: "right", showgrid: false, zeroline: true, zerolinecolor: cS,
+    zerolinewidth: 1, title: { text: "ln S", standoff: 8, font: { color: cS } }, tickfont: { color: cS } };
   B.xaxis.title = { text: o.injection ? "time from the start (s)" : "time after injection (s)", standoff: 4 };
   B.xaxis.domain = [0, 0.86];
   B.yaxis2.anchor = "x";
@@ -547,22 +548,22 @@ function drawNucleation(o) {
   // color: the quantity (barrier, S); dash: the pool (precursor only, growth run)
   const barTraces = [line(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*", c1,
     { customdata: o.curve.map((r) => [r.m_star, r.C_M]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }),
-    line(o.curve.map((r) => r.t), o.curve.map((r) => r.S), "S", cS,
-      { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "S = %{y:.3g}<extra></extra>" }),
+    line(o.curve.map((r) => r.t), o.curve.map((r) => Math.log(r.S)), "ln S", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "ln S = %{y:.2f}<extra></extra>" }),
     ...concTraces(o.curve.map((r) => r.t), o.curve.map((r) => r.C_M), o.curve.map((r) => r.C_X), o.curve.map((r) => r.c_X_free), "", "")];
   if (run) {
     barTraces.push(line(run.t, run.barrier, "ΔΩ*, run", c1,
       { line: { color: c1, width: 2, dash: "dash" }, customdata: run.t.map((_, i) => [run.m_star[i], run.C_M[i]]),
         hovertemplate: "run: ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }));
-    if (run.S) barTraces.push(line(run.t, run.S, "S, run", cS,
-      { yaxis: "y2", line: { color: cS, width: 1.5, dash: "dash" }, hovertemplate: "run: S = %{y:.3g}<extra></extra>" }));
+    if (run.S) barTraces.push(line(run.t, run.S.map(Math.log), "ln S, run", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5, dash: "dash" }, hovertemplate: "run: ln S = %{y:.2f}<extra></extra>" }));
     if (run.C_X) barTraces.push(...concTraces(run.t, run.C_M, run.C_X, run.c_X_free, "dash", "run: "));
   }
   // the concentration axis: from the largest value down to 10^-12 M at most (free MX_q falls far lower late)
   const cs = barTraces.filter((tr) => tr.yaxis === "y3").flatMap((tr) => tr.y).filter((v) => v > 0);
   if (cs.length) B.yaxis3.range = [Math.max(Math.floor(Math.log10(Math.min(...cs))), -12), Math.log10(Math.max(...cs)) + 0.3];
   B.showlegend = true;
-  B.legend = { orientation: "h", x: 0, y: -0.3, yanchor: "top", font: { size: 10 }, entrywidth: run ? 0.45 : 0.3, entrywidthmode: "fraction" };
+  B.legend = { orientation: "h", x: 0, y: -0.3, yanchor: "top", font: { size: 10 }, entrywidth: 0.5, entrywidthmode: "fraction" };
   B.margin = { l: 50, r: 52, t: 6, b: 32 };
   Plotly.react("cBarLive", barTraces, B, PCONF);
   onClick("cBarLive", (ev) => { setVal(TCTL, ev.points[0].x); requestLive(); });
