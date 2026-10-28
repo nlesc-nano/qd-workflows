@@ -31,6 +31,19 @@ def test_capacitance_of_a_grown_polyhedron():
     assert c0 + 0.5 < cd - 2 * se and cd + 2 * se < cs
 
 
+def test_grown_polyhedron_is_reproducible():
+    # the zinc-blende families at the distances 1, 1.1, 1.05, 1.2 ({100}, {111}A, {111}B, {110}): seed 0 gives
+    # these values bit for bit (the growth runs' capacitances must not change with the implementation)
+    from qd_workflows.growth import ZB_NORMALS
+    normals, dists = [], []
+    for f, hf in zip(ZB_NORMALS, (1.0, 1.1, 1.05, 1.2)):
+        normals += [np.asarray(v, float) / np.linalg.norm(v) for v in ZB_NORMALS[f]]
+        dists += [hf] * len(ZB_NORMALS[f])
+    assert tr.capacitance_polyhedron(normals, dists, n=10000)[0] == 1.1431583179794313
+    assert tr.capacitance_polyhedron(normals, dists, n=10000, dilate=0.3)[0] == 1.4638862127473176
+    assert tr.capacitance_polyhedron(normals, dists, n=10000, dilate=1.0)[0] == 2.160811915462148
+
+
 def test_two_touching_spheres():
     # two equal touching spheres: C = 2 a ln 2 = 1.3863 a (exact)
     a = 1.75

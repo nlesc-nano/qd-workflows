@@ -184,6 +184,12 @@ def theta_fg(kc: float, a: float) -> float:
             hi = mid
     return 0.5 * (lo + hi)
 
+
+# capacitances of the dots' rounded shapes (Growth.dot_capacitance), shared by all runs of a process; cleared when full
+SHAPE_CAPS: dict = {}
+SHAPE_CAPS_MAX = 20000
+
+
 ZB_NORMALS = {                                  # outward normals of the zinc-blende families (Td: {111} and {-1-1-1} apart)
     "100": [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)],
     "111A": [(1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1)],
@@ -558,7 +564,6 @@ class Growth:
         self._R1, self._D1 = 0.0, self.D
         self._capf_cache = {}
         self._capf = 1.0
-        self._shape_caps = {}                            # each dot shape's capacitances (dot_capacitance)
         self._cdot = self._ccon = None
         self.m_top = int(self.ms.max())
         # grid nucleation: dots within the grid's sizes take the grid's chemical potential (grid_mu), and the
@@ -625,7 +630,8 @@ class Growth:
         """The dot's hydrodynamic radius R_h = C(P) + dR_h and its contact capacitance C(P + B(R_1 + dR_se)) (A): P the
         polyhedron of its facet distances h, grown by the monomer's contact radius R_1 and the dot's own shell dR_se
         (where a monomer centre touches the dot). Scale-free: per shape (h_f / r_eq of the exposed families, to 0.01)
-        one walk-on-spheres run for C(P) and one per point of the (R_1 + dR_se) / r_eq grid, cached for the run."""
+        one walk-on-spheres run for C(P) and one per point of the (R_1 + dR_se) / r_eq grid. These depend on the
+        rounded shape alone (fixed seed), so they are cached for every run of the process (SHAPE_CAPS)."""
         from .transport import capacitance_polyhedron
         r = (3.0 * max(co["m"], 1e-12) * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
         # the dot's CdCl2 shell and van der Waals skin beyond the CdSe polyhedron (kinetics.shell_offset, a + b sigma
@@ -636,17 +642,19 @@ class Growth:
         sig = co.get("k", 0.0) / area if area > 0 else 0.0
         d_h = (so["R_h_A"][0] + so["R_h_A"][1] * sig) if "R_h_A" in so else 0.0
         d_se = (so["R_se_A"][0] + so["R_se_A"][1] * sig) if "R_se_A" in so else 0.0
-        key = tuple(round(co["h"][f] / r, 2) if co["area"].get(f, 0.0) > 0 else None for f in self.F)
-        e = self._shape_caps.get(key)
+        key = tuple((f, round(co["h"][f] / r, 2)) for f in self.F if co["area"].get(f, 0.0) > 0)
+        e = SHAPE_CAPS.get(key)
         if e is None:
             normals, dists = [], []
-            for f, hf in zip(self.F, key):
-                if hf is not None:
-                    for nrm in ZB_NORMALS.get(f, []):
-                        normals.append(np.asarray(nrm, float) / np.linalg.norm(nrm))
-                        dists.append(hf)
-            e = {"planes": (normals, dists), "c0": capacitance_polyhedron(normals, dists, n=10000)[0], "dil": {}}
-            self._shape_caps[key] = e
+            for f, hf in key:
+                for nrm in ZB_NORMALS.get(f, []):
+                    normals.append(np.asarray(nrm, float) / np.linalg.norm(nrm))
+                    dists.append(hf)
+            e = {"planes": (np.array(normals), np.array(dists)), "dil": {},
+                 "c0": capacitance_polyhedron(normals, dists, n=10000)[0]}
+            if len(SHAPE_CAPS) >= SHAPE_CAPS_MAX:
+                SHAPE_CAPS.clear()
+            SHAPE_CAPS[key] = e
         rho = (self._R1 + d_se) / r
         if rho <= 0:
             return r * e["c0"] + d_h, r * e["c0"]

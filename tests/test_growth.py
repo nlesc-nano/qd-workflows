@@ -340,6 +340,7 @@ def test_surface_reaction_from_the_facet_rates():
 
 
 def test_each_dot_has_its_own_capacitance():
+    gr.SHAPE_CAPS.clear()
     g = gr.Growth(_thermo(), _params())
     g._arrays()
     _pl, fam = g.chem(1e-3, 0.1)
@@ -353,7 +354,7 @@ def test_each_dot_has_its_own_capacitance():
     assert con > c + 3.0                                                      # a cube's grown body beats C + R_1
     c, con = g.dot_capacitance({"m": m, "h": h, "area": area})
     c2, _ = g.dot_capacitance({"m": 8 * m, "h": {f: 2 * h[f] for f in g.F}, "area": area})
-    assert len(g._shape_caps) == 2 and math.isclose(c2, 2 * c)               # one entry per shape, C ~ size
+    assert len(gr.SHAPE_CAPS) == 2 and math.isclose(c2, 2 * c)               # one entry per shape, C ~ size
     r = (3 * m * g.Om / (4 * math.pi)) ** (1 / 3)
     assert 1.0 < c / r < 1.1 and abs(con - (c + 3.0)) / con < 0.02              # near-round: C + R_1 within 2 %
     # the shell: R_h grows by a + b k / A, the contact surface by R_1 + a' + b' k / A
@@ -361,6 +362,24 @@ def test_each_dot_has_its_own_capacitance():
     k = 0.03 * sum(area.values())
     ch, cc = g.dot_capacitance({"m": m, "h": h, "area": area, "k": k})
     assert math.isclose(ch, c + 0.5 + 80.0 * 0.03) and abs(cc - (con + 0.2 + 2.4)) / cc < 0.02
+
+
+def test_shape_capacitances_are_shared_by_runs(monkeypatch):
+    gr.SHAPE_CAPS.clear()
+    g = gr.Growth(_thermo(), _params())
+    g._arrays()
+    _pl, fam = g.chem(1e-3, 0.1)
+    g._R1 = 3.0
+    h = {"100": 20.0, "111A": 19.0, "111B": 21.0, "110": 23.0}
+    m, _k, area, _s = g.dot(h, fam)
+    want = g.dot_capacitance({"m": m, "h": h, "area": area})
+    # a later run (or the same run after a temperature change, which redoes _arrays) takes them from the cache
+    from qd_workflows import transport
+    monkeypatch.setattr(transport, "capacitance_polyhedron", lambda *a, **k: pytest.fail("recomputed"))
+    g2 = gr.Growth(_thermo(), _params())
+    g2._arrays()
+    g2._R1 = 3.0
+    assert g2.dot_capacitance({"m": m, "h": h, "area": area}) == want
 
 
 def test_bulk_free_energy_table_replaces_the_einstein_estimate():

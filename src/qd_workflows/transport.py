@@ -160,6 +160,7 @@ def capacitance_polyhedron(normals, distances, n: int = 40000, seed: int = 0, di
     ea, eb = np.array(ea), np.array(eb)
     ed = eb - ea
     el2 = np.maximum((ed * ed).sum(1), 1e-30)
+    (ax, ay, az), (dx, dy, dz) = ea.T.copy(), ed.T.copy()
 
     def dist(x):
         s = x @ N.T - h[None, :]
@@ -170,10 +171,33 @@ def capacitance_polyhedron(normals, distances, n: int = 40000, seed: int = 0, di
         d = si.copy()
         out = ~inside & (si > 0)
         if out.any():
+            # nearest point q = a + t (b - a) of every edge, per coordinate on (points, edges) arrays and in place:
+            # the same floating-point operations, in the same order, as on (points, edges, 3) arrays (bit for bit),
+            # at a quarter of the cost; the root of the smallest square is the smallest distance (sqrt is monotonic)
             xo = x[out]
-            t = np.clip(((xo[:, None, :] - ea[None]) * ed[None]).sum(2) / el2[None], 0.0, 1.0)
-            q = ea[None] + t[..., None] * ed[None]
-            d[out] = np.sqrt(((xo[:, None, :] - q) ** 2).sum(2)).min(1)
+            xx, xy, xz = xo[:, 0:1], xo[:, 1:2], xo[:, 2:3]
+            t = xx - ax
+            t *= dx
+            u = xy - ay
+            u *= dy
+            t += u                                                  # (x - a) . (b - a)
+            np.subtract(xz, az, out=u)
+            u *= dz
+            t += u
+            t /= el2
+            np.maximum(t, 0.0, out=t)
+            np.minimum(t, 1.0, out=t)
+            d2 = None
+            for xc, ac, dc in ((xx, ax, dx), (xy, ay, dy), (xz, az, dz)):
+                np.multiply(t, dc, out=u)
+                u += ac
+                np.subtract(xc, u, out=u)                           # x - q, one coordinate
+                if d2 is None:
+                    d2 = u * u
+                else:
+                    u *= u
+                    d2 += u
+            d[out] = np.sqrt(d2.min(1))
         return d - dilate
     return _wos(dist, R, n, 1e-3 * R, np.random.default_rng(seed))
 
