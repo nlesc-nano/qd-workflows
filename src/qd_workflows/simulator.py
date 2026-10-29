@@ -30,6 +30,7 @@ import yaml
 
 from . import growth as gr
 from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
+from .ztype_even import even_placement
 
 PAGE = Path(__file__).parent / "templates" / "simulator" / "index.html"
 CLASSICAL_PAGE = Path(__file__).parent / "templates" / "simulator" / "classical.html"
@@ -133,11 +134,13 @@ def grid_ligand(thermo: dict) -> str:
 class Simulator:
     def __init__(self, thermo: dict, params: dict, preset_cfg: dict, max_atoms: int = MAX_ATOMS,
                  thermo_dir: str | Path | None = None, ligand: str | None = None, nucleation_only: bool = False,
-                 m0: int | None = None, g_bulk_shift: float | None = None):
+                 m0: int | None = None, g_bulk_shift: float | None = None, even_ztype: bool = True):
         """nucleation_only: the page's nucleation panel alone (a grid without growth parameters of its own, e.g. a
         carboxylate grid while the facet parameters are CdCl2's); m0 then fixes the nucleus size (the automatic
         hand-over needs the facets); g_bulk_shift (eV per MA) moves the bulk free energy of the parameters to the
-        grid's level of theory (S only: the grid's Omega does not use it)."""
+        grid's level of theory (S only: the grid's Omega does not use it). even_ztype: the builds' Z-type MX_q
+        placed evenly over the facets, on equivalent sites, strongest-bound family first (ztype_even)."""
+        self.even_ztype = bool(even_ztype)
         self.thermo, self.params, self.cfg = thermo, params, preset_cfg
         self.ligand = ligand or grid_ligand(thermo)
         self.xl = LIGANDS[self.ligand]
@@ -324,7 +327,7 @@ class Simulator:
                 A = sum(co["area"].values()) or 1.0
                 cos.append({"i": i, "t_b": co["t_b"], "N": co["N"], "m": co["m"], "k": co["k"],
                             "d_nm": (6 * co["m"] * Om / math.pi) ** (1 / 3) / 10,
-                            "n_atoms": int(round(2 * co["m"] + 3 * co["k"])),
+                            "n_atoms": int(round(2 * co["m"] + 3 * co["k"])), "h": co["h"],
                             "facets": {f: a / A for f, a in co["area"].items() if a > 0}})
             snaps.append({"t": s["t"], "cohorts": cos})
         keep = ("t", "T", "V_L", "P", "C_M", "C_X", "c_MX_free", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots",
@@ -406,10 +409,14 @@ class Simulator:
         if est > self.max_atoms:
             raise ValueError(f"this dot has about {est} atoms, above the {self.max_atoms}-atom limit of the page")
         recipe = r["recipe"]
+        zt = recipe.get("post_treatment", {}).get("z_type_target")
+        F = self.runs[rid]["growth"].F
+        if zt and zt.get("per_family"):                  # strongest-bound family first (the even placement's order)
+            zt["per_family"] = dict(sorted(zt["per_family"].items(), key=lambda kv: F[kv[0]]["dG_bind"]))
         if not full:
             recipe["target"]["roundings"] = [0]
         t0 = time.time()
-        with self.build_lock, tempfile.TemporaryDirectory() as tmp:
+        with self.build_lock, tempfile.TemporaryDirectory() as tmp, even_placement(self.even_ztype):
             out = _build(self.cfg["cif"], recipe, self.cfg.get("positive_q_mode", "add"), Path(tmp) / "b")
         secs = round(time.time() - t0, 2)
         if "error" in out:
@@ -427,9 +434,12 @@ class Simulator:
         best = man.get("target_search", {}).get("best")
         led = man.get("z_type_target_ledger") or {}
         ztype = {k: led.get(k) for k in ("target_total", "k_X", "direction", "units", "shortfall", "error")}
-        ztype["per_family"] = {f: {k: v.get(k) for k in ("requested", "added", "removed", "candidates") if k in v}
+        ztype["even"] = self.even_ztype
+        ztype["per_family"] = {f: {k: v.get(k) for k in ("requested", "share", "even_count", "facets", "added", "removed",
+                                                         "candidates", "per_facet") if k in v}
                                for f, v in (led.get("per_family") or {}).items()}
         return {"t": r["t"], "cohort_born": r["cohort_born"], "model": {"m": r["m"], "k": r["k"]},
+                "facet_distances": recipe.get("facet_distances"),
                 "built": {"m": syms.count(anion), "k": syms.count(cation) - syms.count(anion), "n_atoms": len(syms),
                           "composition": comp}, "recipe": recipe, "seconds": secs,
                 "search": best and {"centre": best.get("centre"), "roundings": best.get("roundings")}, "z_type": ztype,
@@ -999,6 +1009,8 @@ def main(argv=None) -> int:
                                            "--nucleation-only when m0 is auto)")
     ap.add_argument("--g-bulk-shift", type=float, help="eV per MA added to the parameters' g_bulk(T), for a grid at "
                     "another level of theory (e.g. MACE + D3 bulk minus MACE bulk)")
+    ap.add_argument("--uneven-ztype", action="store_true", help="the builder's own Z-type placement (its divisor "
+                    "rule over the families) instead of the even one over the facets (ztype_even)")
     a = ap.parse_args(argv)
     import uvicorn
     params = yaml.safe_load(Path(a.params).read_text()) if a.params else copy.deepcopy(gr.PARAMS)
@@ -1006,7 +1018,7 @@ def main(argv=None) -> int:
     if a.nucleation_only and a.m0 is None and params["material"]["m0"] == "auto":
         ap.error("--nucleation-only needs --m0: the automatic hand-over uses the growth (facet) parameters")
     sim = Simulator(json.loads(Path(a.thermo).read_text()), params, cfg, a.max_atoms, Path(a.thermo).resolve().parent,
-                    a.ligand, a.nucleation_only, a.m0, a.g_bulk_shift)
+                    a.ligand, a.nucleation_only, a.m0, a.g_bulk_shift, not a.uneven_ztype)
     uvicorn.run(make_app(sim), host=a.host, port=a.port, log_level="warning")
     return 0
 
