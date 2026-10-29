@@ -228,15 +228,18 @@ def thermo_at(thermo, t, solvation: dict | None = None):
             "eps": eps, "dG_solv_mx": d_mx}
 
 
-def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False, gamma_ma=1.0, gamma_mx=1.0):
+def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False, gamma_ma=1.0, gamma_mx=1.0, c_sat=None):
     """Chemical potentials of the precursor pool (grand_potential.md section 4b) for any MA supply c_ma and MX_q left
     in solution `avail` (mol/L): the MX_q left is shared between the free (or ligand-bound) MX_q and the MA(MX_q)_n
     complexes, and the free MX_q solves that balance. bare=True: the supply is the uncomplexed MA monomer and all
     the MX_q left is free. th: thermo_at(). gamma_ma, gamma_mx: activity coefficients of the MA species (every
     MA(MX_q)_n alike) and of the free MX_q, mu = mu0 + kT ln(gamma c / c0), 1 = ideal; the complexes bind MX_q at its
     activity, the balance stays in concentrations.
-    Returns mu_MA, mu_MX, c_MX_free, a_MX_free (= gamma_mx c_MX_free, what the facets' coverage sees), speciation,
-    mean_n."""
+    c_sat: solubility of the free MX_q (mol/L, None = no limit): the free MX_q never exceeds it, and whatever the
+    balance leaves above it is solid MX_q (c_MX_solid, mol/L of solution), in equilibrium with the solution (it
+    dissolves again as the solution takes MX_q up).
+    Returns mu_MA, mu_MX, c_MX_free, a_MX_free (= gamma_mx c_MX_free, what the facets' coverage sees), c_MX_solid,
+    speciation, mean_n."""
     kt = KB_EV * th["t"]
     g_n, g_mx = th["g_n"], th["g_mx"]
     if c_ma <= 0 or avail <= 0:
@@ -246,11 +249,11 @@ def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False, gamma_ma=1.0, ga
     if bare:
         if 0 not in g_n:
             raise ValueError("bare monomer: no MA monomer (m = 1, k = 0 node or library reference)")
-        c_mx_free = avail / bind
+        c_mx_free = avail / bind if c_sat is None else min(avail / bind, c_sat)
         mu_mx = g_mx + kt * (np.log(c_mx_free / c0) + lg_mx)
         return {"mu_MA": float(g_n[0] + kt * (np.log(c_ma / c0) + lg_ma)), "mu_MX": float(mu_mx),
-                "c_MX_free": float(c_mx_free), "a_MX_free": float(gamma_mx * c_mx_free), "speciation": {0: 1.0},
-                "mean_n": 0.0}
+                "c_MX_free": float(c_mx_free), "a_MX_free": float(gamma_mx * c_mx_free),
+                "c_MX_solid": max(float(avail - c_mx_free * bind), 0.0), "speciation": {0: 1.0}, "mean_n": 0.0}
 
     def excess(ln_x):                                   # MX_q balance (in concentrations), increasing in ln_x
         mu = g_mx + kt * (ln_x + lg_mx - np.log(c0))    # the complexes see the free MX_q's activity
@@ -259,17 +262,23 @@ def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False, gamma_ma=1.0, ga
     lo, hi = np.log(avail) - 80.0, np.log(avail / bind)
     if excess(lo) > 0:
         raise ValueError("the MA complexes need more MX_q than is left (no free MX_q solves the balance)")
-    for _ in range(200):
-        mid = 0.5 * (lo + hi)
-        lo, hi = (mid, hi) if excess(mid) < 0 else (lo, mid)
-    c_mx_free = float(np.exp(0.5 * (lo + hi)))
+    solid = 0.0
+    if c_sat is not None and np.log(c_sat) < hi and excess(np.log(c_sat)) < 0:
+        # saturated: the free MX_q sits at its solubility, the rest of the balance is solid
+        solid = float(-excess(np.log(c_sat)))
+        c_mx_free = float(c_sat)
+    else:
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            lo, hi = (mid, hi) if excess(mid) < 0 else (lo, mid)
+        c_mx_free = float(np.exp(0.5 * (lo + hi)))
     mu_mx = g_mx + kt * (np.log(c_mx_free / c0) + lg_mx)
     lse, speciation, mean_n = _speciation(g_n, mu_mx, kt)
     return {"mu_MA": float(kt * (np.log(c_ma / c0) + lg_ma) - kt * lse), "mu_MX": float(mu_mx), "c_MX_free": c_mx_free,
-            "a_MX_free": float(gamma_mx * c_mx_free), "speciation": speciation, "mean_n": mean_n}
+            "a_MX_free": float(gamma_mx * c_mx_free), "c_MX_solid": solid, "speciation": speciation, "mean_n": mean_n}
 
 
-def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
+def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False, c_sat=None):
     """Sections 4-6 of grand_potential.md. Concentrations in mol/L (c0 = 1 M standard state).
     c_p0: initial MA precursor (e.g. the Se precursor); c_mx0: initial MX_q; alpha: precursor-to-monomer conversion
     (from the conversion kinetics: alpha = converted(time, k_conv, c_p0, c_mx0) / c_p0).
@@ -282,7 +291,7 @@ def omega(thermo, t, c_p0, c_mx0, alpha, k_l=0.0, c_l=0.0, c0=1.0, bare=False):
     nodes, G = th["nodes"], th["G"]
     c_ma = alpha * c_p0
     avail = c_mx0 - c_ma
-    pl = pool(th, c_ma, avail, k_l, c_l, c0, bare)
+    pl = pool(th, c_ma, avail, k_l, c_l, c0, bare, c_sat=c_sat)              # c_sat: MX_q solubility, as pool()
     mu_ma, mu_mx, c_mx_free, speciation, mean_n = pl["mu_MA"], pl["mu_MX"], pl["c_MX_free"], pl["speciation"], pl["mean_n"]
     Om = {key: G[key] - key[0] * mu_ma - key[1] * mu_mx for key in G}
     ms = sorted({m for m, _ in Om}, reverse=True)

@@ -670,3 +670,36 @@ def test_steps_resolve_the_pool_potentials():
     _g0, jump0 = run(0.0)
     assert len(g.pools) == len(g.steps) and all(a[0] < b[0] for a, b in zip(g.pools, g.pools[1:]))
     assert jump0 > 0.1 and jump < jump0
+
+
+def test_pool_caps_the_free_mx_at_its_solubility():
+    from qd_workflows.grid_thermo import pool, thermo_at
+    th = thermo_at(_thermo(), 500.0)
+    kt = gr.KB_EV * 500.0
+    free = pool(th, 0.01, 0.2)
+    assert free["c_MX_solid"] == 0.0
+    same = pool(th, 0.01, 0.2, c_sat=10 * free["c_MX_free"])                 # above the balance: no solid
+    assert math.isclose(same["mu_MX"], free["mu_MX"], rel_tol=1e-12) and same["c_MX_solid"] == 0.0
+    sat = 0.1 * free["c_MX_free"]
+    cap = pool(th, 0.01, 0.2, c_sat=sat)
+    assert math.isclose(cap["c_MX_free"], sat) and cap["c_MX_solid"] > 0
+    assert math.isclose(cap["mu_MX"], th["g_mx"] + kt * math.log(sat), rel_tol=1e-12)
+    assert math.isclose(cap["c_MX_free"] + 0.01 * cap["mean_n"] + cap["c_MX_solid"], 0.2, rel_tol=1e-9)
+    bare = pool(th, 0.01, 0.2, bare=True, c_sat=1e-3)
+    assert math.isclose(bare["c_MX_free"], 1e-3) and math.isclose(bare["c_MX_solid"], 0.2 - 1e-3)
+
+
+def test_solubility_from_the_solid_and_mass_balance():
+    g = gr.Growth(_thermo(), _params())
+    assert g.c_sat is None
+    g_s = g.th["g_mx"] + g.kt * math.log(1e-3)                               # the solid at which 1 mM saturates
+    tab = {"T": [300.0, 700.0], "G_eV": [g_s, g_s]}
+    assert math.isclose(gr.Growth(_thermo(), _params(material={"g_MX_solid_T": tab})).c_sat, 1e-3, rel_tol=1e-9)
+    both = gr.Growth(_thermo(), _params(material={"g_MX_solid_T": tab}, conditions={"c_MX_sat": 2e-3}))
+    assert both.c_sat == 2e-3                                                  # a measured solubility wins
+    res = gr.Growth(_thermo(), _params(nucleation={"J0": 1e-4}, conditions={"c_MX_sat": 1e-3})).run()
+    assert res["series"][-1]["N_dots"] > 0
+    assert all(r["c_MX_free"] <= 1e-3 * (1 + 1e-9) for r in res["series"])
+    assert any(r["c_MX_solid"] > 0 for r in res["series"])
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-6 and abs(c["MX"]) < 1e-6

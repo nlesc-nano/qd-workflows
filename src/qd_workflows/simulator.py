@@ -327,7 +327,7 @@ class Simulator:
                             "n_atoms": int(round(2 * co["m"] + 3 * co["k"])),
                             "facets": {f: a / A for f, a in co["area"].items() if a > 0}})
             snaps.append({"t": s["t"], "cohorts": cos})
-        keep = ("t", "T", "V_L", "P", "C_M", "C_X", "c_MX_free", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots",
+        keep = ("t", "T", "V_L", "P", "C_M", "C_X", "c_MX_free", "c_MX_solid", "S_bulk", "barrier", "J", "J0", "k_star", "N_dots",
                 "m_mean", "m_std", "theta", "theta_eq", "gamma", "k_eff", "nucleated_M")
         used = g.F                                           # derived: solvation, binding at T, match_m0 rescaling
         return {"run_id": rid, "seconds": round(time.time() - t0, 2), "conditions": P["conditions"],
@@ -485,7 +485,9 @@ class Simulator:
         gr_ = self._grid(T, eps)
         th, ms, ks, Gp = gr_["th"], gr_["ms"], gr_["ks"], gr_["Gp"]
         kt = KB_EV * T
-        pl = pool(th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=gamma_ma, gamma_mx=gamma_mx)
+        p_ = {"conditions": {**self.params["conditions"], "gamma_MX": gamma_mx}, "material": self.params["material"]}
+        c_sat = gr.Growth.mx_sat(SimpleNamespace(P=p_, T=float(T), kt=kt, th=th))       # as the growth model has it
+        pl = pool(th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=gamma_ma, gamma_mx=gamma_mx, c_sat=c_sat)
         mu_ma, mu_mx = pl["mu_MA"], pl["mu_MX"]
         gb = self._g_bulk(T)
         v = Gp - ms[:, None] * mu_ma - ks[None, :] * mu_mx

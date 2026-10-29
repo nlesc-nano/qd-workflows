@@ -143,7 +143,11 @@ PARAMS = {
               "w": "eV (lateral interaction at full coverage)",
               "k0": "A/s", "k_r": "A/s", "D": "cm^2/s", "x_X": "X-type MX_q per surface site (electron counting)", "site_area": "A^2",
               "J0": "M/s", "attach_barrier_eV": "eV", "T": "K", "c_P0": "M", "c_MX0": "M", "k_conv_500K": "1/(M s)",
-              "Ea_conv": "eV", "t_end": "s", "gamma_MA": "1 (activity coefficient)", "gamma_MX": "1 (activity coefficient)"},
+              "Ea_conv": "eV", "t_end": "s", "gamma_MA": "1 (activity coefficient)", "gamma_MX": "1 (activity coefficient)",
+              "c_MX_sat": "M (solubility of the free MX_q; optional)",
+              "g_MX_solid_T": "eV per MX_q formula unit of the solid at the gas-phase level of the grid's MX_q reference "
+                              "(optional; sets c_MX_sat when that is not given; clamped outside its T range)",
+              "g_MX_solid_shift_eV": "eV (added to g_MX_solid_T)"},
 }
 
 
@@ -410,6 +414,7 @@ class Growth:
         self.m0 = max(m for m, _k in self.th["G"]) if m0 == "auto" else int(m0)      # "auto": set by handover()
         self.k_conv = k_conv_at(self.T, float(c["k_conv_500K"]), float(c["Ea_conv"]))
         self.gb = self.g_bulk()
+        self.c_sat = self.mx_sat()
         self.dg_th = binding_thermal(self.thermo, self.T)               # thermal part of binding one MX_q at T
         self.F = copy.deepcopy(self.P["families"])
         for p in self.F.values():
@@ -539,6 +544,20 @@ class Growth:
         modes = 3 * int(mat.get("atoms_per_unit", 2))
         return float(mat["g_bulk"]) + shift + modes * (0.5 * hw + self.kt * math.log1p(-math.exp(-hw / self.kt)))
 
+    def mx_sat(self):
+        """Solubility of the free MX_q at T (mol/L), or None (no limit): conditions.c_MX_sat (a measured solubility,
+        any T), else from the solid, material.g_MX_solid_T = {"T": [...], "G_eV": [...]} per MX_q formula unit at the
+        level of the grid's MX_q reference (+ material.g_MX_solid_shift_eV): the free MX_q saturates where its
+        chemical potential reaches the solid's, c_sat = c0 e^((g_solid - g_MX)/kT) / gamma_MX."""
+        c, mat = self.P["conditions"], self.P["material"]
+        if c.get("c_MX_sat") is not None:
+            return float(c["c_MX_sat"])
+        tab = mat.get("g_MX_solid_T")
+        if not tab:
+            return None
+        g_s = float(np.interp(self.T, tab["T"], tab["G_eV"])) + float(mat.get("g_MX_solid_shift_eV", 0.0))
+        return math.exp(min((g_s - self.th["g_mx"]) / self.kt, 700.0)) / float(c.get("gamma_MX", 1.0))
+
     def _match_m0(self):
         """Cluster-continuum matching at the nucleus: scale every gamma^0 by s so that the continuum chemical
         potential of the m0 dot, g_bulk(T) + 2 s gamma_bar Omega_m / r0 (Wulff shape of volume m0 Omega_m, gamma_bar
@@ -571,10 +590,11 @@ class Growth:
     # -- pool, coverage, surface energies --
     def pool(self, C_M, C_X):
         """The precursor pool at monomer supply C_M and MX_q left C_X, with the activity coefficients of
-        conditions.gamma_MA and gamma_MX (calibration factors, 1 = ideal)."""
+        conditions.gamma_MA and gamma_MX (calibration factors, 1 = ideal); MX_q above its solubility (mx_sat) is solid,
+        counted in C_X as a reservoir in equilibrium with the solution."""
         c = self.P["conditions"]
         return pool(self.th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=float(c.get("gamma_MA", 1.0)),
-                    gamma_mx=float(c.get("gamma_MX", 1.0)))
+                    gamma_mx=float(c.get("gamma_MX", 1.0)), c_sat=self.c_sat)
 
     def chem(self, C_M, C_X):
         pl = self.pool(C_M, C_X)
@@ -1659,7 +1679,9 @@ class Growth:
                 w = np.array([co["N"] for co in cohorts]) if cohorts else np.zeros(0)
                 mean = float((w * mm).sum() / N) if N > 0 else 0.0
                 std = float(np.sqrt((w * (mm - mean) ** 2).sum() / N)) if N > 0 else 0.0
-                row = {"t": t, "P": P_, "C_M": C_M, "C_X": C_X, "c_MX_free": pl["c_MX_free"], "mu_MA": mu,
+                pl_out = self.pool(C_M, C_X) if self.c_sat is not None else pl  # the solid at the output time
+                row = {"t": t, "P": P_, "C_M": C_M, "C_X": C_X, "c_MX_free": pl_out["c_MX_free"],
+                       "c_MX_solid": pl_out.get("c_MX_solid", 0.0), "mu_MA": mu,
                        "mu_MX": mu_mx, "S_bulk": math.exp(min((mu - self.gb) / self.kt, 700)),
                        "T": self.T, "V_L": V, "n_inj_mol": n_inj, "n_conv_mol": n_conv, "nucleated_M": n_nuc / V,
                        "k_eff": self.mean_keff(cohorts, th_dots),
