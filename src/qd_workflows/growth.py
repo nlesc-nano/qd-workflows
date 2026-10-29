@@ -18,6 +18,16 @@ dots per L) and a size m (CdSe units); its shape is the Wulff construction at th
     coverage    K_f c = theta_f/(1 - theta_f) e^(w_f theta_f/kT),  K_f = e^(-dG_bind,f/kT),
                 dG_bind,f = -eps0_f + dG_th(T) - dG_solv(MX_q)  (Fowler-Guggenheim; fitted on the builder dots)
     surface     gamma_f(C) = gamma_f^0 + a_solv + Gamma_f^max [kT ln(1 - theta_f) - w_f theta_f^2 / 2]
+    sites       a family with `sites` (site classes s of the half-swap dot, e.g. facet centre and the edge classes)
+                instead: theta_s = K_s c / (1 + K_s c), K_s = e^(-dG_bind,s/kT) (release umbrellas), theta_f the
+                class-weighted mean; the rate constant of the facet from its active classes (attachment and direct
+                exchange umbrellas, 1D transition-state flux through the barrier of each profile),
+                  k_f = sum_s rho_s [A_dir v_C e^(-dW_dir,s/kT) + K_s c A_disp v_CX e^(-dW_disp,s/kT)] / (1 + K_s c),
+                v = (kT / 2 pi mass)^(1/2) (the complex; the complex against MX_q for the exchange), A the umbrellas'
+                capture areas, rho_s per area (centre) or per length of the facet's perimeter (edges: rho_s = n_s P_f
+                / A_f, so small facets have more), capped at the collision rate; MX_q blocks, the complex never stays.
+                gamma_f = gamma_eff + a_solv - Gamma_eff kT ln c when gamma_eff is given (from the layer additions on
+                the dots: Delta mu_f = 2 Omega_m gamma_f / h_f, no slab), else the classes' Langmuir sum on gamma0
     solvation   implicit only (grid_solvation): every solution species, monomer or cluster, and every facet
                 (a_solv per area). EXPLICIT SOLVENT AND LIGANDS (oleic acid, amines, phosphines) ARE NOT INCLUDED:
                 they are the next step and change the monomers, every (m, k) and the facets.
@@ -166,10 +176,40 @@ def facet_state(p: dict, c: float, kt: float) -> dict:
     K = e^(-dG_bind/kT),  K c = theta/(1 - theta) e^(w theta/kT)  (Fowler-Guggenheim; w = 0: Langmuir),
     gamma(c) = gamma0 + Gamma_max [kT ln(1 - theta) - w theta^2 / 2]  (Gibbs adsorption integrated from c = 0)."""
     gmax, w = gamma_max(p), float(p.get("w", 0.0))
+    if "sites" in p:
+        return sites_state(p, c, kt, gmax)
     kc = math.exp(min(-float(p["dG_bind"]) / kt, 700.0)) * c
     theta = theta_fg(kc, w / kt)
     return {"theta": theta, "gamma": float(p["gamma0"]) * 1e-3 + gmax * (kt * math.log1p(-theta) - 0.5 * w * theta ** 2),
             "Gamma_max": gmax}
+
+
+def class_weights(p: dict) -> dict:
+    """Share of the family's MX_q sites in each site class (from the class counts n on the reference dot)."""
+    n = {s: float(q["n"]) for s, q in p["sites"].items()}
+    tot = sum(n.values())
+    return {s: x / tot for s, x in n.items()}
+
+
+def sites_state(p: dict, c: float, kt: float, gmax: float) -> dict:
+    """Coverage and surface energy of a family with site classes (facet_state): each class its own Langmuir
+    coverage theta_s = K_s c / (1 + K_s c), the family's theta their class-weighted mean; gamma = gamma_eff - Gamma_eff
+    kT ln c when gamma_eff is given (meV/A^2 at c = 1 M, Gamma_eff MX_q per nm^2); else, while the family still
+    carries the shape-library fit (dG_bind, w), that fit's Fowler-Guggenheim gamma; else gamma0 + Gamma_max kT
+    sum_s w_s ln(1 - theta_s)."""
+    wts = class_weights(p)
+    th = {}
+    for s, q in p["sites"].items():
+        kc = math.exp(min(-float(q["dG_bind"]) / kt, 700.0)) * c
+        th[s] = kc / (1.0 + kc)
+    theta = sum(wts[s] * th[s] for s in th)
+    if "gamma_eff" in p:
+        gam = float(p["gamma_eff"]) * 1e-3 - float(p.get("Gamma_eff", 0.0)) * 1e-2 * kt * math.log(max(c, 1e-300))
+    elif "dG_bind" in p:
+        gam = facet_state({k: v for k, v in p.items() if k != "sites"}, c, kt)["gamma"]
+    else:
+        gam = float(p["gamma0"]) * 1e-3 + gmax * kt * sum(wts[s] * math.log(max(1.0 - th[s], 1e-300)) for s in th)
+    return {"theta": theta, "gamma": gam, "Gamma_max": gmax, "theta_s": th}
 
 
 def theta_fg(kc: float, a: float) -> float:
@@ -276,6 +316,16 @@ class Shape:
         support = {f: float(proj[:, self.fam_of == i].max()) for i, f in enumerate(self.fams)}
         return area, float((hv * a_plane).sum() / 3.0), support
 
+    def perimeter(self, h: dict) -> dict:
+        """Total edge length of each family's faces (A) at facet distances h."""
+        self(h)                                           # puts the topology of h first
+        hv = np.concatenate([np.full(len(self.n[f]), float(h[f])) for f in self.fams])
+        t = self.topos[0]
+        v = np.linalg.solve(self.N[t["tri"]], hv[t["tri"]][..., None])[..., 0]
+        seg = np.linalg.norm(v[t["a"]] - v[t["b"]], axis=1)
+        per = np.bincount(self.fam_of[t["face"]], weights=seg, minlength=len(self.fams))
+        return {f: float(per[i]) for i, f in enumerate(self.fams)}
+
     def wulff(self, gamma: dict, volume: float) -> dict:
         """Facet distances of the Wulff shape (h_f proportional to gamma_f) with the given volume."""
         h = {f: max(g, 1e-6) for f, g in gamma.items()}
@@ -370,10 +420,17 @@ class Growth:
         eps = float(self.solv.get("eps", 1.0))
         self.solv_area = per_area(eps, self.solv) if eps > 1.0 else 0.0
         for p in self.F.values():
+            # site classes: binding free energies from the umbrellas at 500 K (no thermal part added at other T)
+            binds = [p] if "dG_bind" in p else []
+            binds += list(p.get("sites", {}).values())
+            g_key = "gamma_eff" if ("sites" in p and "gamma_eff" in p) else "gamma0"
             if eps > 1.0:
-                p["dG_bind"] = float(p["dG_bind"]) - self.th["dG_solv_mx"]
-                p["gamma0"] = float(p["gamma0"]) + 1000.0 * self.solv_area
-            p["gamma0"] = float(p["gamma0"]) * self._gscale
+                for q in binds:
+                    q["dG_bind"] = float(q["dG_bind"]) - self.th["dG_solv_mx"]
+                p[g_key] = float(p[g_key]) + 1000.0 * self.solv_area
+                if g_key == "gamma_eff":                 # the solvated MX_q: c e^(dG_solv_mx/kT) as for dG_bind
+                    p[g_key] -= 10.0 * float(p.get("Gamma_eff", 0.0)) * self.th["dG_solv_mx"]
+            p[g_key] = float(p[g_key]) * self._gscale
         self._R1 = 0.0                                   # the monomer's transport is set again at this T
         classical = self.P["nucleation"].get("omega", "grid") == "continuum"
         self.handover = self._handover() if m0 == "auto" and not classical else None
@@ -507,7 +564,8 @@ class Growth:
         if s > 0:
             self._gscale *= s                                # kept when set_temperature derives the families again
             for p in self.F.values():
-                p["gamma0"] = p["gamma0"] * s
+                g_key = "gamma_eff" if ("sites" in p and "gamma_eff" in p) else "gamma0"
+                p[g_key] = p[g_key] * s
         return {"mu_step_eV": mu_step, "g_bulk_eV": self.gb, "mu_MA_ref_eV": pl["mu_MA"], "scale": s, "applied": s > 0}
 
     # -- pool, coverage, surface energies --
@@ -531,6 +589,91 @@ class Growth:
         self._unit_area = area
         self._sigma = sum(gam[f] * area[f] for f in self.F)
         return pl, fam
+
+    # -- families with site classes (`sites`): coverage -> pool level, and the incorporation rate --
+    def sited(self, f: str) -> bool:
+        return "sites" in self.F[f]
+
+    def _c_of_theta(self, f: str, th: float) -> float:
+        """The free MX_q activity at which family f has the class-weighted coverage th (the dots' coverage may lag
+        the pool's): bisection in ln c, cached per T and th (to 1e-6, near full coverage to 1e-4 in ln(1 - th)). At
+        th = 1 to double precision (K c > ~1e16) c is the smallest such level: the open sites' share is then an upper
+        bound, and the direct exchange carries the rate."""
+        th = float(th)
+        key = (f, round(th, 6) if th < 0.99 else round(math.log(max(1.0 - th, 1e-300)), 4), self.T)
+        cache = self.__dict__.setdefault("_cth_cache", {})
+        if key not in cache:
+            p, kt = self.F[f], self.kt
+            wts = class_weights(p)
+            lk = {s: -float(q["dG_bind"]) / kt for s, q in p["sites"].items()}
+
+            def theta(lnc):
+                return sum(wts[s] / (1.0 + math.exp(min(-(lk[s] + lnc), 700.0))) for s in lk)
+            lo, hi = -120.0, 120.0
+            for _ in range(100):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if theta(mid) < th else (lo, mid)
+            if len(cache) > 200000:
+                cache.clear()
+            cache[key] = math.exp(0.5 * (lo + hi))
+        return cache[key]
+
+    def _speed(self, amu: float) -> float:
+        """(kT / 2 pi mass)^(1/2) in A/s: the one-sided flux per concentration through a plane."""
+        return math.sqrt(1.380649e-23 * self.T / (2.0 * math.pi * amu * 1.66053907e-27)) * 1e10
+
+    def site_rate(self, f: str, th: float, p_over_a: float | None = None) -> float:
+        """Incorporation rate constant k_f (A/s) of a family with site classes at the dots' coverage th, from its
+        active classes s (one-dimensional transition-state flux through each umbrella barrier):
+            k_f = sum_s rho_s [A_dir v_C e^(-dW_dir,s/kT) + K_s c A_disp v_CX e^(-dW_disp,s/kT)] / (1 + K_s c)
+        c the free MX_q activity of that coverage (_c_of_theta); v = (kT/2 pi mass)^(1/2) of the complex (attachment)
+        and of the complex against the MX_q it displaces (reduced mass, direct exchange); A_dir, A_disp the capture
+        areas of the umbrellas' restraint cylinders; rho_s per area (per_area) or, for perimeter classes, per_length
+        times the family's perimeter per area p_over_a (this dot's, or perimeter_per_area_ref of the reference dot).
+        A class without dW_disp has no direct exchange. Capped at the collision rate v_C."""
+        p, kt = self.F[f], self.kt
+        ks = self.P["kinetics"].get("sites") or {}
+        m_c, m_x = float(ks.get("m_complex_amu", 374.7)), float(ks.get("m_mx_amu", 183.3))
+        a_dir, a_disp = float(ks.get("A_dir_A2", 14.9)), float(ks.get("A_disp_A2", 42.6))
+        v_c, v_cx = self._speed(m_c), self._speed(m_c * m_x / (m_c + m_x))
+        ratio = float(p_over_a) if p_over_a is not None else float(p.get("perimeter_per_area_ref", 0.0))
+        c = self._c_of_theta(f, th)
+        k = 0.0
+        for q in p["sites"].values():
+            if not q.get("active", True):
+                continue
+            rho = float(q["per_length"]) * ratio if "per_length" in q else float(q["per_area"])
+            x = math.exp(min(-float(q["dG_bind"]) / kt, 700.0)) * c
+            r = a_dir * v_c * math.exp(-float(q["dW_dir"]) / kt)
+            if q.get("dW_disp") is not None:
+                r += x * a_disp * v_cx * math.exp(-float(q["dW_disp"]) / kt)
+            k += rho * r / (1.0 + x)
+        return min(k, v_c)
+
+    def p_over_a(self, h: dict, area: dict) -> dict:
+        """Perimeter per area of each exposed family of a dot (1/A), for the perimeter site classes ({} without
+        facet distances: the reference dot's ratio is used)."""
+        if h is None or not any(self.sited(f) for f in self.F):
+            return {}
+        # scale-free: P/A of the shape h / s times 1/s, cached per shape to 0.001 in h_f / s (s from the exposed
+        # families, so a far hidden plane does not wash out their resolution)
+        s = max([h[f] for f in self.F if area.get(f, 0.0) > 1e-9] or list(h.values()))
+        key = tuple(round(h[f] / s, 3) for f in self.F)
+        cache = self.__dict__.setdefault("_poa_cache", {})
+        if key not in cache:
+            hu = dict(zip(self.F, key))
+            per, (au, _v, _s) = self.shape.perimeter(hu), self.shape(hu)
+            if len(cache) > 50000:
+                cache.clear()
+            cache[key] = {f: per[f] / au[f] for f in self.F if au[f] > 1e-9}
+        return {f: x / s for f, x in cache[key].items() if area.get(f, 0.0) > 1e-9}
+
+    def k_block(self, f: str, th: float, k_f: float, p_over_a: float | None = None) -> float:
+        """A family's incorporation rate (A/s) at the dots' coverage th: site_rate for a family with site classes,
+        else k_f (1 - th)."""
+        if self.sited(f):
+            return self.site_rate(f, th, p_over_a)
+        return k_f * max(1.0 - th, 1e-6)
 
     def k_of(self, m: float, fam: dict) -> float:
         """MX_q of a continuum Wulff dot of m units at the coverage of fam (areas scale as m^(2/3))."""
@@ -727,7 +870,7 @@ class Growth:
              the collision rate
         with C_eq,f = C_M e^((g_bulk + 2 gamma_f Omega_m / h_f - mu)/kT) the facet's own Gibbs-Thomson level."""
         n = 6.02214076e-4
-        FK = self.P["kinetics"]["facets"]
+        FK = self.P["kinetics"].get("facets") or {}
         h, area = co["h"], co["area"]
         r = (3.0 * co["m"] * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
         if self.stokes:
@@ -742,16 +885,20 @@ class Growth:
         ceq = {f: C_M * math.exp(min((self.gb + dmu[f] - mu0) / kt, 700.0)) for f in self.F}
         m_cx = (112.414 * 2 + 78.971 + 2 * 35.453) * 1.66053907e-27
         k_coll = math.sqrt(1.380649e-23 * self.T / (2 * math.pi * m_cx)) * 1e10           # A/s
+        # families with site classes: the share of the collision flux that is taken up, from their active classes
+        # (open sites and direct exchange); it plays the part of 1 - theta below (attachment, islands, dissolution)
+        poa = self.p_over_a(h, area)
+        free_s = {f: min(max(self.site_rate(f, th[f], poa.get(f)) / k_coll, 1e-300), 1.0) for f in self.F if self.sited(f)}
 
         def v_of(cs):
             v = {}
             for f in self.F:
                 p = FK.get(f, {})
-                free = max(1.0 - th[f], 1e-6)
+                free = free_s[f] if f in free_s else max(1.0 - th[f], 1e-6)
                 drive = cs - ceq[f]
                 beta = p.get("island_beta_eV")
                 if beta is None or beta <= 0 or drive <= 0:
-                    k = float(p.get("k_f", k_coll)) if drive > 0 else k_coll
+                    k = float(p.get("k_f", k_coll)) if drive > 0 and f not in free_s else k_coll
                     v[f] = self.Om * n * min(k, k_coll) * free * drive
                 else:
                     d_f = self.Om / self.F[f]["site_area"]
@@ -905,7 +1052,7 @@ class Growth:
             self.sph_kr = float(sp["k_r_A_s"])
         else:
             h = self.shape.wulff({f: fam[f]["gamma"] for f in self.F}, self.Om)
-            k = self.mean_keff([{"N": 1.0, "area": self.shape(h)[0]}], {f: fam[f]["theta"] for f in self.F})
+            k = self.mean_keff([{"N": 1.0, "area": self.shape(h)[0], "h": h}], {f: fam[f]["theta"] for f in self.F})
             self.sph_kr = float(k) if k is not None and math.isfinite(k) else 1e4
         return {"gamma_J_m2": self.sph_gam / 0.0624150907, "k_r_A_s": self.sph_kr}
 
@@ -920,7 +1067,7 @@ class Growth:
         facets_kr = self.P["kinetics"].get("k_r") == "facets"
         if facets_kr:
             FK = self.P["kinetics"].get("facets") or {}
-            missing = [f for f in self.F if "k_f" not in FK.get(f, {})]
+            missing = [f for f in self.F if "k_f" not in FK.get(f, {}) and not self.sited(f)]
             if missing:
                 raise ValueError(f"k_r = 'facets' needs kinetics.facets with k_f for every family (missing {missing})")
         self._keff = np.zeros(n) if facets_kr else None
@@ -944,7 +1091,7 @@ class Growth:
                 + self.junction(co["m"])
             th_bar[i] = sum(th[f] * area[f] for f in self.F) / a if a > 0 else 0.0
             if facets_kr:
-                self._keff[i] = self.facet_keff(area, th)
+                self._keff[i] = self.facet_keff(area, th, self.p_over_a(co.get("h"), area))
         return A, r, dmu_dot, th_bar
 
     def mean_keff(self, cohorts, th):
@@ -959,7 +1106,7 @@ class Growth:
         tot = 0.0
         for co in cohorts:
             if sum(co["area"].values()) > 0:
-                tot += co["N"] * self.facet_keff(co["area"], th)
+                tot += co["N"] * self.facet_keff(co["area"], th, self.p_over_a(co.get("h"), co["area"]))
         return tot / N
 
     KIN_SPREAD = 1e3                                     # facets more than this much faster than the slowest: far out
@@ -968,24 +1115,30 @@ class Growth:
         """The facet families of the kinetic shape: the polyhedron with each family at a distance proportional to its
         incorporation rate v_f = k_f (1 - theta_f). A family with no area there grows out of a dot (it advances faster
         than its neighbours allow) and takes no part in the dot's surface reaction. Cached per coverage (to 0.001)."""
-        key = tuple(round(float(th[f]), 3) for f in self.F)
+        # a family with site classes sits near full coverage, where 1 - theta sets the rate: keyed on its log
+        key = tuple(round(math.log(max(1.0 - float(th[f]), 1e-300)), 1) if self.sited(f) else round(float(th[f]), 3)
+                    for f in self.F) + (self.T,)                 # site rates depend on T as well
         cache = self.__dict__.setdefault("_kin_cache", {})
         if key not in cache:
-            FK = self.P["kinetics"]["facets"]
-            v = {f: float(FK[f]["k_f"]) * max(1.0 - th[f], 1e-6) for f in self.F}
+            FK = self.P["kinetics"].get("facets") or {}
+            v = {f: max(self.site_rate(f, th[f]), 1e-300) if self.sited(f) else float(FK[f]["k_f"]) * max(1.0 - th[f], 1e-6)
+                 for f in self.F}
             vmin = min(v.values())
             area, _v, _s = self.shape({f: min(v[f] / vmin, self.KIN_SPREAD) for f in self.F})
             tot = sum(area.values())
             cache[key] = {f for f in self.F if area[f] > 1e-9 * tot}
         return cache[key]
 
-    def facet_keff(self, area, th):
+    def facet_keff(self, area, th, poa=None):
         """A dot's surface reaction rate (A/s) from the facet incorporation rates, over the facets it exposes that
-        survive in the kinetic shape (kinetic_survivors): sum A_f k_f (1 - theta_f) / sum A_f. A facet much faster
-        than its neighbours grows out and does not add its rate; when none of the exposed facets survives (a dot
-        held in a shape the kinetics would change), the slowest exposed facet sets the rate."""
-        FK = self.P["kinetics"]["facets"]
-        v = {f: float(FK[f]["k_f"]) * (1.0 - th[f]) for f in self.F}
+        survive in the kinetic shape (kinetic_survivors): sum A_f k_f (1 - theta_f) / sum A_f (site_rate for a family
+        with site classes, at this dot's perimeter per area poa). A facet much faster than its neighbours grows out
+        and does not add its rate; when none of the exposed facets survives (a dot held in a shape the kinetics would
+        change), the slowest exposed facet sets the rate."""
+        FK = self.P["kinetics"].get("facets") or {}
+        poa = poa or {}
+        v = {f: self.site_rate(f, th[f], poa.get(f)) if self.sited(f) else float(FK[f]["k_f"]) * (1.0 - th[f])
+             for f in self.F}
         exposed = [f for f in self.F if area.get(f, 0.0) > 0]
         if not exposed:
             return 0.0
@@ -1096,10 +1249,14 @@ class Growth:
         FK = self.P["kinetics"].get("facets") or {}
         # the speeds change slowly: reused while the dot's m moves < 5 % and mu_s < 2 meV (the facet potentials
         # take nine polyhedron evaluations a dot)
+        # ... and, for families with site classes (whose rate is steep near full coverage), while ln(1 - theta) moves
+        # less than 0.1
+        th_key = tuple(round(math.log(max(1.0 - float(th[f]), 1e-300)), 1) for f in self.F if self.sited(f))
         c = co.get("_speeds")
-        if c and abs(math.log(co["m"] / c[0])) < 0.05 and abs(dmu_s - c[1]) < 2e-3 and c[2] == self.T:
+        if c and abs(math.log(co["m"] / c[0])) < 0.05 and abs(dmu_s - c[1]) < 2e-3 and c[2] == self.T and c[4] == th_key:
             return c[3]
         dmu = self.facet_mu(co["h"], co["area"], fam)
+        poa = self.p_over_a(co["h"], co["area"])
         v = {}
         for f in self.F:
             p = FK.get(f, {})
@@ -1107,7 +1264,7 @@ class Growth:
             if drive <= 0:
                 v[f] = 0.0
                 continue
-            v[f] = float(p.get("k_f", 1.0)) * max(1.0 - th[f], 1e-6) * -math.expm1(-drive) / self.F[f]["site_area"]
+            v[f] = self.k_block(f, th[f], float(p.get("k_f", 1.0)), poa.get(f)) * -math.expm1(-drive) / self.F[f]["site_area"]
             beta = p.get("island_beta_eV")
             if beta:
                 beta *= float(self.P["kinetics"].get("beta_scale", 1.0))   # calibration against experiments
@@ -1117,7 +1274,7 @@ class Growth:
                 n = min(n_face, (beta / (2.0 * self.kt * drive)) ** 2)
                 barrier = max(beta * math.sqrt(n) - n * self.kt * drive, 0.0)
                 v[f] *= math.exp(-min(barrier / self.kt, 700.0))
-        co["_speeds"] = (co["m"], dmu_s, self.T, v)
+        co["_speeds"] = (co["m"], dmu_s, self.T, v, th_key)
         return v
 
     def shape_step(self, co, m_new, v):

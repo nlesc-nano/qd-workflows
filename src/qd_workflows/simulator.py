@@ -813,7 +813,7 @@ class Simulator:
         h = g.shape.wulff({f: fam[f]["gamma"] for f in g.F}, g.Om)
         area = g.shape(h)[0]
         th = {f: fam[f]["theta"] for f in g.F}
-        k_r = g.mean_keff([{"N": 1.0, "area": area}], th)
+        k_r = g.mean_keff([{"N": 1.0, "area": area, "h": h}], th)
         if k_r is None or not math.isfinite(k_r):
             k_r = 1e4
         D = (g._D1 if (g.stokes and g._D1) else g.D) / 1e16                                    # cm^2/s

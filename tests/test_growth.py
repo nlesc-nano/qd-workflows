@@ -339,6 +339,126 @@ def test_surface_reaction_from_the_facet_rates():
         assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
 
 
+SITES = {"centre": {"n": 30, "per_area": 0.03, "dG_bind": -0.6, "dW_dir": 0.05, "dW_disp": 0.9},
+         "edge": {"n": 10, "per_length": 0.04, "dG_bind": -0.3, "dW_dir": 0.03}}
+
+
+def _sited(**kin):
+    """The synthetic params with {100} and {111}B given site classes ({111}B a single class)."""
+    P = _params(kinetics={"k_r": "facets", "facets": {"100": {"k_f": 2e4}, "111A": {"k_f": 3e5}, "111B": {"k_f": 1e3},
+                                                      "110": {"k_f": 7e4}}, **kin})
+    P["families"]["100"].update(sites=copy.deepcopy(SITES), perimeter_per_area_ref=0.25)
+    P["families"]["111B"].update(sites={"centre": {"n": 11, "per_area": 0.01, "dG_bind": -1.0, "dW_dir": 0.07,
+                                                   "dW_disp": 1.2}})
+    return P
+
+
+def test_site_classes_are_langmuir_per_class():
+    kt = gr.KB_EV * 500.0
+    p = {"Gamma_max": 2.0, "gamma0": 20.0, "sites": copy.deepcopy(SITES)}
+    for c in (1e-6, 1e-3, 0.1):
+        s = gr.facet_state(p, c, kt)
+        K = {k: math.exp(-q["dG_bind"] / kt) for k, q in SITES.items()}
+        want = {k: K[k] * c / (1 + K[k] * c) for k in K}
+        assert all(math.isclose(s["theta_s"][k], want[k], rel_tol=1e-12) for k in K)
+        assert math.isclose(s["theta"], (30 * want["centre"] + 10 * want["edge"]) / 40, rel_tol=1e-12)
+        dg = (gr.facet_state(p, c * 1.001, kt)["gamma"] - s["gamma"]) / math.log(1.001)   # Gibbs adsorption
+        assert math.isclose(dg, -0.02 * kt * s["theta"], rel_tol=2e-3)
+    q = {**p, "gamma_eff": 12.0, "Gamma_eff": 1.5}                                         # gamma from the dots
+    assert math.isclose(gr.facet_state(q, 0.03, kt)["gamma"], 0.012 - 0.015 * kt * math.log(0.03), rel_tol=1e-12)
+
+
+def test_site_rate_limits_and_inverse():
+    g = gr.Growth(_thermo(), _sited())
+    kt, f = g.kt, "100"
+    v_c = g._speed(374.7)
+    v_cx = g._speed(374.7 * 183.3 / (374.7 + 183.3))
+    for th in (0.1, 0.5, 0.99):
+        c = g._c_of_theta(f, th)
+        assert math.isclose(gr.facet_state(g.F[f], c, kt)["theta"], th, rel_tol=1e-9)
+    open_ = (0.03 * 14.9 * v_c * math.exp(-0.05 / kt) + 0.04 * 0.25 * 14.9 * v_c * math.exp(-0.03 / kt))
+    assert math.isclose(g.site_rate(f, 1e-12), open_, rel_tol=1e-6)               # bare: attachment only
+    full = 0.03 * 42.6 * v_cx * math.exp(-0.9 / kt)                                 # capped: the centre's exchange
+    assert math.isclose(g.site_rate(f, 1.0), full, rel_tol=1e-6)
+    assert math.isclose(g.site_rate(f, 1.0, p_over_a=1.0), full, rel_tol=1e-6)      # edges: no exchange, blocked
+    assert g.site_rate(f, 0.5, p_over_a=0.5) > g.site_rate(f, 0.5, p_over_a=0.1)    # more perimeter, faster
+    assert g.site_rate(f, 1e-12, p_over_a=1e6) == v_c                                # never above the collisions
+    assert g.k_block("111A", 0.4, 3e5) == 3e5 * 0.6                                  # no classes: k_f (1 - theta)
+
+
+def test_site_rates_follow_temperature_and_each_dot():
+    g = gr.Growth(_thermo(), _sited())
+    th = {"100": 0.1, "111A": 0.3, "111B": 0.99999, "110": 0.3}
+    g.kinetic_survivors(th)
+    g.set_temperature(350.0)
+    fresh = gr.Growth(_thermo(), _sited())
+    fresh.set_temperature(350.0)
+    assert set(g.kinetic_survivors(th)) == set(fresh.kinetic_survivors(th))       # no survivors from the old T
+    g.set_temperature(500.0)
+    g._arrays()
+    _pl, fam = g.chem(1e-3, 0.1)
+    for m in (50, 5000):                                  # the reported k_eff is the one the dot grows with
+        h = g.shape.wulff({f: fam[f]["gamma"] for f in g.F}, m * g.Om)
+        co = {"N": 1.0, "m": m, "h": h, "area": g.shape(h)[0]}
+        g.size_state([co], fam, th)
+        assert math.isclose(g.mean_keff([co], th), g._keff[0], rel_tol=1e-12)
+
+
+def test_gamma_eff_only_with_site_classes():
+    P = _params()
+    P["families"]["100"]["gamma_eff"] = 12.0              # no site classes: gamma0 stays the one in use
+    P["material"]["match_m0"] = False
+    g = gr.Growth(_thermo(), P)
+    assert g.F["100"]["gamma0"] == P["families"]["100"]["gamma0"] and g.F["100"]["gamma_eff"] == 12.0
+    S = _sited()
+    S["solvation"]["eps"] = 2.0
+    S["families"]["100"].update(gamma_eff=12.0, Gamma_eff=2.0)
+    th = _thermo()
+    for n in th["nodes"]:
+        for s in n["states"]:
+            s["S_vdW_A2"] = 120.0 * (n["m"] + n["k"]) ** (2 / 3)
+    g = gr.Growth(th, S)
+    want = 12.0 + 1000.0 * g.solv_area - 10.0 * 2.0 * g.th["dG_solv_mx"]
+    assert math.isclose(g.F["100"]["gamma_eff"], want, rel_tol=1e-12)
+
+
+def test_perimeter_of_a_cube():
+    s = gr.Shape({"100": gr.ZB_NORMALS["100"]})
+    assert math.isclose(s.perimeter({"100": 3.0})["100"], 6 * 4 * 6.0, rel_tol=1e-9)
+
+
+def test_growth_with_site_classes_conserves():
+    g = gr.Growth(_thermo(), _sited(growth_law="shape"))
+    res = g.run()
+    assert res["series"][-1]["N_dots"] > 0 and res["series"][-1]["k_eff"] > 0
+    for c in gr.conservation(res):
+        assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
+def test_facet_law_with_site_classes_reduces_to_the_size_law():
+    one = {"c": {"n": 1, "per_area": 0.002, "dG_bind": -0.5, "dW_dir": 0.3}}
+
+    def growth(k_r):
+        P = _params(kinetics={"growth_law": "facet", "facets": {f: {} for f in ("100", "111A", "111B", "110")},
+                              "k_r": k_r})
+        for p in P["families"].values():
+            p["sites"] = copy.deepcopy(one)
+        return gr.Growth(_thermo(), P)
+    k_site = growth(1.0).site_rate("100", 0.3)
+    g = growth(k_site / 0.7)                              # the size law's k_r (1 - theta) at theta = 0.3
+    g._arrays()
+    pl, fam = g.chem(1e-3, 0.1)
+    th = {f: 0.3 for f in g.F}
+    h = g.shape.wulff({f: fam[f]["gamma"] for f in g.F}, 400 * g.Om)
+    m, k, area, _s = g.dot(h, fam)
+    co = {"m": m, "k": k, "h": h, "area": area}
+    A, r, dmu, thb = g.size_state([co], fam, th)
+    C, C_M = 2e-3, 1e-3
+    c_eq = C_M * np.exp((g.gb + dmu - pl["mu_MA"]) / g.kt)
+    facet, v = g._facet_rate(co, C, C_M, pl["mu_MA"], fam, th)
+    assert math.isclose(facet, g.size_rates(A, r, c_eq, np.array([0.3]), C)[0], rel_tol=1e-6)
+
+
 def test_each_dot_has_its_own_capacitance():
     gr.SHAPE_CAPS.clear()
     g = gr.Growth(_thermo(), _params())

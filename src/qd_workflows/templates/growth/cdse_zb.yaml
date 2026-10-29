@@ -45,6 +45,11 @@ kinetics:
       island_beta_eV: 1.027
     '110':
       k_f: 2.4e+11
+  sites:
+    A_dir_A2: 14.9
+    A_disp_A2: 42.6
+    m_complex_amu: 374.7
+    m_mx_amu: 183.3
 families:
   '100':
     gamma0: 15.6
@@ -55,6 +60,38 @@ families:
     k0: 10000.0
     x_X: 0.0
     site_area: 19.238381192648
+    perimeter_per_area_ref: 0.2574
+    sites:
+      centre:
+        n: 52
+        per_area: 0.03589
+        dG_bind: -0.663
+        dW_dir: 0.053
+      centre_next_111B:
+        n: 14
+        per_area: 0.00966
+        dG_bind: -0.89
+        dW_dir: 0.053
+      edge_1Se_3br:
+        n: 12
+        per_length: 0.03218
+        dG_bind: -0.464
+        dW_dir: 0.038
+      edge_1Se_anion_2br:
+        n: 9
+        per_length: 0.02413
+        dG_bind: -0.325
+        dW_dir: 0.04
+      edge_2Se_2br:
+        n: 9
+        per_length: 0.02413
+        dG_bind: -0.227
+        dW_dir: 0.04
+      edge_2Se_atop_br:
+        n: 4
+        per_length: 0.01073
+        dG_bind: -0.619
+        dW_dir: 0.04
   111A:
     gamma0: 22.22
     eps0: 2.06
@@ -64,6 +101,33 @@ families:
     k0: 10000.0
     x_X: 0.0
     site_area: 16.660926840521935
+    perimeter_per_area_ref: 0.2217
+    sites:
+      centre:
+        n: 24
+        per_area: 0.0201
+        dG_bind: -0.4
+        dW_dir: 0.042
+      edge_1Se_3br:
+        n: 12
+        per_length: 0.04532
+        dG_bind: -0.464
+        dW_dir: 0.038
+      edge_1Se_anion_2br:
+        n: 9
+        per_length: 0.03399
+        dG_bind: -0.325
+        dW_dir: 0.04
+      edge_2Se_2br:
+        n: 9
+        per_length: 0.03399
+        dG_bind: -0.227
+        dW_dir: 0.04
+      edge_2Se_atop_br:
+        n: 4
+        per_length: 0.01511
+        dG_bind: -0.619
+        dW_dir: 0.04
   111B:
     gamma0: 13.6
     eps0: 0.93
@@ -73,6 +137,13 @@ families:
     k0: 10000.0
     x_X: 0.0
     site_area: 16.660926840521935
+    perimeter_per_area_ref: 0.2217
+    sites:
+      centre:
+        n: 11
+        per_area: 0.00921
+        dG_bind: -2.073
+        dW_dir: 0.068
   '110':
     gamma0: 18.14
     eps0: 0.61
@@ -91,6 +162,15 @@ provenance:
     none in the centre; {111}B 13 per 21 Se; {110} 0.8-0.9 per Se). eps0, w: {100} and {111}A from greedy strips within
     the facet''s own Cl on the polished 3x3x3 dot (eps0 refitted with the library), {111}B and {110} eps0 from
     zero-coverage intact Z-type additions on facet centres; gamma0 fitted jointly, gamma > 0 at all coverages'
+  sites: 'site classes of the half-swap 2.5^3 dot (801 atoms, MACE-MH-1 omat_pbe, 500 K, 1 M; 2026-10-28/29): n the
+    surface Cd of the class on that dot, per_area = n / construction area, per_length = n / the family''s perimeter
+    (100: 1448.8 A^2, 372.9 A; 111A, 111B: 1194.3 A^2, 264.8 A; perimeter_per_area_ref their ratio); the 100|111A edge
+    classes count on both families. dG_bind: CdCl2 release umbrellas (100 centre next to 111B: Tier 1, its umbrella
+    failed twice); dW_dir: CdSe.CdCl2 attachment umbrellas (barrier over the free plateau; edge classes other than
+    1Se_3br are 0.04 placeholders until their runs finish); dW_disp (direct exchange umbrellas) left out for now: their
+    end states lie 0.8-2.3 eV above what the separate umbrellas give (111B centre barrier 1.35 +- 0.08 eV, held back
+    until that is diagnosed), so no class has a direct exchange yet. Capture areas of the restraint cylinders: attachment 2 A, exchange 3.5 A,
+    both 2 eV/A^2. gamma stays on the fit below until gamma_eff from the layer additions replaces it.'
   conditions: 'default synthesis: 0.025 M Se precursor, 0.03 M CdCl2, 500 K'
   shell_offset: 'the same 108 dots (builder geometries): R_h = capacitance of the van der Waals body (CdCl2 included),
     R_se = solvent-excluded radius (2 A probe), against the convex hull of the Cd/Se core scaled to m Omega_m;
@@ -135,6 +215,13 @@ units:
   k_r: 'A/s, or "facets": each dot''s surface reaction from the facet rates, sum_f A_f k_f (1 - theta_f) / A'
   k_f: A/s (facet incorporation rate, relative speeds of the shape rule)
   island_beta_eV: eV (step term of the island ladder, dG(N) = g N + beta sqrt(N))
+  sites: 'per class: n (count on the reference dot), per_area 1/A^2 or per_length 1/A, dG_bind eV at 1 M, dW_dir and
+    dW_disp eV (umbrella barriers over the free plateau), active (default true)'
+  A_dir_A2: A^2 (capture area of the attachment umbrella)
+  A_disp_A2: A^2 (capture area of the exchange umbrella)
+  gamma_eff: meV/A^2 (from the dots' layer additions, MX_q at 1 M)
+  Gamma_eff: MX_q per nm^2 (excess of the layer additions; gamma = gamma_eff - Gamma_eff kT ln c)
+  perimeter_per_area_ref: 1/A (the reference dot's facet perimeter over area)
   D: cm^2/s
   x_X: X-type MX_q per surface site (electron counting)
   site_area: A^2
