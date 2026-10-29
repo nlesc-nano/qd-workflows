@@ -81,17 +81,17 @@ families:
         n: 9
         per_length: 0.02413
         dG_bind: -0.325
-        dW_dir: 0.04
+        dW_dir: 0.031
       edge_2Se_2br:
         n: 9
         per_length: 0.02413
         dG_bind: -0.227
-        dW_dir: 0.04
+        dW_dir: 0.048
       edge_2Se_atop_br:
         n: 4
         per_length: 0.01073
         dG_bind: -0.619
-        dW_dir: 0.04
+        dW_dir: 0.036
   111A:
     gamma0: 22.22
     eps0: 2.06
@@ -117,17 +117,17 @@ families:
         n: 9
         per_length: 0.03399
         dG_bind: -0.325
-        dW_dir: 0.04
+        dW_dir: 0.031
       edge_2Se_2br:
         n: 9
         per_length: 0.03399
         dG_bind: -0.227
-        dW_dir: 0.04
+        dW_dir: 0.048
       edge_2Se_atop_br:
         n: 4
         per_length: 0.01511
         dG_bind: -0.619
-        dW_dir: 0.04
+        dW_dir: 0.036
   111B:
     gamma0: 13.6
     eps0: 0.93
@@ -166,8 +166,8 @@ provenance:
     surface Cd of the class on that dot, per_area = n / construction area, per_length = n / the family''s perimeter
     (100: 1448.8 A^2, 372.9 A; 111A, 111B: 1194.3 A^2, 264.8 A; perimeter_per_area_ref their ratio); the 100|111A edge
     classes count on both families. dG_bind: CdCl2 release umbrellas (100 centre next to 111B: Tier 1, its umbrella
-    failed twice); dW_dir: CdSe.CdCl2 attachment umbrellas (barrier over the free plateau; edge classes other than
-    1Se_3br are 0.04 placeholders until their runs finish); dW_disp (direct exchange umbrellas) left out for now: their
+    failed twice); dW_dir: CdSe.CdCl2 attachment umbrellas (barrier over the free plateau; each 100|111A edge class
+    from its own run, 2026-10-29); dW_disp (direct exchange umbrellas) left out for now: their
     end states lie 0.8-2.3 eV above what the separate umbrellas give (111B centre barrier 1.35 +- 0.08 eV, held back
     until that is diagnosed), so no class has a direct exchange yet. Capture areas of the restraint cylinders: attachment 2 A, exchange 3.5 A,
     both 2 eV/A^2. gamma stays on the fit below until gamma_eff from the layer additions replaces it.'
