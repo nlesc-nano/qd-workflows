@@ -436,6 +436,12 @@ class Growth:
                 if g_key == "gamma_eff":                 # the solvated MX_q: c e^(dG_solv_mx/kT) as for dG_bind
                     p[g_key] -= 10.0 * float(p.get("Gamma_eff", 0.0)) * self.th["dG_solv_mx"]
             p[g_key] = float(p[g_key]) * self._gscale
+        # the per-facet law's NEB free energies are against the bare monomer in the gas phase: its solvation at T
+        self.dg_solv_ma = 0.0
+        if self.facet_law and eps > 1.0 and 0 in self.th["g_n"]:
+            self.dg_solv_ma = self.th["g_n"][0] - thermo_at(self.thermo, self.T)["g_n"][0]
+        if self.facet_law and self.P["kinetics"].get("growth_law") == "facet":
+            raise ValueError("size_law = 'facets' works with growth_law 'size' or 'shape' (the facet law has its own)")
         self._R1 = 0.0                                   # the monomer's transport is set again at this T
         classical = self.P["nucleation"].get("omega", "grid") == "continuum"
         self.handover = self._handover() if m0 == "auto" and not classical else None
@@ -593,11 +599,17 @@ class Growth:
         conditions.gamma_MA and gamma_MX (calibration factors, 1 = ideal); MX_q above its solubility (mx_sat) is solid,
         counted in C_X as a reservoir in equilibrium with the solution."""
         c = self.P["conditions"]
-        return pool(self.th, max(C_M, 1e-30), max(C_X, 1e-30), gamma_ma=float(c.get("gamma_MA", 1.0)),
-                    gamma_mx=float(c.get("gamma_MX", 1.0)), c_sat=self.c_sat)
+        args = (max(C_M, 1e-30), max(C_X, 1e-30), float(c.get("gamma_MA", 1.0)), float(c.get("gamma_MX", 1.0)), self.c_sat)
+        last = getattr(self, "_pool_last", None)              # a step's end pool is the next step's start pool
+        if last is not None and last[0] is self.th and last[1] == args:
+            return last[2]
+        pl = pool(self.th, args[0], args[1], gamma_ma=args[2], gamma_mx=args[3], c_sat=args[4])
+        self._pool_last = (self.th, args, pl)
+        return pl
 
     def chem(self, C_M, C_X):
         pl = self.pool(C_M, C_X)
+        self._pl = pl                                   # the pool of the per-facet law's rates (size_state)
         c = pl["a_MX_free"]                             # the facets' coverage sees the free MX_q's activity
         fam = {}
         for f, p in self.F.items():
@@ -651,24 +663,48 @@ class Growth:
         areas of the umbrellas' restraint cylinders; rho_s per area (per_area) or, for perimeter classes, per_length
         times the family's perimeter per area p_over_a (this dot's, or perimeter_per_area_ref of the reference dot).
         A class without dW_disp has no direct exchange. Capped at the collision rate v_C."""
+        p = self.F[f]
+        ratio = float(p_over_a) if p_over_a is not None else float(p.get("perimeter_per_area_ref", 0.0))
+        k_area, k_len, v_c = self._site_parts(f, th)
+        return min(k_area + k_len * ratio, v_c)
+
+    def _site_parts(self, f: str, th: float) -> tuple:
+        """site_rate split into the per-area classes' sum and the per-length classes' sum (to be multiplied by the
+        dot's perimeter per area), and the collision cap: the same for every dot at one coverage, so cached per
+        (f, th, T)."""
+        key = (f, float(th), self.T)
+        cache = self.__dict__.setdefault("_site_cache", {})
+        if key in cache:
+            return cache[key]
         p, kt = self.F[f], self.kt
         ks = self.P["kinetics"].get("sites") or {}
         m_c, m_x = float(ks.get("m_complex_amu", 374.7)), float(ks.get("m_mx_amu", 183.3))
         a_dir, a_disp = float(ks.get("A_dir_A2", 14.9)), float(ks.get("A_disp_A2", 42.6))
         v_c, v_cx = self._speed(m_c), self._speed(m_c * m_x / (m_c + m_x))
-        ratio = float(p_over_a) if p_over_a is not None else float(p.get("perimeter_per_area_ref", 0.0))
         c = self._c_of_theta(f, th)
-        k = 0.0
+        k_area = k_len = 0.0
         for q in p["sites"].values():
             if not q.get("active", True):
                 continue
-            rho = float(q["per_length"]) * ratio if "per_length" in q else float(q["per_area"])
             x = math.exp(min(-float(q["dG_bind"]) / kt, 700.0)) * c
             r = a_dir * v_c * math.exp(-float(q["dW_dir"]) / kt)
             if q.get("dW_disp") is not None:
                 r += x * a_disp * v_cx * math.exp(-float(q["dW_disp"]) / kt)
-            k += rho * r / (1.0 + x)
-        return min(k, v_c)
+            if "per_length" in q:
+                k_len += float(q["per_length"]) * r / (1.0 + x)
+            else:
+                k_area += float(q["per_area"]) * r / (1.0 + x)
+        if len(cache) > 100000:
+            cache.clear()
+        cache[key] = (k_area, k_len, v_c)
+        return cache[key]
+
+    def cohort_poa(self, co) -> dict:
+        """p_over_a of a cohort, kept on it while its shape (the h object) stays the same (a frozen dot)."""
+        c = co.get("_poa")
+        if c is None or c[0] is not co.get("h"):
+            c = co["_poa"] = (co.get("h"), self.p_over_a(co.get("h"), co["area"]))
+        return c[1]
 
     def p_over_a(self, h: dict, area: dict) -> dict:
         """Perimeter per area of each exposed family of a dot (1/A), for the perimeter site classes ({} without
@@ -701,6 +737,158 @@ class Growth:
         s = m ** (2.0 / 3.0)
         return sum((fam[f]["theta"] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"]) * a.get(f, 0.0) * s
                    for f in self.F)
+
+    # -- per-facet size law from the computed roles (kinetics.size_law = "facets") --
+    @property
+    def facet_law(self) -> bool:
+        return self.P["kinetics"].get("size_law") == "facets" and not self.sphere
+
+    ROLE_DIM = {"facet": 2, "edge": 1, "vertex": 0}
+
+    @staticmethod
+    def role_facets(role: str) -> dict:
+        """The facet families a builder role touches and its weight w_rf on each: 1 (facet), 1/2 (edge), 1/3 (vertex)."""
+        kind, fams = role.split(":")
+        fs = fams.replace("+", "|").split("|")
+        return {f: 1.0 / len(fs) for f in fs}
+
+    def role_envs(self, m: float) -> list:
+        """The role environments of a dot of m units: (role, N, dmu, bind) from kinetics.roles.envs, the computed dots'
+        environments with their Cd counts N, Delta mu (a_X = 1) and CdCl2 binding (1 M). Between two computed sizes the
+        dot is a mixture of both sizes' environments, weighted linearly in m^(-1/3) (exact at the computed sizes; a role
+        missing at one size has no channel there); beyond the largest and below the smallest, that size's environments
+        with N scaled as m^(d/3) (d = 2 facet, 1 edge, 0 vertex)."""
+        tab = self.P["kinetics"]["roles"]["envs"]
+        sizes = sorted({int(s) for r in tab.values() for s in r})
+        bad = [r for r in tab if not set(self.role_facets(r)) <= set(self.F)]
+        if not sizes or bad:
+            raise ValueError(f"kinetics.roles.envs: no computed sizes, or roles on families not in the template: {bad}")
+        x = m ** (-1.0 / 3.0)
+        if m <= sizes[0] or m >= sizes[-1]:
+            s0 = sizes[0] if m <= sizes[0] else sizes[-1]
+            parts = [(s0, None)]
+        else:
+            j = next(i for i in range(1, len(sizes)) if sizes[i] >= m)
+            x1, x2 = sizes[j - 1] ** (-1.0 / 3.0), sizes[j] ** (-1.0 / 3.0)
+            t = (x1 - x) / (x1 - x2)
+            parts = [(sizes[j - 1], 1.0 - t), (sizes[j], t)]
+        out = []
+        for role, by in tab.items():
+            dim = self.ROLE_DIM[role.split(":")[0]]
+            for s, w in parts:
+                envs = by.get(s, by.get(str(s)))
+                if not envs:
+                    continue
+                scale = (m / s) ** (dim / 3.0) if w is None else w
+                out += [(role, n * scale, float(dmu), float(b)) for n, dmu, b in envs]
+        return out
+
+    def role_kappa(self, pl, a0: float) -> dict:
+        """Per-site rate constants (A^3/s per monomer per A^3) of each role's two routes from the bare-CdSe NEBs
+        (kinetics.roles.neb). CdSe and CdSe(CdCl2)_n with n = 1 to 3 all react with the bare-CdSe NEB kinetics, and
+        the flux is on the total C_M (role_channels). No barrier -> the collision a_0 v_1 (v_1 = (kT/2 pi m_CdSe)^(1/2), a_0 the dot's area per
+        site; note: v_1 with the bare CdSe mass for every monomer package for now); otherwise kinetics.roles.rate_form
+        (no default: a choice for Ivan)
+            second_order:  (kT/h) e^(-dG_TS/kT) / n_1M             (TS against the bare monomer at 1 M)
+            first_order:   (kT/h) e^(-dG_TS/kT) / (n_1M (1 + K_P a_1)),  K_P = e^(-dG_P/kT)   (the precursor saturates)
+        each capped at the collision; free energies against the bare monomer shifted by its solvation. A role without a
+        NEB has no rate (None)."""
+        R = self.P["kinetics"]["roles"]
+        form = R.get("rate_form")
+        if form not in ("second_order", "first_order"):
+            raise ValueError("kinetics.roles.rate_form must be set to 'second_order' or 'first_order' (no default)")
+        kt, n1, ds1 = self.kt, 6.02214076e-4, self.dg_solv_ma
+        a1 = math.exp(min((pl["mu_MA"] - self.th["g_n"][0]) / kt, 700.0))
+        k_coll = a0 * self._speed(191.385)
+
+        def kappa(q):
+            if q is None:
+                return None
+            if q.get("no_barrier"):
+                return k_coll
+            k = (kt / 4.135667696e-15) * math.exp(-min((float(q["dG_TS"]) - ds1) / kt, 700.0)) / n1
+            if form == "first_order":
+                k /= 1.0 + math.exp(min(-(float(q["dG_P"]) - ds1) / kt, 700.0)) * a1
+            return min(k, k_coll)
+        return {role: (kappa(q.get("dir")), kappa(q.get("disp"))) for role, q in (R.get("neb") or {}).items()}
+
+    def role_channels(self, m: float, area: float, pl) -> dict:
+        """The growth channels of a dot of m units and area A at the pool pl: one per builder role r and facet f it
+        touches, N_r w_rf sites (N_r the role's Cd count), Delta mu_r(c_X) = <dmu_e>_r + kT ln a_X (a CdCl2 released per
+        exchange; <>_r the plain Cd-weighted mean over the role's environments, the cost per unit of completing the
+        role's layer, Ivan 2026-10-30: no channel per environment, no Boltzmann mean) and the per-site constant
+            kappa_rf = (kappa_dir,r + kappa_disp,r <K_X,e>_r a_X) / (1 + K_X,eff^(f) a_X),
+        K_X,e = e^(-bind_e/kT), K_X,eff^(f) the site-weighted mean K_X over the environments on f (kappa_rf is then the
+        Cd-weighted mean of the environments' constants). CdSe and CdSe(CdCl2)_n with n = 1 to 3 all react with the
+        bare-CdSe NEB kinetics, and the flux is on the total C_M (free CdSe plus every complex; Ivan, 2026-10-30): the
+        package enters only through mu_CdSe (Delta mu_r and the pool). In solution the released CdCl2 and the bound one
+        carry its solvation. Roles without a NEB route are left out (listed in self.role_flags)."""
+        kt = self.kt
+        dsx = self.th["dG_solv_mx"]
+        envs = self.role_envs(m)
+        n_tot = sum(e[1] for e in envs)
+        a0 = area / n_tot if n_tot > 0 else 0.0
+        kap = self.role_kappa(pl, a0)
+        ax = float(pl["a_MX_free"])
+        lnax = math.log(max(ax, 1e-300))
+        num, den = {}, {}
+        for role, n, _dmu, b in envs:
+            K = math.exp(min(-(b - dsx) / kt, 700.0))
+            for f, w in self.role_facets(role).items():
+                num[f] = num.get(f, 0.0) + w * n * K
+                den[f] = den.get(f, 0.0) + w * n
+        kbar = {f: num[f] / den[f] for f in num if den[f] > 0}
+        sums = {}                                       # role -> [Cd count, sum n dmu, sum n K]
+        for role, n, dmu, b in envs:
+            s = sums.setdefault(role, [0.0, 0.0, 0.0])
+            s[0] += n
+            s[1] += n * dmu
+            s[2] += n * math.exp(min(-(b - dsx) / kt, 700.0))
+        ch = {"role": [], "f": [], "N": [], "dmu": [], "kappa": [], "a0": a0}
+        flags = self.__dict__.setdefault("role_flags", set())
+        for role, (n, ndmu, nK) in sums.items():
+            kd, kx = kap.get(role, (None, None))
+            if kd is None and kx is None:
+                flags.add(f"{role}: no NEB, no channel")
+                continue
+            if n <= 0:
+                continue
+            for f, w in self.role_facets(role).items():
+                ch["role"].append(role)
+                ch["f"].append(f)
+                ch["N"].append(w * n)
+                ch["dmu"].append(ndmu / n + dsx + kt * lnax)
+                ch["kappa"].append(((kd or 0.0) + (kx or 0.0) * nK / n * ax) / (1.0 + kbar[f] * ax))
+        for k_ in ("N", "dmu", "kappa"):
+            ch[k_] = np.array(ch[k_], float)
+        return ch
+
+    def channel_conductance(self, ch, res_d: float) -> np.ndarray:
+        """Per-channel conductance g_r = N_r / (res_d / a_0 + 1 / kappa_r) (A^3/s), res_d = delta/D the dot's diffusion
+        resistance per area: the channel's flux is n g_r (C - C_eq,inf e^(Delta mu_r/kT)) units/s. growth_control
+        "diffusion" drops 1/kappa_r, "reaction" drops res_d (as resistances)."""
+        if not len(ch["N"]):
+            return np.zeros(0)
+        ctl = self.P["kinetics"].get("growth_control", "mixed")
+        rd = 0.0 if ctl == "reaction" else res_d / max(ch["a0"], 1e-300)
+        rr = 0.0 if ctl == "diffusion" else 1.0 / np.maximum(ch["kappa"], 1e-300)
+        return ch["N"] / np.maximum(rd + rr, 1e-300)
+
+    def facet_speeds(self, co, C, C_M, mu0, res_d) -> dict:
+        """Facet velocities (A/s) of a dot in the per-facet law: v_f = Omega_m J_f / A_f, J_f = n sum_(r on f) g_r (C -
+        C_eq,inf e^(Delta mu_r/kT)), C_eq,inf = C_M e^((g_bulk - mu)/kT); a facet that would shrink stands still (as in
+        shape_speeds)."""
+        n = 6.02214076e-4
+        ch = co["_ch"]
+        g = self.channel_conductance(ch, res_d)
+        ceq = C_M * np.exp(np.minimum((self.gb + ch["dmu"] - mu0) / self.kt, 700.0))
+        flux = n * g * (C - ceq)
+        v = {}
+        for f in self.F:
+            sel = np.array([x == f for x in ch["f"]], bool)
+            a_f = co["area"].get(f, 0.0)
+            v[f] = max(self.Om * float(flux[sel].sum()) / a_f, 0.0) if (a_f > 1e-6 and sel.any()) else 0.0
+        return v
 
     def _arrays(self):
         """Per-family constants as arrays (order self.fams) and the grid's G(m,k) per m."""
@@ -763,15 +951,12 @@ class Growth:
         rh = np.where(wsum > 0, np.where(ok, w * np.nan_to_num(self.Rh), 0.0).sum(1) / np.maximum(wsum, 1e-300), np.nan)
         have = np.flatnonzero(np.isfinite(rse))
         mg = self.ms[have]
-        R, D = [], []
-        for m in np.asarray(sizes, float):
-            j = have[np.searchsorted(mg, m, side="right") - 1] if m >= mg[0] else have[0]
-            s = (m / self.ms[j]) ** (1.0 / 3.0) if m != self.ms[j] else 1.0
-            R.append(rse[j] * s)
-            D.append(stokes_d(rh[j] * s, self.T, self.eta, self.c_st))
+        m = np.asarray(sizes, float)
+        j = have[np.where(m >= mg[0], np.searchsorted(mg, m, side="right") - 1, 0)]
+        s = np.where(m != self.ms[j], (m / self.ms[j]) ** (1.0 / 3.0), 1.0)
         if self.ms[have[0]] == 1:
             self._R1, self._D1 = float(rse[have[0]]), stokes_d(float(rh[have[0]]), self.T, self.eta, self.c_st)
-        return np.array(R), np.array(D)
+        return rse[j] * s, stokes_d(rh[j] * s, self.T, self.eta, self.c_st)
 
     def _cap_factor(self, fam):
         """Capacitance of the dot's Wulff polyhedron over the radius of the sphere of the same volume (1 for a sphere,
@@ -813,8 +998,13 @@ class Growth:
         # 0.05 in h_f / r_eq: C(P) moves by far less than the walk-on-spheres noise itself (a 10000-walker run's seed
         # shifts the diffusion-limited N_dots by up to 1 % at the end, this rounding by 0.1 %), and the default page
         # run meets 55 shapes (40 s instead of 190 s at 0.01)
-        key = tuple((f, round(round(co["h"][f] / r / self.CAP_KEY) * self.CAP_KEY, 6))
-                    for f in self.F if co["area"].get(f, 0.0) > 0)
+        ck = co.get("_capkey")                             # kept while the shape (h object) and m stay the same
+        if ck is not None and ck[0] is co["h"] and ck[1] == co["m"]:
+            key = ck[2]
+        else:
+            key = tuple((f, round(round(co["h"][f] / r / self.CAP_KEY) * self.CAP_KEY, 6))
+                        for f in self.F if co["area"].get(f, 0.0) > 0)
+            co["_capkey"] = (co["h"], co["m"], key)
         e = SHAPE_CAPS.get(key)
         if e is None:
             normals, dists = [], []
@@ -1084,13 +1274,14 @@ class Growth:
         k_eff = sum_f A_f k_f (1 - theta_f) / sum_f A_f (self._keff, A/s)."""
         n = len(cohorts)
         A, r, dmu_dot, th_bar = (np.zeros(n) for _ in range(4))
-        facets_kr = self.P["kinetics"].get("k_r") == "facets"
+        facets_kr = self.P["kinetics"].get("k_r") == "facets" and not self.facet_law
         if facets_kr:
             FK = self.P["kinetics"].get("facets") or {}
             missing = [f for f in self.F if "k_f" not in FK.get(f, {}) and not self.sited(f)]
             if missing:
                 raise ValueError(f"k_r = 'facets' needs kinetics.facets with k_f for every family (missing {missing})")
         self._keff = np.zeros(n) if facets_kr else None
+        surv = self.kinetic_survivors(th) if facets_kr else None
         if self.sphere:                                   # ideal growth: spheres of one gamma, no shell
             m = np.array([max(co["m"], 1e-12) for co in cohorts])
             r = (3.0 * m * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
@@ -1111,7 +1302,20 @@ class Growth:
                 + self.junction(co["m"])
             th_bar[i] = sum(th[f] * area[f] for f in self.F) / a if a > 0 else 0.0
             if facets_kr:
-                self._keff[i] = self.facet_keff(area, th, self.p_over_a(co.get("h"), area))
+                self._keff[i] = self.facet_keff(area, th, self.cohort_poa(co), surv)
+        if self.facet_law and n:
+            # Ivan's per-facet law from the computed roles: each channel r (builder role on facet f) has its own
+            # Delta mu_r (Cd-weighted mean) and kappa_r, in series with the dot's diffusion resistance (res_d per area, res_d / a_0 per
+            # site); the dot's rate n sum_r g_r (C - C_eq,r) is G (C - C_eq) with C_eq at the g_r-weighted mean of
+            # e^(Delta mu_r/kT) (resistances returns the matching reaction resistance)
+            self._chs = [self.role_channels(co["m"], A[i], self._pl) for i, co in enumerate(cohorts)]
+            res_d, _res_r = self.resistances(A, r, th_bar)
+            for i, co in enumerate(cohorts):
+                ch = co["_ch"] = self._chs[i]
+                g = self.channel_conductance(ch, res_d[i])
+                if g.sum() > 0:
+                    top = float(ch["dmu"].max())
+                    dmu_dot[i] = top + self.kt * math.log(float((g * np.exp((ch["dmu"] - top) / self.kt)).sum() / g.sum()))
         return A, r, dmu_dot, th_bar
 
     def mean_keff(self, cohorts, th):
@@ -1120,6 +1324,14 @@ class Growth:
         N = sum(co["N"] for co in cohorts)
         if N <= 0:
             return None
+        if self.facet_law:                               # the per-facet law: sum_e N_e kappa_e / A of each dot
+            tot = 0.0
+            for co in cohorts:
+                a = sum(co["area"].values())
+                if a > 0:
+                    ch = self.role_channels(co["m"], a, self._pl)
+                    tot += co["N"] * float((ch["N"] * ch["kappa"]).sum()) / a
+            return tot / N
         k_r = self.P["kinetics"].get("k_r")
         if k_r != "facets":
             return float(k_r) if k_r is not None else None
@@ -1149,7 +1361,7 @@ class Growth:
             cache[key] = {f for f in self.F if area[f] > 1e-9 * tot}
         return cache[key]
 
-    def facet_keff(self, area, th, poa=None):
+    def facet_keff(self, area, th, poa=None, surv=None):
         """A dot's surface reaction rate (A/s) from the facet incorporation rates, over the facets it exposes that
         survive in the kinetic shape (kinetic_survivors): sum A_f k_f (1 - theta_f) / sum A_f (site_rate for a family
         with site classes, at this dot's perimeter per area poa). A facet much faster than its neighbours grows out
@@ -1162,10 +1374,51 @@ class Growth:
         exposed = [f for f in self.F if area.get(f, 0.0) > 0]
         if not exposed:
             return 0.0
-        keep = [f for f in exposed if f in self.kinetic_survivors(th)]
+        surv = self.kinetic_survivors(th) if surv is None else surv     # the same for every dot at th
+        keep = [f for f in exposed if f in surv]
         if not keep:
             return min(v[f] for f in exposed)
         return sum(v[f] * area[f] for f in keep) / sum(area[f] for f in keep)
+
+    def _equilibrate_coverage(self, cohorts: list, C_M: float, C_X: float, th: dict, fam: dict):
+        """The dots' Z-type coverage in equilibrium with the free MX_q it leaves in solution: when moving the
+        coverage to the Langmuir value of the step's pool would take more than 2 % of the solution's MX_q (the dots'
+        surfaces hold more MX_q than the solution), MX_q is exchanged between the solution and the dots until
+        theta_f = theta_f(a_MX_free(C_M, C_X')), C_X' = C_X - sum_f (theta_f - th_f) Gamma_max,f A_f (A_f the dots'
+        total area of f). The step's explicit move to the start-of-step Langmuir value overshoots there, and no dt
+        keeps the pool within dmu_step_kT. Updates the cohorts' k in place (amounts conserved exactly); returns
+        (C_X', theta) or None when not needed."""
+        A = {f: sum(co["N"] * co["area"].get(f, 0.0) for co in cohorts) for f in self.F}
+        gm = {f: fam[f]["Gamma_max"] for f in self.F}
+        up = sum((fam[f]["theta"] - th[f]) * gm[f] * A[f] for f in self.F)
+        if abs(up) <= 0.02 * C_X:
+            return None
+
+        def cx_of(lna):
+            c = math.exp(lna)
+            t = {f: facet_state(self.F[f], c, self.kt)["theta"] for f in self.F}
+            return C_X - sum((t[f] - th[f]) * gm[f] * A[f] for f in self.F), t
+
+        def res(lna):
+            cx, _t = cx_of(lna)
+            if cx <= 0:
+                return -1e3
+            return math.log(max(self.pool(C_M, cx)["a_MX_free"], 1e-300)) - lna
+        a0 = math.log(max(self.pool(C_M, C_X)["a_MX_free"], 1e-300))
+        lo, hi = a0 - 5.0, a0 + 5.0
+        for _ in range(40):
+            if res(lo) > 0:
+                break
+            lo -= 5.0
+        for _ in range(40):
+            if res(hi) < 0:
+                break
+            hi += 5.0
+        lna = brentq(res, lo, hi, xtol=1e-6)
+        cx, t = cx_of(lna)
+        for co in cohorts:
+            co["k"] += sum((t[f] - th[f]) * gm[f] * co["area"].get(f, 0.0) for f in self.F)
+        return cx, t
 
     def _merge(self, cohorts: list):
         """Merge neighbouring cohorts (in ln m) that are within material.merge_tol (1 %) of each other, and the
@@ -1239,7 +1492,18 @@ class Growth:
         else:
             res_d = A / (4.0 * math.pi * self.D * r)                                     # s/A
         k_r = self.P["kinetics"].get("k_r")                                             # A/s
-        if self.sphere:
+        ctl = self.P["kinetics"].get("growth_control", "mixed")
+        chs = getattr(self, "_chs", None)
+        if self.facet_law and np.size(res_d) == 0:
+            res_r = 0.0 * res_d                                                           # no dots yet
+        elif self.facet_law and chs is not None and len(chs) == np.size(res_d):
+            # per-facet law: sum_r g_r = A / (res_d + res_r), res_r the dot's reaction resistance
+            rd = np.broadcast_to(0.0 * res_d if ctl == "reaction" else res_d, (len(chs),))
+            g = np.array([self.channel_conductance(ch, res_d[i]).sum() for i, ch in enumerate(chs)])
+            res_r = np.maximum(np.asarray(A) / np.maximum(g, 1e-300) - rd, 0.0)
+        elif self.facet_law:
+            raise ValueError("size_law = 'facets': size_state must run first for these dots")
+        elif self.sphere:
             res_r = 0.0 * res_d + 1.0 / self.sph_kr                                       # ideal: one k_r, no shell
         elif k_r == "facets":
             # each dot's own surface reaction from the facet incorporation rates (size_state): computed, not set
@@ -1251,7 +1515,6 @@ class Growth:
             res_r = 1.0 / (float(k_r) * np.maximum(1.0 - th_bar, 1e-6)) if k_r is not None else 0.0 * res_d
         # kinetics.growth_control: "mixed" (both in series, the default), "diffusion" (the surface reaction is fast:
         # diffusion-limited growth) or "reaction" (transport is fast: reaction-limited growth)
-        ctl = self.P["kinetics"].get("growth_control", "mixed")
         if ctl == "diffusion":
             res_r = 0.0 * res_d
         elif ctl == "reaction":
@@ -1302,6 +1565,8 @@ class Growth:
         h_f + s v_f / max(v) with s set by the volume; a dissolving dot, or one whose facets all stand still, keeps
         its shape. A hidden facet stays at most 1 A outside its support plane."""
         h = co["h"]
+        if abs(m_new - co["m"]) <= 1e-10 * co["m"]:
+            return h, co["area"]                         # a frozen dot: the shape moves by < 1e-10 (3 polyhedra saved)
         exposed = [f for f in self.F if co["area"][f] > 1e-6]
         vm = max((v[f] for f in exposed), default=0.0)        # only exposed facets add volume
 
@@ -1418,6 +1683,12 @@ class Growth:
                     self.nucleation(mu0, mu_mx)                                       # sets the monomer's R_1, D_1
             if th_dots is None:
                 th_dots = {f: fam[f]["theta"] for f in self.F}
+            elif cohorts and not self.sphere:
+                eq = self._equilibrate_coverage(cohorts, C_M, C_X, th_dots, fam)
+                if eq is not None:
+                    C_X, th_dots = eq
+                    pl, fam = self.chem(C_M, C_X)
+                    mu0, mu_mx = pl["mu_MA"], pl["mu_MX"]
             Q = self.k_conv * P_ * C_X
             Nc = np.array([co["N"] for co in cohorts])
             # size law: each dot's m changes by dm/dt at one chemical potential; at fixed mu_MX the monomer level in
@@ -1512,6 +1783,10 @@ class Growth:
             q_inst = Q
             pool_limited = False
             while True:
+                # a dot gives back at most what it holds within the step (the update below clips m at 1e-6): the pool
+                # solve takes the same clipped change, or a dot dissolving faster than 1/dt drives the solve far above
+                # what is actually released
+                r_min = (1e-6 - mc) / dt if dt > 0 else np.full(len(mc), -np.inf)
                 # conversion over the step at the step's MX_q: P -> P e^(-k C_X dt), Q the mean rate
                 kx = self.k_conv * C_X
                 Q = P_ * -math.expm1(-kx * dt) / dt if (q_inst > 0 and dt > 0) else 0.0
@@ -1520,7 +1795,7 @@ class Growth:
                     mu = mu0 + self.kt * (lnC - math.log(C_M))
                     J_, *_ = self.nucleation(mu, mu_mx)
                     if len(cohorts):
-                        rr = self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt)
+                        rr = np.maximum(self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt), r_min)
                         for i, f_ in fr.items():
                             rr[i] = f_(math.exp(lnC))[0]
                         U = float((Nc * rr).sum())
@@ -1542,7 +1817,8 @@ class Growth:
                 m_b = self._m_birth                                                    # units of each new nucleus
                 if k_star is None:                                                     # classical: continuum coverage
                     k_star = self.k_of(m_b, fam)
-                rate = self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt) if len(cohorts) else np.zeros(0)
+                rate = (np.maximum(self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt), r_min)
+                        if len(cohorts) else np.zeros(0))
                 # Z-type coverage on the dots moves toward the Langmuir value of the free MX_q, but only as far as the
                 # MX_q left in solution allows (the dots' surfaces are a reservoir of MX_q too)
                 lam = 1.0
@@ -1575,12 +1851,13 @@ class Growth:
                         if smask[i] and m_new > self.m_top + 1:
                             # shape rule: the size law's growth shared among the facets by their relative speeds,
                             # at the monomer level of the dot's surface (diffusion and reaction resistances in series)
-                            if i not in vs:
+                            if i not in vs and abs(m_new - co["m"]) > 1e-10 * co["m"]:    # frozen: shape_step keeps h
                                 C_now = math.exp(lnC)
                                 c_s = C_now - (C_now - c_eq[i]) * res_d[i] / (res_d[i] + res_r[i])
                                 dmu_s = mu0 - self.gb + self.kt * math.log(max(c_s, 1e-300) / C_M)
-                                vs[i] = self.shape_speeds(co, dmu_s, fam, th_dots)
-                            h_new, area = self.shape_step(co, m_new, vs[i])
+                                vs[i] = (self.facet_speeds(co, C_now, C_M, mu0, res_d[i]) if self.facet_law
+                                         else self.shape_speeds(co, dmu_s, fam, th_dots))
+                            h_new, area = self.shape_step(co, m_new, vs.get(i))
                         else:
                             s = m_new ** (1.0 / 3.0)                                   # shape: Wulff at gamma(C)
                             h_new = {f: h1[f] * s for f in self.F}

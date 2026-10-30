@@ -703,3 +703,138 @@ def test_solubility_from_the_solid_and_mass_balance():
     assert any(r["c_MX_solid"] > 0 for r in res["series"])
     for c in gr.conservation(res):
         assert abs(c["MA"]) < 1e-6 and abs(c["MX"]) < 1e-6
+
+
+ROLES = {"rate_form": "second_order",
+         "envs": {"facet:100": {20: [[8, 0.5, -0.9]], 60: [[20, 0.6, -0.8]]},
+                  "edge:100|111B": {20: [[6, 0.4, -1.2], [2, 0.7, -0.6]], 60: [[12, 0.45, -1.1]]},
+                  "vertex:100+111A+111B": {20: [[4, 0.3, -0.3]], 60: [[4, 0.35, -0.2]]},
+                  "edge:111A|111B": {60: [[3, 0.2, -0.5]]}},
+         "neb": {"facet:100": {"dir": {"no_barrier": True}, "disp": {"dG_P": -0.3, "dG_TS": 0.45}},
+                 "edge:100|111B": {"dir": {"dG_P": -1.3, "dG_TS": 0.5}, "disp": {"dG_P": -0.6, "dG_TS": 0.55}},
+                 "vertex:100+111A+111B": {"dir": {"no_barrier": True}, "disp": {"dG_P": -1.9, "dG_TS": 0.4}}}}
+
+
+def _per_facet(growth_law="shape", **roles):
+    return _params(kinetics={"size_law": "facets", "growth_law": growth_law, "roles": {**copy.deepcopy(ROLES), **roles}})
+
+
+def test_role_environments_follow_the_computed_dots():
+    g = gr.Growth(_thermo(), _per_facet())
+    at = g.role_envs(60)
+    assert sorted((r, n) for r, n, _d, _b in at) == sorted(
+        [("facet:100", 20), ("edge:100|111B", 12), ("vertex:100+111A+111B", 4), ("edge:111A|111B", 3)])
+    # between the sizes: both sizes' environments, weighted linearly in m^(-1/3)
+    t = (20 ** (-1 / 3) - 35 ** (-1 / 3)) / (20 ** (-1 / 3) - 60 ** (-1 / 3))
+    mid = g.role_envs(35)
+    assert math.isclose(sum(n for r, n, *_ in mid if r == "facet:100"), (1 - t) * 8 + t * 20, rel_tol=1e-12)
+    assert math.isclose(sum(n for r, n, *_ in mid if r == "edge:111A|111B"), t * 3, rel_tol=1e-12)
+    # beyond the largest: facets as m^(2/3), edges m^(1/3), vertices fixed
+    big = {r: n for r, n, *_ in g.role_envs(480)}
+    assert math.isclose(big["facet:100"], 20 * 4.0, rel_tol=1e-12)
+    assert math.isclose(big["edge:100|111B"], 12 * 2.0, rel_tol=1e-12)
+    assert big["vertex:100+111A+111B"] == 4
+
+
+def test_per_facet_law_is_the_channel_sum():
+    """dm/dt = n sum_r g_r (C - C_eq,inf e^(Delta mu_r/kT)), g_r = N_r w_rf / (res_d / a_0 + 1/kappa_r), with the role
+    channels by hand: N_r the role's Cd count, Delta mu_r = <dmu>_r + kT ln a_X (plain Cd-weighted mean), kappa_r =
+    (kappa_dir + kappa_disp <K_e>_r a_X) / (1 + K_eff,f a_X)."""
+    g = gr.Growth(_thermo(), _per_facet())
+    g._arrays()
+    C_M, C_X = 1e-3, 0.05
+    pl, fam = g.chem(C_M, C_X)
+    th = {f: fam[f]["theta"] for f in g.F}
+    h = {"100": 8.0, "111A": 9.0, "111B": 10.0, "110": 50.0}
+    h = {f: x * (35 * g.Om / g.shape(h)[1]) ** (1 / 3) for f, x in h.items()}        # a dot of 35 units
+    m, k, area, _s = g.dot(h, fam)
+    co = {"m": m, "k": k, "h": h, "area": area}
+    A, r, dmu, thb = g.size_state([co], fam, th)
+    res_d, _ = g.resistances(A, r, thb)
+    kt, n1, ax = g.kt, 6.02214076e-4, pl["a_MX_free"]
+    envs = g.role_envs(m)
+    a0 = A[0] / sum(e[1] for e in envs)
+    coll = a0 * g._speed(191.385)
+
+    def kap(q):
+        return coll if q.get("no_barrier") else min((kt / 4.135667696e-15) * math.exp(-q["dG_TS"] / kt) / n1, coll)
+    num, den = {}, {}
+    for role, n, _d, b in envs:
+        for f, w in gr.Growth.role_facets(role).items():
+            num[f] = num.get(f, 0.0) + w * n * math.exp(-b / kt)
+            den[f] = den.get(f, 0.0) + w * n
+    per = {}
+    for role, n, d, b in envs:
+        per.setdefault(role, []).append((n, d, math.exp(-b / kt)))
+    C, want = 2e-3, 0.0
+    for role, rows in per.items():
+        if role not in ROLES["neb"]:
+            continue                                          # no NEB: no channel
+        q = ROLES["neb"][role]
+        n = sum(x[0] for x in rows)
+        d = sum(x[0] * x[1] for x in rows) / n
+        K = sum(x[0] * x[2] for x in rows) / n
+        for f, w in gr.Growth.role_facets(role).items():
+            kk = (kap(q["dir"]) + kap(q["disp"]) * K * ax) / (1 + num[f] / den[f] * ax)
+            ceq = C_M * math.exp((g.gb + d + kt * math.log(ax) - pl["mu_MA"]) / kt)
+            want += n1 * w * n / (res_d[0] / a0 + 1 / kk) * (C - ceq)
+    c_eq = C_M * np.exp((g.gb + dmu - pl["mu_MA"]) / kt)
+    assert math.isclose(g.size_rates(A, r, c_eq, thb, C)[0], want, rel_tol=1e-9)
+    assert "edge:111A|111B: no NEB, no channel" in g.role_flags
+
+
+def test_role_channel_takes_the_plain_mean_delta_mu():
+    """One channel per role and facet; Delta mu_r is the Cd-weighted mean of the role's environments, not a Boltzmann
+    mean (edge:100|111B at size 20: 6 Cd at 0.4 and 2 at 0.7 -> 0.475)."""
+    g = gr.Growth(_thermo(), _per_facet())
+    pl = dict(g.chem(1e-3, 0.05)[0], a_MX_free=1.0)
+    ch = g.role_channels(20, 1000.0, pl)
+    i = [j for j, r in enumerate(ch["role"]) if r == "edge:100|111B"]
+    assert len(i) == 2 and sorted(ch["f"][j] for j in i) == ["100", "111B"]
+    assert ch["N"][i].sum() == pytest.approx(8.0)
+    assert ch["dmu"][i] == pytest.approx(0.475 + g.th["dG_solv_mx"])
+
+
+def test_displacement_keeps_a_capped_site_open():
+    """At high a_X the empty sites close (1 / (1 + K_eff a_X)), but the displacement route keeps kappa finite."""
+    g = gr.Growth(_thermo(), _per_facet())
+    pl = dict(g.chem(1e-3, 0.05)[0])
+
+    def kappa(ax, disp=True):
+        p = dict(pl, a_MX_free=ax)
+        if not disp:
+            g.P["kinetics"]["roles"]["neb"]["edge:100|111B"]["disp"] = {"dG_P": 0.0, "dG_TS": 50.0}
+        ch = g.role_channels(60, 3000.0, p)
+        return ch["kappa"][[i for i, f in enumerate(ch["f"]) if f == "111B"][0]]
+    hi, lo = kappa(1e3), kappa(1e2)
+    assert hi / lo == pytest.approx(1.0, rel=1e-3)
+    assert kappa(1e3, disp=False) < 1e-6 * hi
+
+
+def test_per_facet_law_runs_and_conserves():
+    for law in ("size", "shape"):
+        P = _per_facet(growth_law=law)
+        P["conditions"]["t_end"] = 5.0
+        res = gr.Growth(_thermo(), P).run()
+        assert res["series"][-1]["N_dots"] > 0
+        for c in gr.conservation(res):
+            assert abs(c["MA"]) < 1e-9 and abs(c["MX"]) < 1e-9
+
+
+def test_per_facet_law_needs_a_rate_form():
+    P = _per_facet(rate_form=None)
+    g = gr.Growth(_thermo(), P)
+    with pytest.raises(ValueError, match="rate_form"):
+        g.role_kappa(g.chem(1e-3, 0.05)[0], 10.0)
+
+
+def test_template_roles_are_the_computed_dots():
+    import yaml
+    from importlib import resources
+    P = yaml.safe_load(resources.files("qd_workflows").joinpath("templates/growth/cdse_zb.yaml").read_text())
+    R = P["kinetics"]["roles"]
+    assert R["rate_form"] is None and "size_law" not in P["kinetics"]         # a choice still open: off by default
+    assert {int(s) for r in R["envs"].values() for s in r} == {13, 45, 127, 279, 441}
+    assert set(R["neb"]) <= set(R["envs"])
+    fams = set(P["families"])
+    assert all(set(gr.Growth.role_facets(r)) <= fams for r in R["envs"])

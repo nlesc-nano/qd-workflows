@@ -50,6 +50,110 @@ kinetics:
     A_disp_A2: 42.6
     m_complex_amu: 374.7
     m_mx_amu: 183.3
+  roles:
+    T_K: 500
+    rate_form: null
+    envs:
+      edge:100|111A:
+        13:
+        - [12, 1.6873, -0.9672]
+        127:
+        - [12, 0.9261, -0.1013]
+        279:
+        - [11, 0.5607, -0.1395]
+        - [10, 0.9812, -0.0698]
+        - [3, 1.2007, -0.4379]
+        441:
+        - [16, 0.8525, -0.4103]
+        - [14, 0.8311, -0.1197]
+        - [6, 0.8502, -0.5422]
+      edge:100|111B:
+        45:
+        - [12, 0.6678, -0.3228]
+        127:
+        - [20, 1.3993, -1.3097]
+        - [4, 1.3492, -0.6236]
+        279:
+        - [22, 1.3679, -1.2236]
+        - [14, 1.4496, -0.7424]
+        441:
+        - [16, 1.618, -0.5158]
+        - [8, 1.7276, -1.6741]
+      facet:111A:
+        45:
+        - [4, 0.662, -0.1496]
+        127:
+        - [12, 0.6121, -0.2001]
+        279:
+        - [11, 0.5038, -0.2059]
+        - [7, 0.1968, 0.212]
+        - [4, 0.545, -0.0429]
+        - [1, 0.5792, 0.1375]
+        441:
+        - [22, 0.9755, -0.2438]
+        - [16, 0.9105, -0.5633]
+        - [16, 0.8745, -0.3618]
+        - [10, 0.7891, -0.2088]
+        - [7, 0.8127, -0.4337]
+        - [1, 1.0908, -0.4638]
+      vertex:100+111A+111B:
+        45:
+        - [14, 1.0307, -0.0766]
+        - [3, 0.8841, -0.1068]
+        - [3, 1.0859, -0.2232]
+        - [2, 1.2748, -1.0645]
+        - [1, 1.0964, -1.0417]
+        - [1, 1.4463, -1.3314]
+        127:
+        - [12, 1.0574, -0.3706]
+        - [12, 0.8682, -0.2749]
+        279:
+        - [15, 0.7225, -0.0625]
+        - [9, 0.8908, -0.2865]
+        441:
+        - [10, 0.9559, -0.2556]
+        - [9, 1.7408, -0.941]
+        - [3, 0.7177, -0.672]
+        - [2, 1.1077, -0.7431]
+      facet:100:
+        127:
+        - [12, 1.4017, -1.0537]
+        279:
+        - [36, 1.5271, -0.9511]
+        441:
+        - [36, 1.5806, -0.8862]
+      facet:111B:
+        127:
+        - [8, 1.6536, -2.0696]
+        279:
+        - [13, 0.9693, -1.8559]
+        441:
+        - [19, 1.2835, -1.753]
+        - [2, 0.3858, -0.799]
+      edge:111A|111B:
+        441:
+        - [6, 1.4605, -1.1788]
+        - [5, 1.328, -0.8588]
+        - [1, 1.2319, -0.5091]
+    neb:
+      edge:100|111B:
+        dir: {dG_P: -1.2649, dG_TS: -0.766}
+        disp: {dG_P: -0.609, dG_TS: 0.01}
+      edge:100|111A:
+        dir: {no_barrier: true}
+        disp: {dG_P: -0.9789, dG_TS: -0.2587}
+      facet:100:
+        dir: {no_barrier: true}
+        disp: {dG_P: -0.2849, dG_TS: -0.045}
+      facet:111A:
+        dir: {no_barrier: true}
+        disp: {no_barrier: true}
+      facet:111B:
+        dir: {no_barrier: true}
+        disp: {dG_P: -0.4198, dG_TS: 0.1111}
+      vertex:100+111A+111B:
+        dir: {no_barrier: true}
+        disp: {dG_P: -1.8972, dG_TS: -0.8847}
 families:
   '100':
     gamma0: 15.6
@@ -180,7 +284,15 @@ provenance:
     a = 6.216 A; CdCl2-capped clusters vs bulk within 0.02 eV per CdSe, the pool complex CdSe.CdCl2 0.11 eV higher in CP2K
     (single points at MACE geometries). g_bulk and omega_E_cm1 above are used only without this table.'
   facets: 'k_f: single-unit NEB + Hessians on builder dots (500 K, geometric mean of the sites, collision-capped);
-    island_beta_eV: island ladders N = 1-9 with CdCl2 released to the pool (facet_kinetics, island_release)' 
+    island_beta_eV: island ladders N = 1-9 with CdCl2 released to the pool (facet_kinetics, island_release)'
+  roles: 'per-facet size law (kinetics.size_law: facets, off by default; 2026-10-30), computed values only. envs: per
+    builder role and computed dot (m = 13 Cd16Se13Cl6 grid hand-off, 45 Cd68Se45Cl46, 127/279/441 the half-swap 2.0/2.5/3.0
+    dots), each environment [n Cd, Delta mu (eV, a_X = 1, Delta k = -1, = G(M) - G(ref) + G_CdCl2(1 M) - g_bulk), CdCl2
+    binding dG_bind_X (eV, 1 M)]; MACE-MH-1 omat_pbe, relaxed context + PHVA, 500 K (role_table_1to3.json: job 23283088
+    for 1.0/1.5, the site-state runs for 2.0-3.0). neb: bare-CdSe NEB on the 2.5 dot, one site per role (largest
+    environment), dG_P / dG_TS against free CdSe at 1 M; no_barrier = collision-limited; edge 100|111B converged climbing
+    images, the others +-0.1 eV. Not covered by a NEB: edge 111A|111B (3.0 only): no channel. rate_form: not set (the
+    velocity form is a choice: second_order or first_order)'
 solvation:
   eps: 2.0
   vdw_scale: 1.4
@@ -222,8 +334,12 @@ units:
   gamma_eff: meV/A^2 (from the dots' layer additions, MX_q at 1 M)
   Gamma_eff: MX_q per nm^2 (excess of the layer additions; gamma = gamma_eff - Gamma_eff kT ln c)
   perimeter_per_area_ref: 1/A (the reference dot's facet perimeter over area)
-  D: cm^2/s
-  x_X: X-type MX_q per surface site (electron counting)
+  size_law: '"facets": dm/dt = n sum_r g_r (C - C_eq,inf e^(Delta mu_r/kT)), g_r = N_r w_rf / (delta/D / a_0 + 1/kappa_r),
+    channels r = builder roles on each facet f (w_rf 1, 1/2, 1/3), Delta mu_r the Cd-weighted mean over the role''s
+    environments; else the one-flux size law'
+  roles: 'envs per role and m: [n Cd, Delta mu eV at a_X = 1, dG_bind_X eV at 1 M]; neb per role: dir and disp routes,
+    dG_P and dG_TS eV against the bare CdSe at 1 M or no_barrier, applied to every arriving monomer; rate_form second_order (TS against 1 M) or first_order
+    (saturating precursor), required with size_law facets'
   site_area: A^2
   J0: M/s
   attach_barrier_eV: eV

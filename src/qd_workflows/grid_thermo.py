@@ -270,6 +270,8 @@ def pool(th, c_ma, avail, k_l=0.0, c_l=0.0, c0=1.0, bare=False, gamma_ma=1.0, ga
     else:
         for _ in range(200):
             mid = 0.5 * (lo + hi)
+            if not lo < mid < hi:                       # converged to double precision (~60 halvings)
+                break
             lo, hi = (mid, hi) if excess(mid) < 0 else (lo, mid)
         c_mx_free = float(np.exp(0.5 * (lo + hi)))
     mu_mx = g_mx + kt * (np.log(c_mx_free / c0) + lg_mx)
