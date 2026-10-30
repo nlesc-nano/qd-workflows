@@ -833,7 +833,8 @@ def test_template_roles_are_the_computed_dots():
     from importlib import resources
     P = yaml.safe_load(resources.files("qd_workflows").joinpath("templates/growth/cdse_zb.yaml").read_text())
     R = P["kinetics"]["roles"]
-    assert R["rate_form"] is None and "size_law" not in P["kinetics"]         # a choice still open: off by default
+    # the per-role block stays as the computed data; the template's law is the facet-area one built from it
+    assert R["rate_form"] is None and P["kinetics"]["size_law"] == "facet_area"
     assert {int(s) for r in R["envs"].values() for s in r} == {13, 45, 127, 279, 441}
     assert set(R["neb"]) <= set(R["envs"])
     fams = set(P["families"])
