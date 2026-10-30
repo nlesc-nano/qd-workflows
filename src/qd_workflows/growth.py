@@ -1061,9 +1061,20 @@ class Growth:
         h, target = co["h"], m_new * self.Om
 
         def keep():
-            _a, vol, _s = self.shape(h)
-            s = (target / vol) ** (1.0 / 3.0)
-            return {f: h[f] * s for f in h}
+            # the exposed planes scaled together to the new volume, hidden planes held (a dot that grows past one
+            # brings that facet out)
+            area0 = self.shape(h)[0]
+            exp_ = [f for f in h if area0[f] > 0.0]
+
+            def vol_at(x):
+                return self.shape({f: (h[f] * x if f in exp_ else h[f]) for f in h})[1] - target
+            lo, hi = 0.5, 2.0
+            while vol_at(lo) > 0 and lo > 1e-3:
+                lo *= 0.5
+            while vol_at(hi) < 0 and hi < 1e3:
+                hi *= 2.0
+            x = brentq(vol_at, lo, hi, xtol=1e-12)
+            return {f: (h[f] * x if f in exp_ else h[f]) for f in h}
 
         if abs(m_new - co["m"]) <= 1e-12 * max(co["m"], 1.0):
             return dict(h)

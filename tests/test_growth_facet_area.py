@@ -79,7 +79,7 @@ def test_facet_rate_is_bounded_and_coverage_below_one():
 
 
 def test_mass_is_conserved_and_no_gamma_is_read():
-    P = _fa_params(nucleation={"J0": 1e-4})
+    P = _fa_params(nucleation={"J0": 1e-4}, conditions={"t_end": 5.0, "n_out": 6})
     for p in P["families"].values():                        # the facet-area law must not need these
         for k in ("gamma0", "eps0", "Gamma_max", "w"):
             p[k] = float("nan")
