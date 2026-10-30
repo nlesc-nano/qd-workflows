@@ -1073,6 +1073,10 @@ class Growth:
                 lo *= 0.5
             while vol_at(hi) < 0 and hi < 1e3:
                 hi *= 2.0
+            if not (vol_at(lo) <= 0.0 <= vol_at(hi)):      # a dot (nearly) gone within the step: plain scaling
+                _a, vol, _s = self.shape(h)
+                sc = (max(target, 1e-12) / vol) ** (1.0 / 3.0)
+                return {f: h[f] * sc for f in h}
             x = brentq(vol_at, lo, hi, xtol=1e-12)
             return {f: (h[f] * x if f in exp_ else h[f]) for f in h}
 
@@ -1117,6 +1121,60 @@ class Growth:
             if len(mu) == 2:
                 out[i] = (mu[1] - mu[0]) / (0.02 * max(co["m"], 1e-12))
         return out
+
+    def _fa_implicit_setup(self, cohorts, A, r, th_bar, C_M: float, mu0: float) -> list:
+        """The step's frozen facet terms of each dot for the backward-Euler size update (facet-area law): per facet
+        w_f = n A_f / (res_d + 1/k_eff^(f)) (dm/dt per M at the step's areas), the step's speciation in
+        C_eq,f(m) = pre e^(<Delta mu_e>_T(m)/kT), pre = C_M e^((g_bulk + dG_solv(CdCl2) + kT ln a_X - mu)/kT), and the
+        terrace tables; the areas scale as (m/m_0)^(2/3) within the step."""
+        res_d, _rr = self.resistances(A, r, th_bar)
+        kt, n = self.kt, 6.02214076e-4
+        lnax = math.log(max(float(self._pl["a_MX_free"]), 1e-300))
+        pre = C_M * math.exp(min((self.gb + self.th["dG_solv_mx"] + kt * lnax - mu0) / kt, 700.0))
+        tabs = []
+        for f in FA_FAMILIES:
+            t = sorted((int(k), float(v)) for k, v in self._fa()["facets"][f]["dmu_eV"].items())
+            x = np.array([m ** (-1.0 / 3.0) for m, _v in t])[::-1]            # ascending in m^(-1/3)
+            tabs.append((x, np.array([v for _m, v in t])[::-1]))
+        out = []
+        for i, co in enumerate(cohorts):
+            ch = co["_ch"]
+            w = n * ch["N"] / (float(res_d[i]) + 1.0 / np.maximum(ch["kappa"], 1e-300))
+            out.append({"m0": float(co["m"]), "w": w, "pre": pre, "tabs": tabs})
+        return out
+
+    def _fa_ceq(self, d: dict, m: float) -> np.ndarray:
+        x = max(m, 1e-12) ** (-1.0 / 3.0)
+        dmu = np.array([np.interp(x, xs, vs) for xs, vs in d["tabs"]])           # held outside the computed sizes
+        return d["pre"] * np.exp(np.minimum(dmu / self.kt, 700.0))
+
+    def _fa_m_new(self, d: dict, C: float, dt: float) -> float:
+        """Backward Euler of one dot's size: m' = m + dt R(C, m'), R = sum_f w_f (m'/m)^(2/3) (C - C_eq,f(m')); the
+        root nearest the start size (bracketed outward from it; R vanishes as m' -> 0, so a dissolving dot always
+        has one, and a growing one too since m' outgrows m'^(2/3))."""
+        m0, w = d["m0"], d["w"]
+
+        def F(m):
+            return m - m0 - dt * float((w * (m / m0) ** (2.0 / 3.0) * (C - self._fa_ceq(d, m))).sum())
+        f0 = F(m0)
+        if f0 == 0.0 or dt <= 0.0:
+            return m0
+        if f0 < 0.0:                                                                    # grows
+            lo, hi = m0, m0 * 1.5
+            for _ in range(200):
+                if F(hi) >= 0.0:
+                    break
+                lo, hi = hi, hi * 2.0
+        else:                                                                           # dissolves
+            lo, hi = m0 / 1.5, m0
+            for _ in range(200):
+                if lo <= 1e-6 or F(lo) <= 0.0:
+                    break
+                hi, lo = lo, lo / 2.0
+            lo = max(lo, 1e-6)
+            if F(lo) > 0.0:
+                return 1e-6
+        return brentq(F, lo, hi, xtol=1e-9 * m0, rtol=1e-12)
 
     FA_TAIL = 500                                       # the nucleation chain past the grid's top, in units
 
@@ -2036,6 +2094,10 @@ class Growth:
                 sigma_now = sum(gam_now[f] * area1[f] for f in self.F)                # continuum: (2/3) sigma m^(-1/3)
             with np.errstate(over="ignore", divide="ignore"):
                 g_, d_ = rate0 > 0, rate0 < 0
+                if self.facet_area:
+                    # facet-area law: the sizes are backward Euler with the pool (_fa_m_new): no explicit size limit
+                    g_[:] = False
+                    d_[:] = False
                 if mg is not None and grid_dots:
                     # a grid-size dot that meets its own equilibrium within the allowed change stops there exactly
                     # (_stop_at_equilibrium): it does not limit the step
@@ -2107,10 +2169,17 @@ class Growth:
                 kx = self.k_conv * C_X
                 Q = P_ * -math.expm1(-kx * dt) / dt if (q_inst > 0 and dt > 0) else 0.0
 
+                imp = (self._fa_implicit_setup(cohorts, Ac, rc, th_bar, C_M, mu0)
+                       if (self.facet_area and len(cohorts)) else None)
+
                 def balance(lnC):
                     mu = mu0 + self.kt * (lnC - math.log(C_M))
                     J_, *_ = self.nucleation(mu, mu_mx)
-                    if len(cohorts):
+                    if imp is not None:
+                        C_ = math.exp(lnC)
+                        U = float(sum(co["N"] * (self._fa_m_new(d, C_, dt) - d["m0"])
+                                      for co, d in zip(cohorts, imp))) / dt
+                    elif len(cohorts):
                         rr = np.maximum(self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt), r_min)
                         for i, f_ in fr.items():
                             rr[i] = f_(math.exp(lnC))[0]
@@ -2133,8 +2202,13 @@ class Growth:
                 m_b = self._m_birth                                                    # units of each new nucleus
                 if k_star is None:                                                     # classical: continuum coverage
                     k_star = self.k_of(m_b, fam)
-                rate = (np.maximum(self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt), r_min)
-                        if len(cohorts) else np.zeros(0))
+                if imp is not None:
+                    C_ = math.exp(lnC)
+                    m_imp = np.array([self._fa_m_new(d, C_, dt) for d in imp])
+                    rate = (m_imp - mc) / dt
+                else:
+                    rate = (np.maximum(self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt), r_min)
+                            if len(cohorts) else np.zeros(0))
                 # Z-type coverage on the dots moves toward the Langmuir value of the free MX_q, but only as far as the
                 # MX_q left in solution allows (the dots' surfaces are a reservoir of MX_q too)
                 lam = 1.0
@@ -2151,7 +2225,12 @@ class Growth:
                             # built on the fly (or the model's polyhedron), k = sum_f A_f rho_f theta_f
                             m_new = max(co["m"] + rate[i] * dt, 1e-6)
                             if i not in vs:
-                                vs[i] = self.facet_speeds(co, math.exp(lnC), C_M, mu0, res_d[i])
+                                # each exposed plane at Omega_m j_f with the implicit fluxes j_f(C, m'), per area
+                                d = imp[i]
+                                cq = self._fa_ceq(d, m_new)
+                                A0 = co["_ch"]["N"]
+                                jf = np.where(A0 > 0, d["w"] / np.maximum(A0, 1e-300) * (math.exp(lnC) - cq), 0.0)
+                                vs[i] = {f: self.Om * float(jf[q]) for q, f in enumerate(FA_FAMILIES)}
                             h_new = self._fa_step(co, m_new, vs[i])
                             area, edges, built = self.geometry(h_new, m_new)
                             k_new = sum(k_area[f] * area[f] for f in self.F)

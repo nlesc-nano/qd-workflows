@@ -37,3 +37,45 @@ def run(out: Path, log=print) -> Path:
                                                              f"TS {v['dG_TS_1M']:+.2f} eV vs 1 M")
                 log(f"{size} {role:26s} {k:6s} P {v['dG_P_1M']:+.2f} eV vs 1 M; {txt}")
     return p
+
+
+def roles_block(kinetics_inputs: dict, m_of_size: dict) -> dict:
+    """The growth template's per-role block (kinetics.roles) from kinetics_inputs.json: envs {role: {m: [[n, dmu,
+    bind], ...]}} (environments with a whole unit) and neb {role: {dir, disp}} with dG_TS/dG_P against 1 M or
+    no_barrier, from the NEB size (one size per role). m_of_size: recipe size ("2.5") -> CdSe units of that dot."""
+    rt = kinetics_inputs["role_table"]
+    envs = {}
+    for size, roles in rt["sizes"].items():
+        m = int(m_of_size[size])
+        for role, v in roles.items():
+            if v.get("envs"):
+                envs.setdefault(role, {})[m] = [[e["n"], round(float(e["dmu"]), 4), round(float(e["bind"]), 4)]
+                                                for e in v["envs"]]
+    neb = {}
+    for _size, roles in (kinetics_inputs.get("neb") or {}).items():
+        for role, d in roles.items():
+            q = {}
+            for kind in ("dir", "disp"):
+                r = d.get(f"k_{kind}")
+                if r is None:
+                    continue
+                q[kind] = ({"no_barrier": True} if r.get("no_barrier")
+                           else {"dG_P": round(float(r["dG_P_1M"]), 4), "dG_TS": round(float(r["dG_TS_1M"]), 4)})
+            if q:
+                neb[role] = q
+    return {"T_K": kinetics_inputs.get("T_K"), "rate_form": None, "envs": envs, "neb": neb}
+
+
+def facet_area_block(out: Path, start_h: dict, builder: dict, rate_form: str = "first_order") -> dict:
+    """kinetics.facet_area for the growth template from a qdw sites run: kinetics_inputs.json, with m of each size
+    from dots/<tag>.json (the anion count of the dot the sites were computed on), via growth.facet_area_from_roles
+    (terrace binding pooled over sizes, terrace Delta mu per size, facet and edge NEBs)."""
+    from ..growth import facet_area_from_roles
+    out = Path(out)
+    ki = json.loads((out / "kinetics_inputs.json").read_text())
+    anion = builder.get("anion", "Se")
+    m_of = {}
+    for size in ki["role_table"]["sizes"]:
+        d = json.loads((out / "dots" / f"{size.replace('.', 'p')}.json").read_text())
+        m_of[size] = int(d["composition"].get(anion, 0))
+    return facet_area_from_roles(roles_block(ki, m_of), start_h, builder, rate_form)
