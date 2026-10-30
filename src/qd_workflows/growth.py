@@ -452,7 +452,7 @@ class Growth:
             binds = [p] if "dG_bind" in p else []
             binds += list(p.get("sites", {}).values())
             g_key = "gamma_eff" if ("sites" in p and "gamma_eff" in p) else "gamma0"
-            if eps > 1.0:
+            if eps > 1.0 and not (self.facet_area and self._fa().get("inputs", "gas") == "solvated"):
                 for q in binds:
                     q["dG_bind"] = float(q["dG_bind"]) - self.th["dG_solv_mx"]
                 p[g_key] = float(p[g_key]) + 1000.0 * self.solv_area
@@ -928,6 +928,17 @@ class Growth:
     def _fa(self) -> dict:
         return self.P["kinetics"]["facet_area"]
 
+    def _fa_solvated(self) -> bool:
+        """facet_area.inputs = "solvated": the binding, Delta mu and NEB free energies already carry the solvation
+        (the free species' COSMO and the dot side), so the law adds none of its own."""
+        return self.facet_area and self._fa().get("inputs", "gas") == "solvated"
+
+    def _fa_dsx(self) -> float:
+        return 0.0 if self._fa_solvated() else float(self.th["dG_solv_mx"])
+
+    def _fa_ds1(self) -> float:
+        return 0.0 if self._fa_solvated() else float(self.dg_solv_ma)
+
     def fa_site_area(self, f: str) -> float:
         """Area per terrace Cd (A^2), from the lattice: a^2/2 on {100}, sqrt(3) a^2/4 on {111} (a^3 = 4 Omega_m)."""
         a = (4.0 * self.Om) ** (1.0 / 3.0)
@@ -997,7 +1008,7 @@ class Growth:
         v1 = self._speed(191.385)
         if q.get("no_barrier"):
             return v1
-        kt, ds1 = self.kt, self.dg_solv_ma
+        kt, ds1 = self.kt, self._fa_ds1()
         k = (kt / 4.135667696e-15) * math.exp(-min((float(q["dG_TS"]) - ds1) / kt, 700.0)) / 6.02214076e-4
         if self._fa().get("rate_form", "first_order") == "first_order":
             k /= 1.0 + math.exp(min(-(float(q["dG_P"]) - ds1) / kt, 700.0)) * a1
@@ -1019,7 +1030,7 @@ class Growth:
         if A_f <= 0.0:
             return kterr
         lam = (4.0 * self.Om) ** (1.0 / 3.0) / math.sqrt(2.0)
-        dsx = self.th["dG_solv_mx"]
+        dsx = self._fa_dsx()
         num = den = 0.0
         for e, q in (B.get("edges") or {}).items():
             L = float(edges.get(e, 0.0))
@@ -1041,7 +1052,7 @@ class Growth:
         pl, kt = self._pl, self.kt
         ax = float(pl["a_MX_free"])
         a1 = math.exp(min((pl["mu_MA"] - self.th["g_n"][0]) / kt, 700.0))
-        dsx, lnax = self.th["dG_solv_mx"], math.log(max(ax, 1e-300))
+        dsx, lnax = self._fa_dsx(), math.log(max(ax, 1e-300))
         area, edges = co["area"], co.get("edges") or {}
         ch = {"role": [], "f": [], "N": [], "dmu": [], "kappa": [], "a0": 1.0}
         for f in FA_FAMILIES:
@@ -1130,12 +1141,12 @@ class Growth:
         res_d, _rr = self.resistances(A, r, th_bar)
         kt, n = self.kt, 6.02214076e-4
         lnax = math.log(max(float(self._pl["a_MX_free"]), 1e-300))
-        pre = C_M * math.exp(min((self.gb + self.th["dG_solv_mx"] + kt * lnax - mu0) / kt, 700.0))
+        pre = C_M * math.exp(min((self.gb + self._fa_dsx() + kt * lnax - mu0) / kt, 700.0))
         tabs = []
         for f in FA_FAMILIES:
             t = sorted((int(k), float(v)) for k, v in self._fa()["facets"][f]["dmu_eV"].items())
             x = np.array([m ** (-1.0 / 3.0) for m, _v in t])[::-1]            # ascending in m^(-1/3)
-            tabs.append((x, np.array([v for _m, v in t])[::-1]))
+            tabs.append((x.tolist(), [v for _m, v in t][::-1]))
         out = []
         for i, co in enumerate(cohorts):
             ch = co["_ch"]
@@ -1144,18 +1155,35 @@ class Growth:
         return out
 
     def _fa_ceq(self, d: dict, m: float) -> np.ndarray:
+        return np.array(self._fa_ceq_list(d, m))
+
+    def _fa_ceq_list(self, d: dict, m: float) -> list:
+        """C_eq,f(m) of the facets, scalar: <Delta mu_e>_T linear in m^(-1/3) between the computed sizes, held outside."""
         x = max(m, 1e-12) ** (-1.0 / 3.0)
-        dmu = np.array([np.interp(x, xs, vs) for xs, vs in d["tabs"]])           # held outside the computed sizes
-        return d["pre"] * np.exp(np.minimum(dmu / self.kt, 700.0))
+        out = []
+        for xs, vs in d["tabs"]:
+            if x <= xs[0]:
+                v = vs[0]
+            elif x >= xs[-1]:
+                v = vs[-1]
+            else:
+                j = 1
+                while xs[j] < x:
+                    j += 1
+                v = vs[j - 1] + (vs[j] - vs[j - 1]) * (x - xs[j - 1]) / (xs[j] - xs[j - 1])
+            out.append(d["pre"] * math.exp(min(v / self.kt, 700.0)))
+        return out
 
     def _fa_m_new(self, d: dict, C: float, dt: float) -> float:
         """Backward Euler of one dot's size: m' = m + dt R(C, m'), R = sum_f w_f (m'/m)^(2/3) (C - C_eq,f(m')); the
         root nearest the start size (bracketed outward from it; R vanishes as m' -> 0, so a dissolving dot always
         has one, and a growing one too since m' outgrows m'^(2/3))."""
-        m0, w = d["m0"], d["w"]
+        m0 = d["m0"]
+        w = [float(x) for x in d["w"]]
 
         def F(m):
-            return m - m0 - dt * float((w * (m / m0) ** (2.0 / 3.0) * (C - self._fa_ceq(d, m))).sum())
+            s_ = (m / m0) ** (2.0 / 3.0)
+            return m - m0 - dt * s_ * sum(wf * (C - cf) for wf, cf in zip(w, self._fa_ceq_list(d, m)))
         f0 = F(m0)
         if f0 == 0.0 or dt <= 0.0:
             return m0
@@ -1174,7 +1202,280 @@ class Growth:
             lo = max(lo, 1e-6)
             if F(lo) > 0.0:
                 return 1e-6
-        return brentq(F, lo, hi, xtol=1e-9 * m0, rtol=1e-12)
+        return brentq(F, lo, hi, xtol=1e-8 * m0, rtol=1e-9)
+
+    def _fa_m_new_all(self, m0: np.ndarray, W: np.ndarray, tabs: list, pre: float, C: float, dt: float) -> np.ndarray:
+        """Backward Euler of every dot's size at once (vectorised _fa_m_new): the root of
+        F(m) = m - m_0 - dt (m/m_0)^(2/3) sum_f W_f (C - pre e^(<Delta mu_e>_T,f(m)/kT)) nearest m_0, by bisection in
+        ln m on a bracket expanded outward from m_0 (up for a growing dot, down to 1e-6 for a dissolving one)."""
+        kt = self.kt
+
+        def Fv(m):
+            x = np.maximum(m, 1e-12) ** (-1.0 / 3.0)
+            tot = np.zeros_like(m)
+            for q, (xs, vs) in enumerate(tabs):
+                dmu = np.interp(x, xs, vs)                               # held outside the computed sizes
+                tot += W[:, q] * (C - pre * np.exp(np.minimum(dmu / kt, 700.0)))
+            return m - m0 - dt * (m / m0) ** (2.0 / 3.0) * tot
+
+        f0 = Fv(m0)
+        grow = f0 < 0.0
+        lo, hi = np.where(grow, m0, m0 / 1.5), np.where(grow, m0 * 1.5, m0)
+        for _ in range(200):                                             # expand the brackets
+            flo, fhi = Fv(lo), Fv(hi)
+            need_hi = grow & (fhi < 0.0)
+            need_lo = (~grow) & (flo > 0.0) & (lo > 1e-6)
+            if not (need_hi.any() or need_lo.any()):
+                break
+            lo, hi = (np.where(need_hi, hi, np.where(need_lo, np.maximum(lo / 2.0, 1e-6), lo)),
+                      np.where(need_hi, hi * 2.0, np.where(need_lo, lo, hi)))
+        gone = (~grow) & (Fv(lo) > 0.0)                                  # dissolves within the step
+        a, b = np.log(np.maximum(lo, 1e-6)), np.log(hi)
+        for _ in range(42):                                              # bisection in ln m (to ~1e-12 in ln m)
+            mid = 0.5 * (a + b)
+            neg = Fv(np.exp(mid)) < 0.0
+            a, b = np.where(neg, mid, a), np.where(neg, b, mid)
+        out = np.exp(0.5 * (a + b))
+        out = np.where(f0 == 0.0, m0, out)
+        return np.where(gone, 1e-6, out)
+
+    def _fa_solve_step(self, cohorts, A, r, th_bar, C_M: float, C_X: float, mu0: float, dt: float, Q: float):
+        """One backward-Euler step of the facet-area law, implicit in both pools: (C_M', C_X') such that
+            C_M' = C_M + dt (Q - m_b J') - sum_c N_c (m_c' - m_c),   C_X' = C_X - dt (Q + k* J') - sum_c N_c (k_c' - k_c),
+        every dot's m' from its own backward Euler at the end-of-step pool (mu_MA', a_X': the speciation of
+        (C_M', C_X')), k' = sum_f rho_f theta_f(a_X') A_f (m'/m)^(2/3), J' the nucleation at that pool. Newton in
+        (ln C_M', ln C_X'). The CdSe and the MX_q a dot takes are coupled through the packages' speciation (a dot
+        whose facets are covered takes both about 1:1), which an explicit MX_q update turns into an oscillation.
+        Returns None when the solve fails (the step is halved)."""
+        fz = self._fa_implicit_setup(cohorts, A, r, th_bar, C_M, mu0)
+        kt, dsx = self.kt, self._fa_dsx()
+        # nucleation at the step's start pool (explicit): the birth size is discrete in mu, which would make the
+        # residual jump; the step's pool check bounds how far the pool may move
+        J, barrier, k_star, _pm = self.nucleation(mu0, float(self._pl["mu_MX"]))
+        m_b = self._m_birth
+        if k_star is None:
+            k_star = self.k_of(m_b, {f: {"theta": facet_state(self.F[f], float(self._pl["a_MX_free"]), kt)["theta"],
+                                         "Gamma_max": 1.0 / self.fa_site_area(f)} for f in FA_FAMILIES})
+        sa = {f: self.fa_site_area(f) for f in FA_FAMILIES}
+        Ns = np.array([co["N"] for co in cohorts])
+        m0 = np.array([co["m"] for co in cohorts])
+        k0 = np.array([co["k"] for co in cohorts])
+        Wm = np.array([d["w"] for d in fz])
+        tabs = [(np.asarray(xs), np.asarray(vs)) for xs, vs in fz[0]["tabs"]] if fz else []
+        area_sa = np.array([[co["area"].get(f, 0.0) / sa[f] for f in FA_FAMILIES] for co in cohorts])
+
+        # the pool in its own variables (mu_MA, ln c_MX,free): the totals C_M and C_X are smooth sums over the
+        # MA(MX_q)_n complexes there, while (mu, a_X) of given totals is singular near the titration point C_X ~ <n> C_M
+        # (nearly all MX_q held by the complexes: a 0.1 % change in C_M moves ln a_X by ~20)
+        from .grid_thermo import _speciation
+        cond = self.P["conditions"]
+        lg_ma = math.log(float(cond.get("gamma_MA", 1.0)))
+        g_ma_ = float(cond.get("gamma_MX", 1.0))
+        g_n, g_mx = self.th["g_n"], self.th["g_mx"]
+        natural = self.c_sat is None
+
+        def totals(x):
+            mu, lnx = float(x[0]), float(x[1])
+            mu_mx = g_mx + kt * (lnx + math.log(g_ma_))
+            lse, _sp, mean_n = _speciation(g_n, mu_mx, kt)
+            CM = math.exp(min((mu + kt * lse) / kt - lg_ma, 700.0))
+            return CM, math.exp(lnx) + CM * mean_n, mu, g_ma_ * math.exp(lnx)
+
+        def state(x):
+            if natural:
+                CM, CX, mu, ax = totals(x)
+            else:
+                CM, CX = math.exp(x[0]), math.exp(x[1])
+                pl = self.pool(CM, CX)
+                mu, ax = float(pl["mu_MA"]), float(pl["a_MX_free"])
+            pre = CM * math.exp(min((self.gb + dsx + kt * math.log(max(ax, 1e-300)) - mu) / kt, 700.0))
+            th = {f: facet_state(self.F[f], ax, kt)["theta"] for f in FA_FAMILIES}
+            ds = [dict(d, pre=pre) for d in fz]
+            ms = self._fa_m_new_all(m0, Wm, tabs, pre, CM, dt) if dt > 0 else m0.copy()
+            ks = (area_sa @ np.array([th[f] for f in FA_FAMILIES])) * (ms / m0) ** (2.0 / 3.0)
+            r1 = CM - C_M - dt * (Q - m_b * J) + float((Ns * (ms - m0)).sum())
+            r2 = CX - C_X + dt * (Q + k_star * J) + float((Ns * (ks - k0)).sum())
+            return np.array([r1 / max(C_M, 1e-30), r2 / max(C_X, 1e-30)]), (CM, mu, J, barrier, k_star, m_b, ms, ds, th)
+
+        if natural:
+            pl0 = self.pool(C_M, C_X)
+            x = np.array([float(pl0["mu_MA"]), math.log(max(float(pl0["c_MX_free"]), 1e-300))])
+        else:
+            x = np.array([math.log(max(C_M, 1e-30)), math.log(max(C_X, 1e-30))])
+        res, aux = state(x)
+        jac = None
+        for it in range(40):
+            if np.abs(res).max() < 1e-7:            # accuracy of the step only: the pools are booked from the actual
+                return aux                          # changes of every dot afterwards, so amounts stay exact
+            if jac is None or it % 6 == 5:                    # chord Newton: the Jacobian is renewed rarely
+                jac = np.empty((2, 2))
+                for j in range(2):
+                    e = np.zeros(2)
+                    e[j] = 1e-7
+                    jac[:, j] = (state(x + e)[0] - res) / 1e-7
+            try:
+                step = -np.linalg.solve(jac, res)
+            except np.linalg.LinAlgError:
+                return None
+            step = np.clip(step, [-0.3, -3.0], [0.3, 3.0]) if natural else np.clip(step, -2.0, 2.0)
+            lam = 1.0
+            while lam > 1e-4:                                    # damped: the residual must fall
+                r2_, a2_ = state(x + lam * step)
+                if np.abs(r2_).max() < np.abs(res).max() or lam <= 2e-4:
+                    break
+                lam *= 0.5
+                jac = None                                       # a poor chord step: renew the Jacobian
+            x, res, aux = x + lam * step, r2_, a2_
+        if np.abs(res).max() < 1e-5:
+            return aux
+        if not natural:
+            return None
+        # fallback, bracketed and nested (both balances are monotone): ln c_MX,free from the MX_q balance at given
+        # mu_MA, mu_MA from the MA balance; robust where the dots take a large share of the pool within the step
+        x0 = np.array([float(pl0["mu_MA"]), math.log(max(float(pl0["c_MX_free"]), 1e-300))])
+
+        def bracket(fun, a, b, step):
+            fa, fb = fun(a), fun(b)
+            for _ in range(60):
+                if fa < 0.0 < fb:
+                    return a, b
+                if fa >= 0.0:
+                    a -= step
+                    fa = fun(a)
+                if fb <= 0.0:
+                    b += step
+                    fb = fun(b)
+            return None
+
+        def lnx_of(mu):
+            g = lambda lx: state(np.array([mu, lx]))[0][1]                    # noqa: E731
+            br = bracket(g, x0[1] - 5.0, x0[1] + 2.0, 5.0)
+            return None if br is None else brentq(g, br[0], br[1], xtol=1e-10)
+
+        def r1_of(mu):
+            lx = lnx_of(mu)
+            return 1e3 if lx is None else state(np.array([mu, lx]))[0][0]
+        br = bracket(r1_of, x0[0] - 0.05, x0[0] + 0.05, 0.1)
+        if br is None:
+            return None
+        mu_s = brentq(r1_of, br[0], br[1], xtol=1e-9)
+        lx = lnx_of(mu_s)
+        return None if lx is None else state(np.array([mu_s, lx]))[1]
+
+    # -- layer ladder (facet_area.integrator = "ladder", the default): a dot is a sequence of whole structures --
+    @property
+    def fa_ladder(self) -> bool:
+        return self.facet_area and self._fa().get("integrator", "ladder") == "ladder"
+
+    def fa_layer_A(self, f: str) -> float:
+        """One CdSe layer along the family's normal: a/2 on {100} (cation + anion layer), a/sqrt(3) on {111}."""
+        a = (4.0 * self.Om) ** (1.0 / 3.0)
+        return a / 2.0 if f == "100" else a / SQ3
+
+    def fa_structure(self, h: dict) -> dict:
+        """A whole dot at lattice-site planes h: QD_builder's charge-balanced dot (exact composition, lattice-site
+        areas and edges; facet_area.geometry = "builder") or the model's polyhedron ("shape", m = V/Omega_m).
+        Record: h (the planes, exposed ones as built), m (its CdSe units), areas, edges, build (for the films)."""
+        key = tuple(round(float(h[f]), 3) for f in FA_FAMILIES)
+        cache = self.__dict__.setdefault("_fa_structs", {})
+        if key in cache:
+            return cache[key]
+        rec = None
+        if self._fa().get("geometry", "builder") == "builder":
+            bg = self.__dict__.get("_bgeo")
+            if bg is None:
+                from .builder_geometry import BuilderGeometry
+                bg = self._bgeo = BuilderGeometry(self._fa()["builder"], FA_FAMILIES,
+                                                  step_A=float(self._fa().get("geometry_step_A", 0.5)))
+            try:
+                b = bg.dot(h)
+                hh = {f: (b["d_lat"].get(f, h[f]) if b["areas"][f] > 0 else float(h[f])) for f in FA_FAMILIES}
+                rec = {"h": hh, "m": float(b["m"]), "areas": dict(b["areas"]), "edges": dict(b["edges"]),
+                       "build": {"dc": b["dc"], "m": b["m"], "h_err_A": b["h_err_A"]}}
+            except Exception as exc:
+                if "lattice_fitted" in str(exc) and "QD_builder without" in str(exc):
+                    raise
+                self.geometry_fallbacks = getattr(self, "geometry_fallbacks", 0) + 1
+                self.geometry_error = str(exc)[-300:]
+        if rec is None:
+            area, vol, _s = self.shape(h)
+            rec = {"h": {f: float(h[f]) for f in FA_FAMILIES}, "m": vol / self.Om, "areas": area,
+                   "edges": self.shape.edge_lengths(h), "build": None}
+        rec["next"] = {}
+        if len(cache) > 20000:
+            cache.clear()
+        cache[key] = rec
+        return rec
+
+    def fa_neighbor(self, S: dict, f: str, sign: int):
+        """The structure one layer of family f out (sign +1) or in (-1) from S, and its change in CdSe units (None
+        when the family cannot move: no face to remove, or no change within two layers)."""
+        k = (f, sign)
+        if k not in S["next"]:
+            out = None
+            if sign > 0 or S["areas"].get(f, 0.0) > 0.0:
+                for mult in (1.0, 2.0):
+                    h2 = dict(S["h"])
+                    h2[f] = S["h"][f] + sign * mult * self.fa_layer_A(f)
+                    if h2[f] <= 0.5:
+                        break
+                    S2 = self.fa_structure(h2)
+                    dm = S2["m"] - S["m"]
+                    if dm * sign > 0.5:
+                        out = (S2, dm)
+                        break
+            S["next"][k] = out
+        return S["next"][k]
+
+    def fa_ladder_geometry(self, S: dict, acc: dict):
+        """Areas and edges of a dot between whole structures: S's, interpolated linearly toward the structure its
+        leading family is heading for (the largest |accumulated units| / layer units), by that fraction."""
+        best, frac, tgt = None, 0.0, None
+        for f in FA_FAMILIES:
+            if acc.get(f, 0.0) == 0.0:
+                continue
+            nb = self.fa_neighbor(S, f, 1 if acc[f] > 0 else -1)
+            if nb is None:
+                continue
+            fr = min(abs(acc[f]) / abs(nb[1]), 1.0)
+            if fr > frac:
+                best, frac, tgt = f, fr, nb[0]
+        if tgt is None:
+            return dict(S["areas"]), dict(S["edges"])
+        area = {f: (1 - frac) * S["areas"].get(f, 0.0) + frac * tgt["areas"].get(f, 0.0) for f in FA_FAMILIES}
+        keys = set(S["edges"]) | set(tgt["edges"])
+        edges = {e: (1 - frac) * S["edges"].get(e, 0.0) + frac * tgt["edges"].get(e, 0.0) for e in keys}
+        return area, edges
+
+    LADDER_EVENTS = 200
+
+    def fa_ladder_step(self, co: dict, dm: dict) -> tuple:
+        """Book the step's units per family (dm_f, summing to the dot's change) and move the dot through whole
+        structures: a family whose accumulated units reach the next layer's (from the builder) adds that layer, one
+        whose deficit reaches the last layer's removes it. Returns (S, acc, area, edges, h)."""
+        S, acc = co["S"], dict(co["acc"])
+        for f in FA_FAMILIES:
+            acc[f] = acc.get(f, 0.0) + float(dm.get(f, 0.0))
+        for _ in range(self.LADDER_EVENTS):
+            moved = False
+            for f in sorted(FA_FAMILIES, key=lambda x: -abs(acc[x])):
+                sign = 1 if acc[f] > 0 else -1
+                nb = self.fa_neighbor(S, f, sign) if acc[f] != 0.0 else None
+                if nb is not None and abs(acc[f]) >= abs(nb[1]):
+                    S, acc[f] = nb[0], acc[f] - nb[1]
+                    moved = True
+                    break
+            if not moved:
+                break
+        area, edges = self.fa_ladder_geometry(S, acc)
+        return S, acc, area, edges, dict(S["h"])
+
+    def fa_ladder_birth(self, h: dict, m: float) -> dict:
+        """A new dot on the ladder: the whole structure nearest the start shape at m units; the difference to m is
+        kept as an offset (its m stays exact)."""
+        S = self.fa_structure(h)
+        return {"S": S, "acc": {f: 0.0 for f in FA_FAMILIES}, "off": float(m) - S["m"],
+                "area": dict(S["areas"]), "edges": dict(S["edges"]), "h": dict(S["h"]), "build": S["build"]}
 
     FA_TAIL = 500                                       # the nucleation chain past the grid's top, in units
 
@@ -1184,10 +1485,12 @@ class Growth:
         + 1/k_eff^(f)) (diffusion to the equivalent sphere in series with the facet), the model's own polyhedron.
         Cached on the pool's free MX_q and mu_MA (the step's speciation)."""
         pl = self._pl
-        key = (m_e, round(math.log(max(float(pl["a_MX_free"]), 1e-300)), 6), round(float(pl["mu_MA"]), 4))
+        lnax = math.log(max(float(pl["a_MX_free"]), 1e-300))
+        key = (m_e, round(lnax, 1), round(self.T, 3))
         c = self.__dict__.setdefault("_fa_tail_cache", {})
-        if key in c:
-            return c[key]
+        if key in c:                    # every Delta mu_f carries kT ln a_X: the cached tail is shifted exactly
+            mt_, out_ = c[key]
+            return mt_, out_ + self.kt * (lnax - key[1])
         if len(c) > 200:
             c.clear()
         kt, d1 = self.kt, (self._D1 or self.D)
@@ -1205,8 +1508,9 @@ class Growth:
             g = ch["N"] / (r / d1 + 1.0 / np.maximum(ch["kappa"], 1e-300))
             top = float(ch["dmu"].max())
             out[i] = top + kt * math.log(float((g * np.exp((ch["dmu"] - top) / kt)).sum() / max(g.sum(), 1e-300)))
+        out -= kt * (lnax - key[1])                       # stored at the key's a_X
         c[key] = (mt, out)
-        return mt, out
+        return mt, out + kt * (lnax - key[1])
 
     def _fa_capf(self) -> float:
         """Capacitance of the start shape over the radius of the sphere of the same volume (scale-free)."""
@@ -1796,7 +2100,14 @@ class Growth:
             sc = (m * self.Om / vol) ** (1.0 / 3.0)
             h = {f: x * sc for f, x in h.items()}
             area = self.shape(h)[0]
-            if self.facet_area:
+            if self.fa_ladder and "S" in a:
+                # ladder: the merged dot keeps the structure of the more numerous cohort, its m exact
+                keep = a if a["N"] >= b["N"] else b
+                S, acc = keep["S"], dict(keep["acc"])
+                area, edges = self.fa_ladder_geometry(S, acc)
+                a.update(S=S, acc=acc, edges=edges, build=S["build"])
+                h = dict(S["h"])
+            elif self.facet_area:
                 area, edges, built = self.geometry(h, m)
                 a.update(edges=edges, build=built and {"dc": built["dc"], "m": built["m"], "h_err_A": built["h_err_A"]})
             a.update(N=n, m=m, k=(a["N"] * a["k"] + b["N"] * b["k"]) / n, h=h, area=area,
@@ -1989,6 +2300,7 @@ class Growth:
         coverage, their MX_q on top of c_MX0), for ripening and focusing checks without nucleation."""
         self._arrays()
         self.steps = []                                                                  # (t, dt, limit) per step
+        self.halvings = {}                                  # why steps were halved (pool moved too far, a pool < 0)
         self.pools = []                                     # (t, T, C_M, C_X) at the end of every step (a record only)
         c = self.P["conditions"]
         P_, C_M, C_X = float(c["c_P0"]), float(c.get("c_M0", 1e-12)), float(c["c_MX0"])     # c_M0: monomer at t = 0
@@ -2015,7 +2327,12 @@ class Growth:
                      else self.shape.wulff(gam, float(sd["m"]) * self.Om))
                 m_, k_, area, _support = self.dot(h, fam)
                 co = {"t_b": 0.0, "N": float(sd["N"]), "h": h, "m": m_, "k": k_, "area": area}
-                if self.facet_area:
+                if self.fa_ladder:
+                    lad = self.fa_ladder_birth(h, m_)
+                    co.update(h=lad["h"], edges=lad["edges"], S=lad["S"], acc=lad["acc"], build=lad["build"],
+                              area=lad["area"],
+                              k=sum(fam[f]["theta"] * fam[f]["Gamma_max"] * lad["area"].get(f, 0.0) for f in self.F))
+                elif self.facet_area:
                     co["edges"] = self.geometry(h, m_)[1]
                 cohorts.append(co)
         seeded = {"m": sum(co["N"] * co["m"] for co in cohorts), "k": sum(co["N"] * co["k"] for co in cohorts)}
@@ -2057,8 +2374,7 @@ class Growth:
             Ac, rc, dmu_dot, th_bar = self.size_state(cohorts, fam, th_dots)
             mc = np.array([co["m"] for co in cohorts])
             dmu_dm = -dmu_dot / (3.0 * np.maximum(mc, 1.0))                  # continuum: mu_dot - g_bulk ~ m^(-1/3)
-            if self.facet_area and len(cohorts):
-                dmu_dm = self._fa_dmu_dm(cohorts, Ac, rc, th_bar)          # the facet law's own d mu_dot / dm
+            # (facet-area law: the sizes are backward Euler with both pools, _fa_solve_step; no explicit feedback)
             mg = mug = None
             if self.grid_mu_on and len(cohorts) and not self.facet_area:
                 # within the grid's sizes a dot's chemical potential is the grid's own (grid_mu, linear in m between
@@ -2106,15 +2422,6 @@ class Growth:
                         m_try = mc[i] * (1 + frac) if g_[i] else mc[i] * (1 - frac)
                         if rate0[i] != 0 and abs(self._stop_at_equilibrium(mc[i], m_try, mu0 - self.gb, mg, mug, sigma_now) - m_try) > 1e-12:
                             g_[i] = d_[i] = False
-                if self.facet_area and len(cohorts):
-                    # facet-area law (collision-limited facets: dots exchange with the pool within microseconds): a dot
-                    # in a stable well (mu_dot rising with m, s < 0) whose own equilibrium lies within the allowed change
-                    # of its size, |rate / s| <= 2 % (growing) or 20 % (dissolving) of m, cannot overshoot it under the
-                    # backward-Euler size update below: it does not limit the step
-                    s_w = -self.conductance(Ac, rc, th_bar) * c_eq * dmu_dm / self.kt
-                    near = (s_w < 0) & (np.abs(rate0) <= np.where(rate0 > 0, 0.02, 0.2) * np.maximum(mc, 1.0) * -s_w)
-                    g_ &= ~near
-                    d_ &= ~near
                 if g_.any():
                     # a growing dot changes m by < 2 % a step, measured against the larger of its own size and 5 % of
                     # the largest dot: newborn nuclei that grow fast (diffusion-limited) take larger relative steps,
@@ -2169,8 +2476,18 @@ class Growth:
                 kx = self.k_conv * C_X
                 Q = P_ * -math.expm1(-kx * dt) / dt if (q_inst > 0 and dt > 0) else 0.0
 
-                imp = (self._fa_implicit_setup(cohorts, Ac, rc, th_bar, C_M, mu0)
-                       if (self.facet_area and len(cohorts)) else None)
+                imp, th_sol = None, None
+                if self.facet_area and len(cohorts):
+                    sol = self._fa_solve_step(cohorts, Ac, rc, th_bar, C_M, C_X, mu0, dt, Q)
+                    if sol is None:
+                        self.halvings["implicit solve"] = self.halvings.get("implicit solve", 0) + 1
+                        dt *= 0.5
+                        if dt < 1e-12:
+                            raise RuntimeError("facet-area step: the implicit pool solve fails at any step size")
+                        continue
+                    C_sol, mu, J, barrier, k_star, m_b, m_imp, imp, th_sol = sol
+                    lnC = math.log(C_sol)
+                    rate = (m_imp - mc) / dt
 
                 def balance(lnC):
                     mu = mu0 + self.kt * (lnC - math.log(C_M))
@@ -2188,24 +2505,23 @@ class Growth:
                         U = 0.0
                     return math.exp(lnC) - C_M - dt * (Q - self._m_birth * J_ - U)
                 lo, hi = math.log(1e-30), math.log(C_M + Q * dt + 1e-12)
-                b_lo, b_hi = balance(lo), balance(hi)
+                b_lo, b_hi = (balance(lo), balance(hi)) if th_sol is None else (-1.0, 1.0)
                 # dissolving dots can push C above C_M + Q dt: widen the bracket (not for facet-law dots, whose capped
                 # inward moves do not follow the solve's rates: their steps rely on the old bracket's limit)
-                for _ in range(0 if fr else 200):
+                for _ in range(0 if (fr or th_sol is not None) else 200):
                     if b_hi >= 0:
                         break
                     hi += math.log(2.0)
                     b_hi = balance(hi)
-                lnC = brentq(balance, lo, hi, xtol=1e-12, rtol=1e-12) if b_lo < 0 < b_hi else (hi if b_hi < 0 else lo)
-                mu = mu0 + self.kt * (lnC - math.log(C_M))
-                J, barrier, k_star, _per_m = self.nucleation(mu, mu_mx)
-                m_b = self._m_birth                                                    # units of each new nucleus
-                if k_star is None:                                                     # classical: continuum coverage
-                    k_star = self.k_of(m_b, fam)
-                if imp is not None:
-                    C_ = math.exp(lnC)
-                    m_imp = np.array([self._fa_m_new(d, C_, dt) for d in imp])
-                    rate = (m_imp - mc) / dt
+                if th_sol is None:
+                    lnC = brentq(balance, lo, hi, xtol=1e-12, rtol=1e-12) if b_lo < 0 < b_hi else (hi if b_hi < 0 else lo)
+                    mu = mu0 + self.kt * (lnC - math.log(C_M))
+                    J, barrier, k_star, _per_m = self.nucleation(mu, mu_mx)
+                    m_b = self._m_birth                                                # units of each new nucleus
+                    if k_star is None:                                                 # classical: continuum coverage
+                        k_star = self.k_of(m_b, fam)
+                if th_sol is not None:
+                    pass                                                               # facet-area: solved above
                 else:
                     rate = (np.maximum(self.size_rates(Ac, rc, c_eq, th_bar, math.exp(lnC)) / (1.0 - s_fb * dt), r_min)
                             if len(cohorts) else np.zeros(0))
@@ -2214,7 +2530,8 @@ class Growth:
                 lam = 1.0
                 vs = {}                                                    # facet velocities at the solved C
                 while True:
-                    th_eff = {f: th_dots[f] + lam * (fam[f]["theta"] - th_dots[f]) for f in self.F}
+                    th_eff = (dict(th_sol) if th_sol is not None
+                              else {f: th_dots[f] + lam * (fam[f]["theta"] - th_dots[f]) for f in self.F})
                     k_area = {f: 0.0 if self.sphere else th_eff[f] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"]
                               for f in self.F}
                     new, up_m, up_k = [], 0.0, 0.0
@@ -2224,6 +2541,24 @@ class Growth:
                             # facet with j_f < 0 dissolves), hidden planes are held; areas and edges from the dot
                             # built on the fly (or the model's polyhedron), k = sum_f A_f rho_f theta_f
                             m_new = max(co["m"] + rate[i] * dt, 1e-6)
+                            if self.fa_ladder and "S" in co:
+                                # layer ladder: the step's units shared among the families as their implicit fluxes
+                                # (they sum to the dot's change), whole layers added or removed as builder structures
+                                d = imp[i]
+                                cq = self._fa_ceq(d, m_new)
+                                s_ = (m_new / d["m0"]) ** (2.0 / 3.0)
+                                parts = d["w"] * s_ * (math.exp(lnC) - cq) * dt
+                                tot = float(parts.sum())
+                                dm_tot = m_new - co["m"]
+                                share = (parts / tot * dm_tot) if abs(tot) > 1e-300 else np.zeros(len(parts))
+                                S, acc, area, edges, h_new = self.fa_ladder_step(
+                                    co, {f: float(share[q]) for q, f in enumerate(FA_FAMILIES)})
+                                k_new = sum(k_area[f] * area[f] for f in self.F)
+                                up_m += co["N"] * dm_tot
+                                up_k += co["N"] * (k_new - co["k"])
+                                new.append({"h": h_new, "m": m_new, "k": k_new, "area": area, "edges": edges,
+                                            "S": S, "acc": acc, "build": S["build"]})
+                                continue
                             if i not in vs:
                                 # each exposed plane at Omega_m j_f with the implicit fluxes j_f(C, m'), per area
                                 d = imp[i]
@@ -2283,10 +2618,20 @@ class Growth:
                     lam *= 0.25
                 C_M_new = C_M + (Q - m_b * J) * dt - up_m
                 ok = C_M_new > 0 and C_X_new > 0
+                if not ok:
+                    key = "C_M <= 0" if C_M_new <= 0 else "C_X <= 0"
+                    self.halvings[key] = self.halvings.get(key, 0) + 1
                 if ok and dmu_max > 0 and dt > 1e-9:
                     pn = self.pool(C_M_new, C_X_new)
-                    if max(abs(pn["mu_MA"] - mu0), abs(pn["mu_MX"] - mu_mx)) > dmu_max * self.kt:
+                    # facet-area law: the step is implicit in both pools at their end-of-step speciation, so only the
+                    # monomer's mu (which drives nucleation, explicit in the step) is bounded, at 1 kT; mu_MX is
+                    # singular at the titration point C_X ~ <n> C_M and is not
+                    lim_ = (abs(pn["mu_MA"] - mu0) > max(dmu_max, 1.0) * self.kt if th_sol is not None else
+                            max(abs(pn["mu_MA"] - mu0), abs(pn["mu_MX"] - mu_mx)) > dmu_max * self.kt)
+                    if lim_:
                         ok, pool_limited = False, True
+                        key = "pool mu_MA" if abs(pn["mu_MA"] - mu0) >= abs(pn["mu_MX"] - mu_mx) else "pool mu_MX"
+                        self.halvings[key] = self.halvings.get(key, 0) + 1
                 if ok or dt < 1e-9:
                     break
                 dt *= 0.5
@@ -2334,10 +2679,19 @@ class Growth:
                     # slightly different m and k: the difference goes back to (or comes from) the pool. When the MX_q
                     # left cannot cover the new dots at the dots' coverage, the shared coverage of all dots is lowered
                     # (their MX_q returns) until the balance keeps 10 % of the MX_q left
+                    lad0 = self.fa_ladder_birth(h0, m_new) if self.fa_ladder else None
+
                     def at_scale(s):
                         f_s = {f: {**fam[f], "theta": s * th_dots[f]} for f in self.F}
-                        ks = [self.dot(co["h"], f_s)[1] for co in cohorts]
-                        m_s, k_s, area_s, sup_s = self.dot(h0, f_s)
+                        if lad0 is not None:            # ladder: the dots' own areas, the newborn's structure
+                            ks = [sum(f_s[f]["theta"] * f_s[f]["Gamma_max"] * co["area"].get(f, 0.0) for f in self.F)
+                                  for co in cohorts]
+                            area_s = lad0["area"]
+                            k_s = sum(f_s[f]["theta"] * f_s[f]["Gamma_max"] * area_s.get(f, 0.0) for f in self.F)
+                            m_s, sup_s = m_new, dict(lad0["h"])
+                        else:
+                            ks = [self.dot(co["h"], f_s)[1] for co in cohorts]
+                            m_s, k_s, area_s, sup_s = self.dot(h0, f_s)
                         dk = sum(co["N"] * (kk - co["k"]) for co, kk in zip(cohorts, ks)) + pending * k_s - pending_k
                         return dk, ks, (m_s, k_s, area_s, sup_s)
                     s = 1.0
@@ -2360,7 +2714,10 @@ class Growth:
                     C_X = max(C_X + pending_k - pending * k_, 1e-30)   # a shortfall is counted in mx_shortfall
                     born = {"t_b": t, "N": pending, "h": {f: min(h0[f], support[f]) for f in self.F},
                             "m": m_, "k": k_, "area": area}
-                    if self.facet_area:                          # hidden planes are held where the start shape has them
+                    if lad0 is not None:                         # on the ladder: a whole structure
+                        born.update(h=lad0["h"], edges=lad0["edges"], S=lad0["S"], acc=lad0["acc"],
+                                    build=lad0["build"], area=lad0["area"])
+                    elif self.facet_area:                        # hidden planes are held where the start shape has them
                         _a, edges, built = self.geometry(h0, m_)
                         born.update(h=dict(h0), edges=edges,
                                     build=built and {"dc": built["dc"], "m": built["m"], "h_err_A": built["h_err_A"]})
@@ -2387,7 +2744,8 @@ class Growth:
                 series.append(row)
                 snaps.append({"t": t, "cohorts": [{"t_b": co["t_b"], "N": co["N"], "m": co["m"], "k": co["k"],
                                                    "h": co["h"], "area": co["area"],
-                                                   **({"edges": co.get("edges"), "build": co.get("build")}
+                                                   **({"edges": co.get("edges"), "build": co.get("build"),
+                                                       "m_structure": co["S"]["m"] if "S" in co else None}
                                                       if self.facet_area else {})} for co in cohorts]})
                 if log:
                     log(f"[growth] t = {t:9.3g} s  P = {P_:.3g} M  C_M = {C_M:.3g} M  barrier {barrier:.3f} eV  "
@@ -2399,7 +2757,7 @@ class Growth:
                 "fallbacks": getattr(self, "geometry_fallbacks", 0), "last_error": getattr(self, "geometry_error", None)}
                if self.facet_area else None)
         return {"params": self.P, "match_m0": self.match, "handover": self.handover, "m0": self.m0, "series": series,
-                "geometry": geo,
+                "geometry": geo, "halvings": dict(self.halvings),
                 "snapshots": snaps, "seeded": seeded, "V0_L": V0, "nucleation_window": nucleation_window(track),
                 "sphere": getattr(self, "sphere_used", None),
                 "survivor_window": survivor_window(cohorts)}

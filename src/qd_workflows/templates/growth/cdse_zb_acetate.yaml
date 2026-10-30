@@ -1,0 +1,632 @@
+# Growth parameters for CdSe with Cd(OAc)2 (acetate), facet-area law; grid: acetate_pool thermo_merged.json
+conditions:
+  T: 500.0
+  c_P0: 0.025
+  c_MX0: 0.03
+  k_conv_500K: 1.0
+  Ea_conv: 0.0
+  t_end: 600.0
+  t_start: 0.001
+  n_out: 60
+material:
+  Omega_m: 59.667492978136295
+  g_bulk: -5.4903
+  omega_E_cm1: 150.0
+  atoms_per_unit: 2
+  g_bulk_T:
+    T:
+    - 50
+    - 75
+    - 100
+    - 125
+    - 150
+    - 175
+    - 200
+    - 225
+    - 250
+    - 275
+    - 300
+    - 325
+    - 350
+    - 375
+    - 400
+    - 425
+    - 450
+    - 475
+    - 500
+    - 525
+    - 550
+    - 575
+    - 600
+    - 625
+    - 650
+    - 675
+    - 700
+    - 725
+    - 750
+    - 775
+    - 800
+    G_eV:
+    - -5.45069
+    - -5.4568
+    - -5.46574
+    - -5.47717
+    - -5.49078
+    - -5.50631
+    - -5.52352
+    - -5.54224
+    - -5.56232
+    - -5.58364
+    - -5.6061
+    - -5.62959
+    - -5.65406
+    - -5.67943
+    - -5.70564
+    - -5.73264
+    - -5.7604
+    - -5.78887
+    - -5.818
+    - -5.84778
+    - -5.87816
+    - -5.90913
+    - -5.94065
+    - -5.97271
+    - -6.00528
+    - -6.03834
+    - -6.07188
+    - -6.10588
+    - -6.14033
+    - -6.1752
+    - -6.21049
+  m0: 13
+  m0_min: 10
+  m_dissolve: 4
+  N_min: 1.0e-15
+  match_m0: false
+  g_bulk_shift_eV: -0.6103
+nucleation:
+  flux: becker_doring
+  attach_barrier_eV: 0.0
+  J0: 1.0e-06
+kinetics:
+  mu_small: grid
+  D: 1.0e-05
+  k_r: facets
+  growth_law: shape
+  beta_scale: 1.0
+  shell_offset:
+    R_h_A:
+    - 0.32
+    - 77.4
+    R_se_A:
+    - 0.18
+    - 79.3
+  facets:
+    '100':
+      k_f: 11000.0
+      island_beta_eV: 1.08
+    111A:
+      k_f: 420000000000.0
+    111B:
+      k_f: 770.0
+      island_beta_eV: 1.027
+    '110':
+      k_f: 240000000000.0
+  sites:
+    A_dir_A2: 14.9
+    A_disp_A2: 42.6
+    m_complex_amu: 374.7
+    m_mx_amu: 183.3
+  roles:
+    T_K: 500
+    rate_form: null
+    envs:
+      edge:100|111A:
+        13:
+        - - 12
+          - 1.6873
+          - -0.9672
+        127:
+        - - 12
+          - 0.9261
+          - -0.1013
+        279:
+        - - 11
+          - 0.5607
+          - -0.1395
+        - - 10
+          - 0.9812
+          - -0.0698
+        - - 3
+          - 1.2007
+          - -0.4379
+        441:
+        - - 16
+          - 0.8525
+          - -0.4103
+        - - 14
+          - 0.8311
+          - -0.1197
+        - - 6
+          - 0.8502
+          - -0.5422
+      edge:100|111B:
+        45:
+        - - 12
+          - 0.6678
+          - -0.3228
+        127:
+        - - 20
+          - 1.3993
+          - -1.3097
+        - - 4
+          - 1.3492
+          - -0.6236
+        279:
+        - - 22
+          - 1.3679
+          - -1.2236
+        - - 14
+          - 1.4496
+          - -0.7424
+        441:
+        - - 16
+          - 1.618
+          - -0.5158
+        - - 8
+          - 1.7276
+          - -1.6741
+      facet:111A:
+        45:
+        - - 4
+          - 0.662
+          - -0.1496
+        127:
+        - - 12
+          - 0.6121
+          - -0.2001
+        279:
+        - - 11
+          - 0.5038
+          - -0.2059
+        - - 7
+          - 0.1968
+          - 0.212
+        - - 4
+          - 0.545
+          - -0.0429
+        - - 1
+          - 0.5792
+          - 0.1375
+        441:
+        - - 22
+          - 0.9755
+          - -0.2438
+        - - 16
+          - 0.9105
+          - -0.5633
+        - - 16
+          - 0.8745
+          - -0.3618
+        - - 10
+          - 0.7891
+          - -0.2088
+        - - 7
+          - 0.8127
+          - -0.4337
+        - - 1
+          - 1.0908
+          - -0.4638
+      vertex:100+111A+111B:
+        45:
+        - - 14
+          - 1.0307
+          - -0.0766
+        - - 3
+          - 0.8841
+          - -0.1068
+        - - 3
+          - 1.0859
+          - -0.2232
+        - - 2
+          - 1.2748
+          - -1.0645
+        - - 1
+          - 1.0964
+          - -1.0417
+        - - 1
+          - 1.4463
+          - -1.3314
+        127:
+        - - 12
+          - 1.0574
+          - -0.3706
+        - - 12
+          - 0.8682
+          - -0.2749
+        279:
+        - - 15
+          - 0.7225
+          - -0.0625
+        - - 9
+          - 0.8908
+          - -0.2865
+        441:
+        - - 10
+          - 0.9559
+          - -0.2556
+        - - 9
+          - 1.7408
+          - -0.941
+        - - 3
+          - 0.7177
+          - -0.672
+        - - 2
+          - 1.1077
+          - -0.7431
+      facet:100:
+        127:
+        - - 12
+          - 1.4017
+          - -1.0537
+        279:
+        - - 36
+          - 1.5271
+          - -0.9511
+        441:
+        - - 36
+          - 1.5806
+          - -0.8862
+      facet:111B:
+        127:
+        - - 8
+          - 1.6536
+          - -2.0696
+        279:
+        - - 13
+          - 0.9693
+          - -1.8559
+        441:
+        - - 19
+          - 1.2835
+          - -1.753
+        - - 2
+          - 0.3858
+          - -0.799
+      edge:111A|111B:
+        441:
+        - - 6
+          - 1.4605
+          - -1.1788
+        - - 5
+          - 1.328
+          - -0.8588
+        - - 1
+          - 1.2319
+          - -0.5091
+    neb:
+      edge:100|111B:
+        dir:
+          dG_P: -1.2649
+          dG_TS: -0.766
+        disp:
+          dG_P: -0.609
+          dG_TS: 0.01
+      edge:100|111A:
+        dir:
+          no_barrier: true
+        disp:
+          dG_P: -0.9789
+          dG_TS: -0.2587
+      facet:100:
+        dir:
+          no_barrier: true
+        disp:
+          dG_P: -0.2849
+          dG_TS: -0.045
+      facet:111A:
+        dir:
+          no_barrier: true
+        disp:
+          no_barrier: true
+      facet:111B:
+        dir:
+          no_barrier: true
+        disp:
+          dG_P: -0.4198
+          dG_TS: 0.1111
+      vertex:100+111A+111B:
+        dir:
+          no_barrier: true
+        disp:
+          dG_P: -1.8972
+          dG_TS: -0.8847
+  size_law: facet_area
+  facet_area:
+    T_K: 500
+    rate_form: first_order
+    geometry: builder
+    geometry_step_A: 0.5
+    start_h_A:
+      '100': 6.1405
+      111A: 4.4316
+      111B: 3.5452
+    builder:
+      cif: $QD_BUILDER/examples/cifs/CdSe_zb.cif
+      charges:
+        Cd: 2
+        Se: -2
+        Cl: -1
+      passivation:
+        ligand: Cl
+        surf_tol: 2.0
+        prepass_mode: role-aware
+        prepass_min_cn_terrace: 3
+        prepass_min_cn_edge: 2
+        prepass_min_cn_vertex: 1
+      symmetry:
+        proper_rotations_only: true
+      centre: Se
+      anion: Se
+      positive_q_mode: add
+    facets:
+      111A:
+        dG_bind_eV: -1.3872
+        dmu_eV:
+          45: 1.5966
+          127: 0.7619
+          279: 1.7928
+          441: 1.9952
+        neb:
+          disp:
+            dG_P: -0.1274
+            dG_TS: 0.6127
+            TS_n_imag: 1
+          dir:
+            dG_P: -2.9722
+            dG_TS: -2.4161
+            TS_n_imag: 3
+      '100':
+        dG_bind_eV: -1.6521
+        dmu_eV:
+          127: 1.5262
+          279: 2.2491
+          441: 2.2394
+        neb:
+          disp:
+            dG_P: -1.0256
+            dG_TS: 1.6273
+            TS_n_imag: 3
+          dir:
+            dG_P: -0.5181
+            dG_TS: 0.4138
+            TS_n_imag: 1
+      111B:
+        dG_bind_eV: -1.9828
+        dmu_eV:
+          127: 1.2148
+          279: 1.4143
+          441: 1.2756
+        neb:
+          disp:
+            dG_P: -0.7309
+            dG_TS: 0.6374
+            TS_n_imag: 2
+          dir:
+            dG_P: -0.6647
+            dG_TS: -0.2597
+            TS_n_imag: 3
+    edges:
+      100|111A:
+        dG_bind_eV: -1.119
+        neb:
+          disp:
+            dG_P: -0.6057
+            dG_TS: 2.0392
+            TS_n_imag: 2
+          dir:
+            no_barrier: true
+      100|111B:
+        dG_bind_eV: -1.2376
+        neb:
+          disp:
+            dG_P: -0.5356
+            dG_TS: 2.2973
+            TS_n_imag: 3
+          dir:
+            dG_P: -2.4829
+            dG_TS: -2.4174
+            TS_n_imag: 1
+      111A|111B:
+        dG_bind_eV: -2.0355
+        neb: null
+    inputs: solvated
+families:
+  '100':
+    gamma0: 15.6
+    eps0: 1.45
+    Gamma_max: 3.03
+    w: 0.89
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 19.238381192648
+    perimeter_per_area_ref: 0.2574
+    sites:
+      centre:
+        n: 52
+        per_area: 0.03589
+        dG_bind: -0.663
+        dW_dir: 0.053
+      centre_next_111B:
+        n: 14
+        per_area: 0.00966
+        dG_bind: -0.89
+        dW_dir: 0.053
+      edge_1Se_3br:
+        n: 12
+        per_length: 0.03218
+        dG_bind: -0.464
+        dW_dir: 0.038
+      edge_1Se_anion_2br:
+        n: 9
+        per_length: 0.02413
+        dG_bind: -0.325
+        dW_dir: 0.031
+      edge_2Se_2br:
+        n: 9
+        per_length: 0.02413
+        dG_bind: -0.227
+        dW_dir: 0.048
+      edge_2Se_atop_br:
+        n: 4
+        per_length: 0.01073
+        dG_bind: -0.619
+        dW_dir: 0.036
+  111A:
+    gamma0: 22.22
+    eps0: 2.06
+    Gamma_max: 1.26
+    w: 1.3
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 16.660926840521935
+    perimeter_per_area_ref: 0.2217
+    sites:
+      centre:
+        n: 24
+        per_area: 0.0201
+        dG_bind: -0.4
+        dW_dir: 0.042
+      edge_1Se_3br:
+        n: 12
+        per_length: 0.04532
+        dG_bind: -0.464
+        dW_dir: 0.038
+      edge_1Se_anion_2br:
+        n: 9
+        per_length: 0.03399
+        dG_bind: -0.325
+        dW_dir: 0.031
+      edge_2Se_2br:
+        n: 9
+        per_length: 0.03399
+        dG_bind: -0.227
+        dW_dir: 0.048
+      edge_2Se_atop_br:
+        n: 4
+        per_length: 0.01511
+        dG_bind: -0.619
+        dW_dir: 0.036
+  111B:
+    gamma0: 13.6
+    eps0: 0.93
+    Gamma_max: 3.9
+    w: 0.9
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 16.660926840521935
+    perimeter_per_area_ref: 0.2217
+    sites:
+      centre:
+        n: 11
+        per_area: 0.00921
+        dG_bind: -2.073
+        dW_dir: 0.068
+  '110':
+    gamma0: 18.14
+    eps0: 0.61
+    Gamma_max: 3.3
+    w: 0.8
+    tau: 14.0
+    k0: 10000.0
+    x_X: 0.0
+    site_area: 27.20717960074628
+provenance:
+  families: 'per-site-class refit (2026-10-27) of the 92 QD_builder library dots with >= 100 atoms (MACE-MH-1 omat_pbe,
+    rattle-polished bases; rms 15 meV/atom saturated, 10 meV/atom bare). CdCl2 counted per site class of the facet-net partition
+    (facet centre / edge / vertex): centre units by the Fowler-Guggenheim shell of each facet, edge and vertex units with
+    their own fitted binding (1.0-1.1 eV, as the measured local removals). Gamma_max: Z-type sites per atom-fitted area
+    from the site counts ({100} 10 CdCl2 per face, bridging Cl above the Cd layer; {111}A ~0.25 per Cd, none in the centre;
+    {111}B 13 per 21 Se; {110} 0.8-0.9 per Se). eps0, w: {100} and {111}A from greedy strips within the facet''s own Cl
+    on the polished 3x3x3 dot (eps0 refitted with the library), {111}B and {110} eps0 from zero-coverage intact Z-type additions
+    on facet centres; gamma0 fitted jointly, gamma > 0 at all coverages'
+  sites: 'site classes of the half-swap 2.5^3 dot (801 atoms, MACE-MH-1 omat_pbe, 500 K, 1 M; 2026-10-28/29): n the surface
+    Cd of the class on that dot, per_area = n / construction area, per_length = n / the family''s perimeter (100: 1448.8
+    A^2, 372.9 A; 111A, 111B: 1194.3 A^2, 264.8 A; perimeter_per_area_ref their ratio); the 100|111A edge classes count
+    on both families. dG_bind: CdCl2 release umbrellas (100 centre next to 111B: Tier 1, its umbrella failed twice); dW_dir:
+    CdSe.CdCl2 attachment umbrellas (barrier over the free plateau; each 100|111A edge class from its own run, 2026-10-29);
+    dW_disp (direct exchange umbrellas) left out for now: their end states lie 0.8-2.3 eV above what the separate umbrellas
+    give (111B centre barrier 1.35 +- 0.08 eV, held back until that is diagnosed), so no class has a direct exchange yet.
+    Capture areas of the restraint cylinders: attachment 2 A, exchange 3.5 A, both 2 eV/A^2. gamma stays on the fit below
+    until gamma_eff from the layer additions replaces it.'
+  conditions: 'default synthesis: 0.025 M Se precursor, 0.03 M CdCl2, 500 K'
+  shell_offset: 'the same 108 dots (builder geometries): R_h = capacitance of the van der Waals body (CdCl2 included), R_se
+    = solvent-excluded radius (2 A probe), against the convex hull of the Cd/Se core scaled to m Omega_m; dR = a + b sigma
+    (A), sigma = k / A_P (MX_q per A^2), rms 0.37 A (R_h) and 0.32 A (R_se), 3 % of R_h'
+  g_bulk_T: 'MACE-MH-1 omat_pbe float64 zinc blende (a = 6.2030 A): E_bulk + harmonic phonon F_vib, 6x6x6 supercell, DOS
+    on 24^3 q (supercell 4-6 within 1.6 meV, quasi-harmonic within 1 meV at 500 K). CP2K PBE/DZVP check (2026-10-26): a
+    = 6.216 A; CdCl2-capped clusters vs bulk within 0.02 eV per CdSe, the pool complex CdSe.CdCl2 0.11 eV higher in CP2K
+    (single points at MACE geometries). g_bulk and omega_E_cm1 above are used only without this table.'
+  facets: 'k_f: single-unit NEB + Hessians on builder dots (500 K, geometric mean of the sites, collision-capped); island_beta_eV:
+    island ladders N = 1-9 with CdCl2 released to the pool (facet_kinetics, island_release)'
+  roles: 'per-facet size law (kinetics.size_law: facets, off by default; 2026-10-30), computed values only. envs: per builder
+    role and computed dot (m = 13 Cd16Se13Cl6 grid hand-off, 45 Cd68Se45Cl46, 127/279/441 the half-swap 2.0/2.5/3.0 dots),
+    each environment [n Cd, Delta mu (eV, a_X = 1, Delta k = -1, = G(M) - G(ref) + G_CdCl2(1 M) - g_bulk), CdCl2 binding
+    dG_bind_X (eV, 1 M)]; MACE-MH-1 omat_pbe, relaxed context + PHVA, 500 K (role_table_1to3.json: job 23283088 for 1.0/1.5,
+    the site-state runs for 2.0-3.0). neb: bare-CdSe NEB on the 2.5 dot, one site per role (largest environment), dG_P /
+    dG_TS against free CdSe at 1 M; no_barrier = collision-limited; edge 100|111B converged climbing images, the others
+    +-0.1 eV. Not covered by a NEB: edge 111A|111B (3.0 only): no channel. rate_form: not set (the velocity form is a choice:
+    second_order or first_order)'
+  facet_area: 'acetate (Cd(OAc)2) sites, 2026-10-30: role_table_ac_solv.json (D3, solvated: bind_solv, dmu_solv = dot-side
+    area surrogate + COSMO of the free Cd(OAc)2), NEBs neb_summary_ac.json with solv_ac.json (dG_act_solv, dG_adduct_solv
+    vs free CdSe at 1 M, COSMO); one 1760-atom dot; several TS with 2-3 imaginary modes (TS_n_imag); g_bulk shifted to D3'
+solvation:
+  eps: 2.0
+  vdw_scale: 1.4
+  e_el_eV_A2: -0.00106
+  monomers:
+    CdSe:
+      E_inf_eV: -0.327178
+      S_A2: 117.799
+    CdCl2:
+      E_inf_eV: -0.229848
+      S_A2: 210.278
+  complexes: {}
+  note: 'acetate grid: the MX_q reference named CdCl2 is Cd(OAc)2 (Cl placeholders); its COSMO E_inf/S (cosmo_CdOAc2.json,
+    eps -> inf, isodensity 5e-4); no COSMO for the m = 1 complexes yet (per-area surrogate); implicit solvent only'
+units:
+  gamma0: meV/A^2 (bare facet)
+  tau: meV/A
+  eps0: 'eV per Z-type MX_q on the empty facet (> 0: bound)'
+  dG_bind: eV per Z-type MX_q at 1 M (if given instead of eps0)
+  Gamma_max: Z-type MX_q per nm^2
+  w: eV (lateral interaction at full coverage)
+  k0: A/s
+  k_r: 'A/s, or "facets": each dot''s surface reaction from the facet rates, sum_f A_f k_f (1 - theta_f) / A'
+  k_f: A/s (facet incorporation rate, relative speeds of the shape rule)
+  island_beta_eV: eV (step term of the island ladder, dG(N) = g N + beta sqrt(N))
+  sites: 'per class: n (count on the reference dot), per_area 1/A^2 or per_length 1/A, dG_bind eV at 1 M, dW_dir and dW_disp
+    eV (umbrella barriers over the free plateau), active (default true)'
+  A_dir_A2: A^2 (capture area of the attachment umbrella)
+  A_disp_A2: A^2 (capture area of the exchange umbrella)
+  gamma_eff: meV/A^2 (from the dots' layer additions, MX_q at 1 M)
+  Gamma_eff: MX_q per nm^2 (excess of the layer additions; gamma = gamma_eff - Gamma_eff kT ln c)
+  perimeter_per_area_ref: 1/A (the reference dot's facet perimeter over area)
+  size_law: '"facets": dm/dt = n sum_r g_r (C - C_eq,inf e^(Delta mu_r/kT)), g_r = N_r w_rf / (delta/D / a_0 + 1/kappa_r),
+    channels r = builder roles on each facet f (w_rf 1, 1/2, 1/3), Delta mu_r the Cd-weighted mean over the role''s environments;
+    else the one-flux size law'
+  roles: 'envs per role and m: [n Cd, Delta mu eV at a_X = 1, dG_bind_X eV at 1 M]; neb per role: dir and disp routes, dG_P
+    and dG_TS eV against the bare CdSe at 1 M or no_barrier, applied to every arriving monomer; rate_form second_order (TS
+    against 1 M) or first_order (saturating precursor), required with size_law facets'
+  site_area: A^2
+  J0: M/s
+  attach_barrier_eV: eV
+  T: K
+  c_P0: M
+  c_MX0: M
+  k_conv_500K: 1/(M s)
+  Ea_conv: eV
+  t_end: s
