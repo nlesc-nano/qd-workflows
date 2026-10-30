@@ -230,6 +230,47 @@ def _campaign(args) -> int:
     return 0
 
 
+def _sites(args) -> int:
+    """qdw sites: the site-kinetics protocol, one step per action (qd_workflows.sitekin)."""
+    from .sitekin import build, inputs, jobs, neb, recipe, reference, sites, states, table
+    if args.action == "job":                              # the cluster block; the steps there read <run>/recipe.yaml
+        r = recipe.load(args.recipe)
+    elif args.action == "recipe":
+        r = None
+    else:
+        r, rpath = recipe.for_run(args.run, args.recipe)
+    sizes = [recipe.tag(float(x)) for x in args.sizes.split(",")] if getattr(args, "sizes", None) else None
+    if args.action == "recipe":
+        print(recipe.template_path().read_text(), end="")
+        return 0
+    if args.action == "job":
+        p = jobs.write(r, args.run, args.steps.split(","), None, args.output,
+                       time=args.time, name=args.name)
+        print(p)
+        return 0
+    engine = None
+    if args.action in jobs.GPU_STEPS:
+        from .sitekin.engine import Engine
+        engine = Engine(r["model"]["path"], r["model"]["head"])
+    if args.action == "build":
+        build.run(r, args.run, sizes, recipe_path=rpath)
+    elif args.action == "reference":
+        reference.run(r, args.run, engine, sizes)
+    elif args.action == "pick":
+        sites.run(r, args.run, sizes)
+    elif args.action == "states":
+        states.run(r, args.run, engine, sizes)
+    elif args.action == "table":
+        table.run(r, args.run)
+    elif args.action == "neb-prepare":
+        neb.prepare(r, args.run, sizes, args.roles.split(",") if args.roles else None)
+    elif args.action == "neb":
+        neb.run(r, args.run, engine, args.dirs or None)
+    elif args.action == "inputs":
+        inputs.run(args.run)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="qdw", description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -449,6 +490,38 @@ def main(argv=None) -> int:
     p.add_argument("--log", help="the run log of its batch")
     p.add_argument("--legacy", nargs="*", help="key=path of earlier results (geo=..., qdex=...)")
 
+    sp = sub.add_parser("sites", help="site-kinetics protocol: builder sites, K_X, Delta mu_f, NEB k_dir/k_disp"
+                        ).add_subparsers(dest="action", required=True)
+    steps = {"build": "QD_builder dot per size with the builder's site roles -> dots/",
+             "reference": "relax each dot, no anneal (GPU) -> reference/",
+             "pick": "one site per symmetry-distinct environment of each role, three states -> sites/",
+             "states": "relax every state, partial-Hessian G, free CdCl2 (GPU) -> states/",
+             "table": "dG_bind,X, K_X and Delta mu_f per size, role, environment -> role_table.json",
+             "neb-prepare": "k_disp and k_dir endpoints and marked xyz, one site per role -> neb/",
+             "neb": "the prepared NEBs: loose bands, window climbing image, PHVA at the TS (GPU)",
+             "inputs": "role table + NEB results -> kinetics_inputs.json"}
+    for name, text in steps.items():
+        p = sp.add_parser(name, help=text)
+        p.add_argument("run", help="run directory")
+        p.add_argument("--recipe", help="protocol recipe YAML (default: <run>/recipe.yaml, written by build from "
+                                        "this option or the CdSe/CdCl2 template)")
+        if name in ("build", "reference", "pick", "states", "neb-prepare"):
+            p.add_argument("--sizes", help="only these sizes, e.g. 1.0,2.5 (neb-prepare: default the recipe's neb.sizes)")
+        if name == "neb-prepare":
+            p.add_argument("--roles", help="only these builder roles, comma-separated")
+        if name == "neb":
+            p.add_argument("dirs", nargs="*", help="only these NEB directories (default: every one without a result)")
+    p = sp.add_parser("recipe", help="print the CdSe/CdCl2 template recipe")
+    p.add_argument("--recipe", help=argparse.SUPPRESS)
+    p = sp.add_parser("job", help="batch script for GPU steps (cluster block of the recipe)")
+    p.add_argument("run", help="run directory, as seen on the cluster")
+    p.add_argument("--steps", required=True, help="comma-separated GPU steps: reference, states, neb")
+    p.add_argument("--recipe", help="local recipe YAML for the cluster block (default: the template); the steps "
+                                    "on the cluster read <run>/recipe.yaml")
+    p.add_argument("-o", "--output", required=True, help="script to write")
+    p.add_argument("--time", default="02:00:00", help="wall time")
+    p.add_argument("--name", default="sitekin", help="job name")
+
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref", help='reference properties.json')
     p.add_argument("new", help='properties.json to compare')
@@ -457,7 +530,7 @@ def main(argv=None) -> int:
 
     args = ap.parse_args(argv)
     return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "reaction": _reaction,
-            "compare": _compare, "log": _log, "status": _status, "campaign": _campaign,
+            "compare": _compare, "sites": _sites, "log": _log, "status": _status, "campaign": _campaign,
             "monomers": _monomers}[args.group](args)
 
 
