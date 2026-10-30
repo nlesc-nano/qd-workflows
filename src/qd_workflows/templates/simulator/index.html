@@ -102,6 +102,13 @@ button:disabled { opacity: .55; cursor: progress; }
 .chart.tall { height: 240px; }
 .chart.short { height: 170px; }
 .chart-title { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0 4px; }
+.film { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 10px; }
+.frame { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-0); cursor: pointer; }
+.frame.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.frame .fv { position: relative; height: 140px; }
+.frame .fc { font-size: 11px; line-height: 1.35; color: var(--text-secondary); padding: 4px 6px 6px; }
+.frame .fc b { color: var(--text-primary); font-weight: 600; }
+.frame.wait .fv { display: grid; place-items: center; color: var(--text-muted); font-size: 12px; }
 .cap { font-size: 11.5px; color: var(--text-muted); margin: 2px 4px 6px; }
 .runrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; }
 .timebar { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
@@ -290,6 +297,30 @@ body.nuc-only .growth { display: none; }
         </div>
         <div class="status" id="buildStatus"></div>
       </div>
+    </section>
+
+    <section class="card growth" id="filmCard">
+      <h2>4 · From the nucleus to the dot <small>the builder along the growth of one cohort</small></h2>
+      <div class="cap" style="margin:0 0 6px">The cohort picked in card 2 (born at its own time) is followed from the grid nucleus
+        it starts from to the end of the run. At each frame QD_builder makes the dot on the model's facet distances
+        h<sub>f</sub>; its charge balance gives k<sub>X</sub>, and the Z-type step brings the <span class="xl">CdCl₂</span> to the model's k
+        (coverage θ<sub>f</sub> from K<sub>X</sub> and the kinetics), placed evenly over the facets of each family on equivalent sites,
+        strongest-bound family first.</div>
+      <div class="row">
+        <label>Frames <select id="filmN" aria-label="number of frames"><option>6</option><option selected>8</option><option>10</option><option>12</option></select></label>
+        <label><input type="checkbox" id="filmFull" checked> full layer search (closer to m; about 5–20 s a frame)</label>
+        <button class="primary" id="filmBtn" disabled>Build the growth film</button>
+        <span class="cap" id="filmWho" style="align-self:center;margin:0">Run the kinetic growth first.</span>
+      </div>
+      <div class="status" id="filmStatus"></div>
+      <div class="film" id="film"></div>
+      <div class="charts" id="filmCharts" hidden>
+        <div><div class="chart-title">Facet distances h<sub>f</sub> of the cohort (Å)</div><div class="chart" id="fH"></div></div>
+        <div><div class="chart-title">Size m (CdSe units): model and built dots</div><div class="chart" id="fM"></div></div>
+        <div><div class="chart-title"><span class="xl">CdCl₂</span> units k: model, builder charge balance k<sub>X</sub>, after the Z-type step</div><div class="chart" id="fK"></div></div>
+        <div><div class="chart-title"><span class="xl">CdCl₂</span> coverage θ<sub>f</sub> per facet family</div><div class="chart" id="fT"></div></div>
+      </div>
+      <div class="cap" id="filmCap"></div>
     </section>
 
     <section class="card growth">
@@ -897,13 +928,14 @@ function drawDist() {
 
 function showDot(co) {
   const box = $("dotInfo");
-  if (!co) { box.innerHTML = "<span>No dots at this time</span><span></span>"; $("build").disabled = true; return; }
+  if (!co) { box.innerHTML = "<span>No dots at this time</span><span></span>"; $("build").disabled = true; filmWho(null); return; }
   const fac = Object.entries(co.facets).map(([f, a]) => `{${f}} ${(100 * a).toFixed(0)}%`).join(", ");
   box.innerHTML = `<span>Born at</span><span>${fmt(co.t_b)} s</span><span>Dots</span><span>${fmt(co.N)} M</span>
     <span>m (CdSe), k (${XL})</span><span>${co.m.toFixed(1)}, ${co.k.toFixed(1)}</span>
     <span>Diameter</span><span>${co.d_nm.toFixed(2)} nm (equivalent sphere), ~${co.n_atoms} atoms</span>
     <span>Facets</span><span>${fac}</span>`;
   const big = co.n_atoms > D.max_atoms;
+  filmWho(co);
   $("build").disabled = big;
   $("buildStatus").className = "status";
   $("buildStatus").textContent = big ? `This dot has ~${co.n_atoms} atoms, above the page's ${D.max_atoms}-atom limit.` : "";
@@ -918,7 +950,8 @@ function setWhich(w) {
 function ztext(z) {
   if (!z || z.target_total == null) return "not run";
   if (z.error) return `skipped (${z.error})`;
-  const fam = Object.entries(z.per_family || {}).map(([f, v]) => `${f} ${v.added ?? v.removed ?? 0}/${v.requested ?? "?"}`).join(", ");
+  const fam = Object.entries(z.per_family || {}).map(([f, v]) => `${f} ${v.added ?? v.removed ?? 0}/${v.even_count ?? v.requested ?? "?"}`
+    + (v.per_facet ? ` (${v.per_facet.join("/")} per facet)` : "")).join(", ");
   return `k_X ${z.k_X} → target ${z.target_total}: ${z.direction} ${z.units}` + (z.shortfall ? `, ${z.shortfall} short (no site left)` : "") + (fam ? ` · ${fam}` : "");
 }
 
@@ -953,6 +986,143 @@ function render(xyz, id = "viewer") {
   v.zoomTo(); v.zoom(n > 200 ? 0.8 : 1.4); v.render();
   if (id === "viewer") viewer = v;
 }
+
+// ---------- 4. from the nucleus to the dot ----------
+let FILM = null;                            // {tb, track, frames: [{t, kind, b|s, ...}]}
+const FAMCOL = () => [css("--series-1"), css("--series-2"), css("--series-3"), css("--series-4")];
+
+function filmWho(co) {
+  if (!co) { $("filmWho").textContent = "No cohort at this time."; $("filmBtn").disabled = true; return; }
+  const tr = cohortTrack(co.t_b);
+  $("filmWho").textContent = `follows the cohort born at ${fmt(co.t_b)} s (${tr.length} snapshots, m ${fmt(tr[0].co.m)} → ${fmt(tr[tr.length - 1].co.m)})`;
+  $("filmBtn").disabled = tr.length < 2;
+  $("filmBtn").dataset.tb = co.t_b;
+}
+
+// the cohort born at tb in every snapshot after its birth: the cohort of the nearest birth time (cohorts merge as the
+// distribution is re-binned, a merged cohort carries the mean birth time of its parts)
+function cohortTrack(tb) {
+  const out = [], lt = Math.log(Math.max(tb, 1e-30));
+  R.snapshots.forEach((s, j) => {
+    if (s.t < tb || !s.cohorts.length) return;
+    const co = s.cohorts.reduce((a, c) => (Math.abs(Math.log(Math.max(c.t_b, 1e-30)) - lt) < Math.abs(Math.log(Math.max(a.t_b, 1e-30)) - lt) ? c : a));
+    if (Math.abs(Math.log(Math.max(co.t_b, 1e-30)) - lt) < 0.35) out.push({ j, t: s.t, co });
+  });
+  return out;
+}
+
+function filmTimes(track, n) {
+  const t0 = Math.log(track[0].t > 0 ? track[0].t : track[1].t), t1 = Math.log(track[track.length - 1].t);
+  const pick = [];
+  for (let i = 0; i < n; i++) {
+    const lt = t0 + (t1 - t0) * i / Math.max(1, n - 1);
+    const r = track.reduce((a, b) => (Math.abs(Math.log(b.t || 1e-30) - lt) < Math.abs(Math.log(a.t || 1e-30) - lt) ? b : a));
+    if (!pick.includes(r)) pick.push(r);
+  }
+  return pick;
+}
+
+function frameCard(i, title) {
+  const d = document.createElement("div");
+  d.className = "frame wait"; d.id = `fr${i}`;
+  d.innerHTML = `<div class="fv" id="frv${i}">${title}</div><div class="fc" id="frc${i}"></div>`;
+  $("film").appendChild(d);
+  return d;
+}
+
+function perFacet(z) {
+  return Object.entries(z?.per_family || {}).filter(([, v]) => v.per_facet)
+    .map(([f, v]) => `{${f}} ${v.added != null ? "+" : "−"}${v.per_facet.join("/")}`).join(" · ");
+}
+
+function showFrame(i) {
+  const f = FILM.frames[i]; if (!f || !f.xyz) return;
+  document.querySelectorAll(".frame").forEach((e) => e.classList.toggle("on", e.id === `fr${i}`));
+  lastXyz = f.xyz; lastName = f.kind === "nucleus" ? `nucleus_m${f.m}_k${f.k}` : `dot_t${fmt(f.t)}s`;
+  render(f.xyz); $("dl").hidden = false;
+  if (f.kind === "nucleus") {
+    $("what").innerHTML = `<b>Grid nucleus</b> (m = ${f.m}, k = ${f.k}) the followed cohort starts from, born at ${fmt(FILM.tb)} s.`;
+    $("sInfo").innerHTML = `<span>Cluster</span><span>${f.s.formula}</span><span>Energy</span><span>${f.s.E_eV.toFixed(3)} eV</span>`;
+    $("recipeBox").hidden = true;
+    return;
+  }
+  const b = f.b, comp = Object.entries(b.built.composition).map(([e, n]) => `${e}${n}`).join("");
+  $("what").innerHTML = `<b>Frame ${i}</b>: the cohort born at ${fmt(b.cohort_born)} s, at ${fmt(b.t)} s (QD_builder on the model's facet distances).`;
+  $("sInfo").innerHTML = `<span>Built</span><span>${comp} (${b.built.n_atoms} atoms)</span>
+    <span>m built / model</span><span>${b.built.m} / ${b.model.m.toFixed(1)}</span>
+    <span>k built / model</span><span>${b.built.k} / ${b.model.k.toFixed(1)} (charge balance k_X ${b.z_type.k_X ?? "–"})</span>
+    <span>Facet distances</span><span>${Object.entries(b.facet_distances || {}).map(([k, v]) => `{${k}} ${v.toFixed(2)} Å`).join(", ")}</span>
+    <span>Z-type</span><span>${ztext(b.z_type)}</span>`;
+  $("recipe").textContent = JSON.stringify(b.recipe, null, 1); $("recipeBox").hidden = false;
+}
+
+async function buildFilm() {
+  const tb = +$("filmBtn").dataset.tb, track = cohortTrack(tb);
+  if (track.length < 2) return;
+  const n = +$("filmN").value, times = filmTimes(track, n);
+  FILM = { tb, track, frames: [] };
+  $("film").innerHTML = ""; $("filmCharts").hidden = false; $("filmBtn").disabled = true;
+  drawFilm();
+  $("filmStatus").className = "status";
+  // frame 0: the grid nucleus the cohort starts from
+  const m0 = R.m0, k0 = Math.round(track[0].co.k);
+  frameCard(0, "nucleus…");
+  try {
+    const s = await api(`/api/structure?m=${m0}&k=${k0}`);
+    FILM.frames[0] = { kind: "nucleus", t: track[0].t, m: m0, k: k0, s, xyz: s.xyz };
+    $("fr0").classList.remove("wait"); render(s.xyz, "frv0");
+    $("frc0").innerHTML = `<b>nucleus</b> · grid (m ${m0}, k ${k0})<br>${s.formula}`;
+  } catch (e) {
+    $("frc0").textContent = `no grid node m ${m0}, k ${k0}`; $("frv0").textContent = "–";
+  }
+  $("fr0").addEventListener("click", () => showFrame(0));
+  let skipped = 0;
+  for (let i = 0; i < times.length; i++) {
+    const r = times[i], fi = i + 1;
+    frameCard(fi, `t ${fmt(r.t)} s…`);
+    $("fr" + fi).addEventListener("click", () => showFrame(fi));
+    if (r.co.n_atoms > D.max_atoms) {
+      $("frc" + fi).textContent = `~${r.co.n_atoms} atoms, above the ${D.max_atoms}-atom limit`; skipped++; continue;
+    }
+    $("filmStatus").textContent = `Building frame ${fi} of ${times.length}: t = ${fmt(r.t)} s, m ≈ ${r.co.m.toFixed(0)}, k ≈ ${r.co.k.toFixed(0)}…`;
+    try {
+      const b = await api("/api/build", { run_id: R.run_id, t: r.t, cohort: r.co.i, full: $("filmFull").checked });
+      FILM.frames[fi] = { kind: "dot", t: b.t, b, xyz: b.xyz };
+      $("fr" + fi).classList.remove("wait"); render(b.xyz, "frv" + fi);
+      const comp = Object.entries(b.built.composition).map(([e, n]) => `${e}${n}`).join("");
+      const pf = perFacet(b.z_type);
+      $("frc" + fi).innerHTML = `<b>t ${fmt(b.t)} s</b> · m ${b.built.m} (model ${b.model.m.toFixed(0)})<br>${comp}<br>k ${b.built.k} (k_X ${b.z_type.k_X ?? "–"}, model ${b.model.k.toFixed(0)})${pf ? `<br>${pf}` : ""}`;
+      drawFilm();
+    } catch (e) { $("frc" + fi).textContent = e.message; $("frv" + fi).textContent = "failed"; }
+  }
+  $("filmStatus").textContent = `${FILM.frames.filter((f) => f && f.kind === "dot").length} dots built` + (skipped ? `, ${skipped} above the atom limit` : "") + ". Click a frame to show it in the structure panel.";
+  $("filmBtn").disabled = false;
+}
+
+function drawFilm() {
+  const tr = FILM.track, t = tr.map((r) => r.t), cols = FAMCOL();
+  const fams = Object.keys(tr[tr.length - 1].co.h || {});
+  const L = (yt, extra = {}) => layout(yt, Object.assign({ showlegend: true, hovermode: "closest",
+    legend: { orientation: "h", y: 1.02, yanchor: "bottom", x: 0, font: { size: 10 } }, margin: { l: 50, r: 8, t: 22, b: 32 } }, extra));
+  const built = FILM.frames.filter((f) => f && f.kind === "dot");
+  const mk = (x, y, name, color, symbol) => ({ x, y, name, type: "scatter", mode: "markers",
+    marker: { color, size: 9, symbol, line: { color: css("--surface-1"), width: 2 } } });
+  Plotly.react("fH", fams.map((f, i) => line(t, tr.map((r) => r.co.h?.[f] ?? null), `{${f}}`, cols[i % cols.length],
+    { line: { color: cols[i % cols.length], width: 2, shape: "hv" } })), L("linear"), PCONF);
+  Plotly.react("fM", [line(t, tr.map((r) => r.co.m), "model m", cols[0]),
+                      mk(built.map((f) => f.t), built.map((f) => f.b.built.m), "built m", cols[1], "circle")], L("log"), PCONF);
+  Plotly.react("fK", [line(t, tr.map((r) => r.co.k), "model k", cols[0]),
+                      mk(built.map((f) => f.t), built.map((f) => f.b.z_type.k_X), "k_X (charge balance)", css("--text-muted"), "square"),
+                      mk(built.map((f) => f.t), built.map((f) => f.b.built.k), "built k (after Z-type)", cols[2], "circle")], L("linear"), PCONF);
+  const S = R.series.filter((r) => r.t >= t[0] && r.t <= t[t.length - 1] && r.theta);
+  const tf = Object.keys(S.length ? S[0].theta : {});
+  const LT = L("linear"); LT.yaxis.range = [-0.03, 1.03];
+  Plotly.react("fT", tf.map((f, i) => line(S.map((r) => r.t), S.map((r) => r.theta[f]), `{${f}}`, cols[i % cols.length])), LT, PCONF);
+  $("filmCap").textContent = built.length
+    ? `Built m moves in whole layers (target mode on the facet distances); k_X is the builder's charge balance, the Z-type step adds or removes ${XL} to reach the model's k in whole units per facet.`
+    : "";
+}
+$("filmBtn").addEventListener("click", buildFilm);
 
 $("tslider").addEventListener("input", (e) => { snapIdx = +e.target.value; onTime(); });
 document.querySelectorAll(".pick button").forEach((b) => b.addEventListener("click", () => setWhich(b.dataset.which)));
