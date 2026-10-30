@@ -16,7 +16,7 @@ material:
   g_bulk_T:
     T: [50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 425, 450, 475, 500, 525, 550, 575, 600, 625, 650, 675, 700, 725, 750, 775, 800]
     G_eV: [-5.45069, -5.45680, -5.46574, -5.47717, -5.49078, -5.50631, -5.52352, -5.54224, -5.56232, -5.58364, -5.60610, -5.62959, -5.65406, -5.67943, -5.70564, -5.73264, -5.76040, -5.78887, -5.81800, -5.84778, -5.87816, -5.90913, -5.94065, -5.97271, -6.00528, -6.03834, -6.07188, -6.10588, -6.14033, -6.17520, -6.21049]
-  m0: auto
+  m0: 13                            # the grid's top (the builder's (13, 3) dot); facet-area law: no gamma hand-over
   m0_min: 10
   m_dissolve: 4
   N_min: 1.0e-15
@@ -154,6 +154,55 @@ kinetics:
       vertex:100+111A+111B:
         dir: {no_barrier: true}
         disp: {dG_P: -1.8972, dG_TS: -0.8847}
+  # facet-area size law (size_law: facet_area; Changes to Implement, 2026-10-30): one channel per facet family on its
+  # area, terrace K_X and Delta mu, facet and edge NEBs, the dot's areas and edges from QD_builder on the fly
+  size_law: facet_area
+  facet_area:
+    T_K: 500
+    rate_form: first_order
+    geometry: builder
+    geometry_step_A: 0.5
+    start_h_A: {'100': 6.1405, 111A: 4.4316, 111B: 3.5452}
+    builder:
+      cif: $QD_BUILDER/examples/cifs/CdSe_zb.cif
+      charges: {Cd: 2, Se: -2, Cl: -1}
+      passivation: {ligand: Cl, surf_tol: 2.0, prepass_mode: role-aware, prepass_min_cn_terrace: 3, prepass_min_cn_edge: 2,
+        prepass_min_cn_vertex: 1}
+      symmetry: {proper_rotations_only: true}
+      centre: Se
+      anion: Se
+      positive_q_mode: add
+    facets:
+      111A:
+        dG_bind_eV: -0.2664
+        dmu_eV: {45: 0.662, 127: 0.6121, 279: 0.4208, 441: 0.8985}
+        neb:
+          dir: {no_barrier: true}
+          disp: {no_barrier: true}
+      '100':
+        dG_bind_eV: -0.9379
+        dmu_eV: {127: 1.4017, 279: 1.5271, 441: 1.5806}
+        neb:
+          dir: {no_barrier: true}
+          disp: {dG_P: -0.2849, dG_TS: -0.045}
+      111B:
+        dG_bind_eV: -1.7997
+        dmu_eV: {127: 1.6536, 279: 0.9693, 441: 1.198}
+        neb:
+          dir: {no_barrier: true}
+          disp: {dG_P: -0.4198, dG_TS: 0.1111}
+    edges:
+      100|111A:
+        dG_bind_eV: -0.3317
+        neb:
+          dir: {no_barrier: true}
+          disp: {dG_P: -0.9789, dG_TS: -0.2587}
+      100|111B:
+        dG_bind_eV: -0.9533
+        neb:
+          dir: {dG_P: -1.2649, dG_TS: -0.766}
+          disp: {dG_P: -0.609, dG_TS: 0.01}
+      111A|111B: {dG_bind_eV: -0.9897, neb: null}
 families:
   '100':
     gamma0: 15.6

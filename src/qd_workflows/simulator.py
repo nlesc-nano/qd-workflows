@@ -413,11 +413,12 @@ class Simulator:
         F = self.runs[rid]["growth"].F
         if zt and zt.get("per_family"):                  # strongest-bound family first (the even placement's order)
             zt["per_family"] = dict(sorted(zt["per_family"].items(), key=lambda kv: F[kv[0]]["dG_bind"]))
-        if not full:
+        if not full and "target" in recipe:              # facet-area law: no target search (the dot built on the fly)
             recipe["target"]["roundings"] = [0]
         t0 = time.time()
         with self.build_lock, tempfile.TemporaryDirectory() as tmp, even_placement(self.even_ztype):
-            out = _build(self.cfg["cif"], recipe, self.cfg.get("positive_q_mode", "add"), Path(tmp) / "b")
+            out = _build(r.get("cif", self.cfg["cif"]), recipe, r.get("positive_q_mode", self.cfg.get("positive_q_mode", "add")),
+                         Path(tmp) / "b")
         secs = round(time.time() - t0, 2)
         if "error" in out:
             raise RuntimeError(out["error"] + "\n" + "\n".join(out.get("log", "").splitlines()[-15:]))

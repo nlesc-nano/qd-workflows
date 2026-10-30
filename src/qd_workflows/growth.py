@@ -236,6 +236,8 @@ SHAPE_CAPS: dict = {}
 SHAPE_CAPS_MAX = 20000
 
 
+FA_FAMILIES = ("100", "111A", "111B")           # the facet-area law's families (the computed sitekin dots')
+
 ZB_NORMALS = {                                  # outward normals of the zinc-blende families (Td: {111} and {-1-1-1} apart)
     "100": [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)],
     "111A": [(1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1)],
@@ -330,6 +332,26 @@ class Shape:
         per = np.bincount(self.fam_of[t["face"]], weights=seg, minlength=len(self.fams))
         return {f: float(per[i]) for i, f in enumerate(self.fams)}
 
+    def edge_lengths(self, h: dict) -> dict:
+        """Total length (A) of the polyhedron's edges per edge type "f|g" (family labels sorted) at distances h."""
+        self(h)
+        hv = np.concatenate([np.full(len(self.n[f]), float(h[f])) for f in self.fams])
+        t = self.topos[0]
+        v = np.linalg.solve(self.N[t["tri"]], hv[t["tri"]][..., None])[..., 0]
+        faces = {}
+        for a, b, p in zip(t["a"], t["b"], t["face"]):
+            faces.setdefault((min(a, b), max(a, b)), []).append(int(p))
+        out = {}
+        for (a, b), ps in faces.items():
+            if len(ps) != 2:
+                continue
+            seg = float(np.linalg.norm(v[a] - v[b]))
+            if seg < 1e-9:
+                continue
+            key = "|".join(sorted(self.fams[self.fam_of[p]] for p in ps))
+            out[key] = out.get(key, 0.0) + seg
+        return out
+
     def wulff(self, gamma: dict, volume: float) -> dict:
         """Facet distances of the Wulff shape (h_f proportional to gamma_f) with the given volume."""
         h = {f: max(g, 1e-6) for f, g in gamma.items()}
@@ -396,7 +418,8 @@ class Growth:
             if st and "R_se_A" in st and "R_h_A" in st:
                 self.geo[(nd["m"], nd["k"])] = (float(st["R_se_A"]), float(st["R_h_A"]))
         self.Om = float(params["material"]["Omega_m"])
-        self.shape = Shape({f: (normals or ZB_NORMALS)[f] for f in params["families"]})
+        fams = FA_FAMILIES if params["kinetics"].get("size_law") == "facet_area" else params["families"]
+        self.shape = Shape({f: (normals or ZB_NORMALS)[f] for f in fams})
         self._gscale = 1.0                               # gamma^0 scale of match_m0
         self.act_ma = float(params["conditions"].get("gamma_MA", 1.0))
         self.set_temperature(float(params["conditions"]["T"]))
@@ -416,7 +439,7 @@ class Growth:
         self.gb = self.g_bulk()
         self.c_sat = self.mx_sat()
         self.dg_th = binding_thermal(self.thermo, self.T)               # thermal part of binding one MX_q at T
-        self.F = copy.deepcopy(self.P["families"])
+        self.F = self._fa_families() if self.facet_area else copy.deepcopy(self.P["families"])
         for p in self.F.values():
             if "eps0" in p:                                              # binding free energy at T from the energy
                 p["dG_bind"] = -float(p["eps0"]) + self.dg_th
@@ -444,7 +467,8 @@ class Growth:
             raise ValueError("size_law = 'facets' works with growth_law 'size' or 'shape' (the facet law has its own)")
         self._R1 = 0.0                                   # the monomer's transport is set again at this T
         classical = self.P["nucleation"].get("omega", "grid") == "continuum"
-        self.handover = self._handover() if m0 == "auto" and not classical else None
+        # the facet-area law hands over at the grid's top (no continuum surface energy to match)
+        self.handover = self._handover() if m0 == "auto" and not classical and not self.facet_area else None
         self.sphere_used = self.sphere_setup() if self.sphere else None
 
     def ref_pool(self):
@@ -616,6 +640,10 @@ class Growth:
             fam[f] = facet_state(p, c, self.kt)
         # surface free energy and facet areas of the Wulff dot of one unit: classical nucleation, and the continuum
         # tail of the grid's Omega(m) past m0
+        if self.facet_area:                             # no surface energies: no continuum tail, no Gibbs-Thomson
+            self._unit_area = self.shape(self.fa_start_h(1.0))[0]
+            self._sigma = None
+            return pl, fam
         gam = {f: fam[f]["gamma"] for f in self.F}
         area, _v, _s = self.shape(self.shape.wulff(gam, self.Om))
         self._unit_area = area
@@ -741,7 +769,12 @@ class Growth:
     # -- per-facet size law from the computed roles (kinetics.size_law = "facets") --
     @property
     def facet_law(self) -> bool:
-        return self.P["kinetics"].get("size_law") == "facets" and not self.sphere
+        """Channel laws: per role ("facets") or per facet family on its area ("facet_area")."""
+        return self.P["kinetics"].get("size_law") in ("facets", "facet_area") and not self.sphere
+
+    @property
+    def facet_area(self) -> bool:
+        return self.P["kinetics"].get("size_law") == "facet_area" and not self.sphere
 
     ROLE_DIM = {"facet": 2, "edge": 1, "vertex": 0}
 
@@ -887,8 +920,238 @@ class Growth:
         for f in self.F:
             sel = np.array([x == f for x in ch["f"]], bool)
             a_f = co["area"].get(f, 0.0)
-            v[f] = max(self.Om * float(flux[sel].sum()) / a_f, 0.0) if (a_f > 1e-6 and sel.any()) else 0.0
+            vf = self.Om * float(flux[sel].sum()) / a_f if (a_f > 1e-6 and sel.any()) else 0.0
+            v[f] = vf if self.facet_area else max(vf, 0.0)          # facet-area law: a facet may dissolve
         return v
+
+    # -- facet-area size law (kinetics.size_law = "facet_area"): one channel per facet family on its area --
+    def _fa(self) -> dict:
+        return self.P["kinetics"]["facet_area"]
+
+    def fa_site_area(self, f: str) -> float:
+        """Area per terrace Cd (A^2), from the lattice: a^2/2 on {100}, sqrt(3) a^2/4 on {111} (a^3 = 4 Omega_m)."""
+        a = (4.0 * self.Om) ** (1.0 / 3.0)
+        return a * a / 2.0 if f == "100" else SQ3 * a * a / 4.0
+
+    def _fa_families(self) -> dict:
+        """The facet-area law's families: the terrace binding pooled over the computed sizes (gas phase at 1 M;
+        set_temperature adds the CdCl2 solvation), Langmuir (w = 0), one Z-type site per terrace Cd. No gamma."""
+        B = self._fa()["facets"]
+        out = {}
+        for f in FA_FAMILIES:
+            sa = self.fa_site_area(f)
+            out[f] = {"dG_bind": float(B[f]["dG_bind_eV"]), "w": 0.0, "gamma0": 0.0, "Gamma_max": 100.0 / sa,
+                      "site_area": sa, "x_X": 0.0}
+        return out
+
+    def fa_start_h(self, m: float) -> dict:
+        """Plane distances of the start shape scaled to V = m Omega_m: the lattice-site planes of the builder's
+        hand-over dot (kinetics.facet_area.start_h_A)."""
+        h0 = {f: float(self._fa()["start_h_A"][f]) for f in FA_FAMILIES}
+        _a, vol, _s = self.shape(h0)
+        s = (max(m, 1e-12) * self.Om / vol) ** (1.0 / 3.0)
+        return {f: h0[f] * s for f in FA_FAMILIES}
+
+    def geometry(self, h: dict, m: float):
+        """Facet areas (A^2), edge lengths per edge type (A) and the built dot's record of a dot with lattice-site
+        planes h and m units: QD_builder's lattice-site polyhedron of the dot built on the fly (facet_area.geometry =
+        "builder", builder_geometry.BuilderGeometry) or the model's own polyhedron ("shape"). A failed build falls
+        back to the model's polyhedron and is counted (self.geometry_fallbacks)."""
+        if self._fa().get("geometry", "builder") == "builder":
+            bg = self.__dict__.get("_bgeo")
+            if bg is None:
+                from .builder_geometry import BuilderGeometry
+                bg = self._bgeo = BuilderGeometry(self._fa()["builder"], FA_FAMILIES,
+                                                  step_A=float(self._fa().get("geometry_step_A", 0.5)))
+            try:
+                return bg.get(h, m)
+            except Exception as exc:
+                if "lattice_fitted" in str(exc) and "QD_builder without" in str(exc):
+                    raise
+                self.geometry_fallbacks = getattr(self, "geometry_fallbacks", 0) + 1
+                self.geometry_error = str(exc)[-300:]
+        return self.shape(h)[0], self.shape.edge_lengths(h), None
+
+    def fa_dmu(self, f: str, m: float) -> float:
+        """<Delta mu_e>_T of facet f at m (eV, gas phase, a_X = 1; terrace environments only): the computed sizes
+        interpolated linearly in m^(-1/3), held at the nearest computed size outside them (decision 2: below a
+        family's first size, that size's value)."""
+        tab = sorted((int(k), float(v)) for k, v in self._fa()["facets"][f]["dmu_eV"].items())
+        ms, vs = [x for x, _ in tab], [y for _, y in tab]
+        if m <= ms[0]:
+            return vs[0]
+        if m >= ms[-1]:
+            return vs[-1]
+        j = next(i for i in range(1, len(ms)) if ms[i] >= m)
+        x, x1, x2 = m ** (-1.0 / 3.0), ms[j - 1] ** (-1.0 / 3.0), ms[j] ** (-1.0 / 3.0)
+        t = (x1 - x) / (x1 - x2)
+        return vs[j - 1] + t * (vs[j] - vs[j - 1])
+
+    def _fa_rate(self, q, area_per_site: float, a1: float):
+        """Rate constant per area (A/s) of one NEB route: (kT/h) e^(-dG'_TS/kT) / (n_1M (1 + K_P a_1)), K_P =
+        e^(-dG'_P/kT) (facet_area.rate_form first_order; second_order without the precursor term), dG' the NEB free
+        energy minus the bare monomer's solvation, per site over area_per_site, capped at the collision rate v_1;
+        no barrier: v_1; None without a NEB."""
+        if q is None:
+            return None
+        v1 = self._speed(191.385)
+        if q.get("no_barrier"):
+            return v1
+        kt, ds1 = self.kt, self.dg_solv_ma
+        k = (kt / 4.135667696e-15) * math.exp(-min((float(q["dG_TS"]) - ds1) / kt, 700.0)) / 6.02214076e-4
+        if self._fa().get("rate_form", "first_order") == "first_order":
+            k /= 1.0 + math.exp(min(-(float(q["dG_P"]) - ds1) / kt, 700.0)) * a1
+        return min(k / area_per_site, v1)
+
+    def fa_keff(self, f: str, area: dict, edges: dict, a_x: float, a1: float) -> float:
+        """Rate constant of facet f (A/s): terrace part and the step band along its edges, each with its own Langmuir
+        blocking (the same K above and below), the band's share capped at the facet,
+            k_terr = (k_dir + k_disp K_f a_X) / (1 + K_f a_X),   k_step = sum_e L_e k_step,e / sum_e L_e,
+            k_eff = (1 - phi) k_terr + phi k_step,   phi = min(1, lambda_0 L_f / A_f),   lambda_0 = a / sqrt(2),
+        over the edge types of f that have a NEB (one site per lambda_0^2 of band)."""
+        B, kt = self._fa(), self.kt
+        nf = B["facets"][f].get("neb") or {}
+        Kf = math.exp(min(-float(self.F[f]["dG_bind"]) / kt, 700.0))
+        sa = self.fa_site_area(f)
+        kd, kx = self._fa_rate(nf.get("dir"), sa, a1), self._fa_rate(nf.get("disp"), sa, a1)
+        kterr = ((kd or 0.0) + (kx or 0.0) * Kf * a_x) / (1.0 + Kf * a_x)
+        A_f = float(area.get(f, 0.0))
+        if A_f <= 0.0:
+            return kterr
+        lam = (4.0 * self.Om) ** (1.0 / 3.0) / math.sqrt(2.0)
+        dsx = self.th["dG_solv_mx"]
+        num = den = 0.0
+        for e, q in (B.get("edges") or {}).items():
+            L = float(edges.get(e, 0.0))
+            if f not in e.split("|") or not q.get("neb") or L <= 0.0:
+                continue
+            Ke = math.exp(min(-(float(q["dG_bind_eV"]) - dsx) / kt, 700.0))
+            ed = self._fa_rate(q["neb"].get("dir"), lam * lam, a1)
+            ex = self._fa_rate(q["neb"].get("disp"), lam * lam, a1)
+            num += L * ((ed or 0.0) + (ex or 0.0) * Ke * a_x) / (1.0 + Ke * a_x)
+            den += L
+        if den <= 0.0:
+            return kterr
+        phi = min(1.0, lam * den / A_f)
+        return (1.0 - phi) * kterr + phi * num / den
+
+    def _fa_channels(self, co) -> dict:
+        """One channel per facet family of a dot: N = A_f (A^2), a_0 = 1, kappa = k_eff^(f) (A/s), and
+        Delta mu_f(m; a_X) = <Delta mu_e>_T(m) + dG_solv(CdCl2) + kT ln a_X (terrace environments only)."""
+        pl, kt = self._pl, self.kt
+        ax = float(pl["a_MX_free"])
+        a1 = math.exp(min((pl["mu_MA"] - self.th["g_n"][0]) / kt, 700.0))
+        dsx, lnax = self.th["dG_solv_mx"], math.log(max(ax, 1e-300))
+        area, edges = co["area"], co.get("edges") or {}
+        ch = {"role": [], "f": [], "N": [], "dmu": [], "kappa": [], "a0": 1.0}
+        for f in FA_FAMILIES:
+            ch["role"].append(f"facet:{f}")
+            ch["f"].append(f)
+            ch["N"].append(float(area.get(f, 0.0)))
+            ch["dmu"].append(self.fa_dmu(f, co["m"]) + dsx + kt * lnax)
+            ch["kappa"].append(self.fa_keff(f, area, edges, ax, a1))
+        for k_ in ("N", "dmu", "kappa"):
+            ch[k_] = np.array(ch[k_], float)
+        return ch
+
+    def _fa_step(self, co, m_new: float, v: dict) -> dict:
+        """Plane distances of a dot taken to m_new units: h_f + s v_f, v_f = Omega_m j_f signed on exposed facets (a
+        facet with j_f < 0 dissolves) and 0 on hidden planes (held), s from V(h) = m_new Omega_m (Newton). When the
+        signed speeds cannot give the new volume the shape is kept and scaled."""
+        h, target = co["h"], m_new * self.Om
+
+        def keep():
+            _a, vol, _s = self.shape(h)
+            s = (target / vol) ** (1.0 / 3.0)
+            return {f: h[f] * s for f in h}
+
+        if abs(m_new - co["m"]) <= 1e-12 * max(co["m"], 1.0):
+            return dict(h)
+        if not v or not any(v.values()):
+            return keep()
+        area, vol, _s = self.shape(h)
+        s = 0.0
+        for _ in range(40):
+            slope = sum(area[f] * v.get(f, 0.0) for f in h)
+            if slope == 0.0:
+                return keep()
+            s_new = s + (target - vol) / slope
+            hn = {f: h[f] + s_new * v.get(f, 0.0) for f in h}
+            if s_new < 0.0 or min(hn.values()) <= 0.5:
+                return keep()
+            s = s_new
+            area, vol, _s = self.shape(hn)
+            if abs(vol - target) <= 1e-10 * target:
+                return hn
+        return keep()
+
+    def _fa_dmu_dm(self, cohorts, A, r, th_bar) -> np.ndarray:
+        """d mu_dot / dm of each dot under the facet law (eV per unit), by central difference at +-1 % in m with the
+        areas scaled as m^(2/3) and the edges as m^(1/3): the stiffness of a dot near its own equilibrium (a dot whose
+        mu rises with m sits in a stable well; run() then updates its size backward-Euler)."""
+        res_d, _rr = self.resistances(A, r, th_bar)
+        out = np.zeros(len(cohorts))
+        for i, co in enumerate(cohorts):
+            mu = []
+            for fac in (0.99, 1.01):
+                s = fac ** (1.0 / 3.0)
+                c2 = {"m": co["m"] * fac, "area": {f: a * s * s for f, a in co["area"].items()},
+                      "edges": {e: L * s for e, L in (co.get("edges") or {}).items()}}
+                ch = self._fa_channels(c2)
+                g = self.channel_conductance(ch, float(res_d[i]))
+                if g.sum() <= 0:
+                    break
+                top = float(ch["dmu"].max())
+                mu.append(top + self.kt * math.log(float((g * np.exp((ch["dmu"] - top) / self.kt)).sum() / g.sum())))
+            if len(mu) == 2:
+                out[i] = (mu[1] - mu[0]) / (0.02 * max(co["m"], 1e-12))
+        return out
+
+    FA_TAIL = 500                                       # the nucleation chain past the grid's top, in units
+
+    def _fa_tail(self, m_e: int):
+        """Delta mu_dot(m) - g_bulk-referenced chemical potential of a start-shape dot of m units under the facet law
+        at the step's pool (m = m_e+1 .. FA_TAIL): kT ln [sum_f g_f e^(Delta mu_f/kT) / sum_f g_f], g_f = A_f / (r/D_1
+        + 1/k_eff^(f)) (diffusion to the equivalent sphere in series with the facet), the model's own polyhedron.
+        Cached on the pool's free MX_q and mu_MA (the step's speciation)."""
+        pl = self._pl
+        key = (m_e, round(math.log(max(float(pl["a_MX_free"]), 1e-300)), 6), round(float(pl["mu_MA"]), 4))
+        c = self.__dict__.setdefault("_fa_tail_cache", {})
+        if key in c:
+            return c[key]
+        if len(c) > 200:
+            c.clear()
+        kt, d1 = self.kt, (self._D1 or self.D)
+        mt = np.arange(m_e + 1, max(self.FA_TAIL, m_e + 2) + 1)
+        h1 = self.fa_start_h(1.0)
+        area1, _v, _s = self.shape(h1)
+        edges1 = self.shape.edge_lengths(h1)
+        out = np.empty(len(mt))
+        for i, m in enumerate(mt):
+            s = m ** (1.0 / 3.0)
+            co = {"m": float(m), "area": {f: a * s * s for f, a in area1.items()},
+                  "edges": {e: L * s for e, L in edges1.items()}}
+            ch = self._fa_channels(co)
+            r = (3.0 * m * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+            g = ch["N"] / (r / d1 + 1.0 / np.maximum(ch["kappa"], 1e-300))
+            top = float(ch["dmu"].max())
+            out[i] = top + kt * math.log(float((g * np.exp((ch["dmu"] - top) / kt)).sum() / max(g.sum(), 1e-300)))
+        c[key] = (mt, out)
+        return mt, out
+
+    def _fa_capf(self) -> float:
+        """Capacitance of the start shape over the radius of the sphere of the same volume (scale-free)."""
+        if "fa" not in self._capf_cache:
+            from .transport import capacitance_polyhedron
+            h1 = self.fa_start_h(1.0)
+            normals, dists = [], []
+            for f in FA_FAMILIES:
+                for nrm in ZB_NORMALS[f]:
+                    normals.append(np.asarray(nrm, float) / np.linalg.norm(nrm))
+                    dists.append(h1[f])
+            c, _se = capacitance_polyhedron(normals, dists, n=20000)
+            self._capf_cache["fa"] = c / (3.0 * self.Om / (4.0 * math.pi)) ** (1.0 / 3.0)
+        return self._capf_cache["fa"]
 
     def _arrays(self):
         """Per-family constants as arrays (order self.fams) and the grid's G(m,k) per m."""
@@ -1181,6 +1444,13 @@ class Growth:
             ob = np.concatenate([ob, ob[-1] - (mt - m_e) * dmu + sigma * (mt ** (2.0 / 3.0) - m_e ** (2.0 / 3.0))
                                  + self._delta * m_e * np.log(mt / m_e)])
             mb = np.concatenate([mb, mt])
+        elif self.facet_area:
+            # facet-area law: past the grid's top Omega(m) continues with the dots' own chemical potential from the
+            # facet law, Omega(m) = Omega(m_e) - sum_(j = m_e+1..m) [dmu - Delta mu_dot(j)] (no surface energy):
+            # nuclei count only where the law lets them grow
+            mt, dmu_t = self._fa_tail(m_e)
+            ob = np.concatenate([ob, ob[-1] - np.cumsum(dmu - dmu_t)])
+            mb = np.concatenate([mb, mt])
         # the barrier is the largest climb from a preceding minimum: a well of stable clusters in the grid (below the
         # monomers) has to be climbed out of, toward the continuum's maximum
         climb = ob - np.minimum.accumulate(ob)
@@ -1240,6 +1510,8 @@ class Growth:
     def dot(self, h, fam):
         """m, k and the areas of a dot with facet distances h (ideal spheres carry no MX_q: k = 0)."""
         area, vol, support = self.shape(h)
+        if self.facet_area:
+            area = self.geometry(h, vol / self.Om)[0]
         k = 0.0 if self.sphere else sum((fam[f]["theta"] * fam[f]["Gamma_max"] + self.F[f]["x_X"] / self.F[f]["site_area"])
                                         * area[f] for f in self.F)
         return vol / self.Om, k, area, support
@@ -1308,7 +1580,8 @@ class Growth:
             # Delta mu_r (Cd-weighted mean) and kappa_r, in series with the dot's diffusion resistance (res_d per area, res_d / a_0 per
             # site); the dot's rate n sum_r g_r (C - C_eq,r) is G (C - C_eq) with C_eq at the g_r-weighted mean of
             # e^(Delta mu_r/kT) (resistances returns the matching reaction resistance)
-            self._chs = [self.role_channels(co["m"], A[i], self._pl) for i, co in enumerate(cohorts)]
+            self._chs = [self._fa_channels(co) if self.facet_area else self.role_channels(co["m"], A[i], self._pl)
+                         for i, co in enumerate(cohorts)]
             res_d, _res_r = self.resistances(A, r, th_bar)
             for i, co in enumerate(cohorts):
                 ch = co["_ch"] = self._chs[i]
@@ -1324,6 +1597,14 @@ class Growth:
         N = sum(co["N"] for co in cohorts)
         if N <= 0:
             return None
+        if self.facet_area:                              # facet-area law: sum_f A_f k_eff^(f) / A of each dot
+            tot = 0.0
+            for co in cohorts:
+                a = sum(co["area"].values())
+                if a > 0:
+                    ch = self._fa_channels(co)
+                    tot += co["N"] * float((ch["N"] * ch["kappa"]).sum()) / a
+            return tot / N
         if self.facet_law:                               # the per-facet law: sum_e N_e kappa_e / A of each dot
             tot = 0.0
             for co in cohorts:
@@ -1446,6 +1727,9 @@ class Growth:
             sc = (m * self.Om / vol) ** (1.0 / 3.0)
             h = {f: x * sc for f, x in h.items()}
             area = self.shape(h)[0]
+            if self.facet_area:
+                area, edges, built = self.geometry(h, m)
+                a.update(edges=edges, build=built and {"dc": built["dc"], "m": built["m"], "h_err_A": built["h_err_A"]})
             a.update(N=n, m=m, k=(a["N"] * a["k"] + b["N"] * b["k"]) / n, h=h, area=area,
                      t_b=merged_birth(a, b))
             a.pop("_speeds", None)                         # a new shape: its facet speeds are computed again
@@ -1649,14 +1933,22 @@ class Growth:
             # nuclei are born past the grid's top (nucleation); a dot that shrinks back into the grid's sizes goes back
             # to the pool, where the Becker-Doring chain accounts for clusters, instead of sitting in a shallow well
             m_dis = max(m_dis, self.m_top + 1)
-        grid_dots = m_dis <= getattr(self, "m_top", 0)  # dots may live at grid sizes (then they stop at the grid's kinks)
+        if self.facet_area:
+            # facet-area law: nuclei are born at the grid's top and live from there (their mu is the facet law's at
+            # every size; the grid only nucleates); a dot that shrinks below the top goes back to the pool
+            m_dis = max(float(self.P["material"]["m_dissolve"]), float(getattr(self, "m_top", 0)) - 0.5)
+        grid_dots = m_dis <= getattr(self, "m_top", 0) and not self.facet_area  # dots may live at grid sizes
         if seed:
             _pl, fam = self.chem(C_M, C_X)
             gam = {f: fam[f]["gamma"] for f in self.F}
             for sd in seed:
-                h = self.shape.wulff(gam, float(sd["m"]) * self.Om)
+                h = (self.fa_start_h(float(sd["m"])) if self.facet_area
+                     else self.shape.wulff(gam, float(sd["m"]) * self.Om))
                 m_, k_, area, _support = self.dot(h, fam)
-                cohorts.append({"t_b": 0.0, "N": float(sd["N"]), "h": h, "m": m_, "k": k_, "area": area})
+                co = {"t_b": 0.0, "N": float(sd["N"]), "h": h, "m": m_, "k": k_, "area": area}
+                if self.facet_area:
+                    co["edges"] = self.geometry(h, m_)[1]
+                cohorts.append(co)
         seeded = {"m": sum(co["N"] * co["m"] for co in cohorts), "k": sum(co["N"] * co["k"] for co in cohorts)}
         inj = self.injection()
         V0 = inj["V0"] if inj else 1.0                  # L (concentrations are per litre of the flask at time t)
@@ -1678,7 +1970,7 @@ class Growth:
             pl, fam = self.chem(C_M, C_X)
             mu0, mu_mx = pl["mu_MA"], pl["mu_MX"]
             if self.stokes:
-                self._capf = 1.0 if self.sphere else self._cap_factor(fam)          # the dot's shape factor
+                self._capf = 1.0 if self.sphere else (self._fa_capf() if self.facet_area else self._cap_factor(fam))
                 if cohorts and not self._R1:
                     self.nucleation(mu0, mu_mx)                                       # sets the monomer's R_1, D_1
             if th_dots is None:
@@ -1696,8 +1988,10 @@ class Growth:
             Ac, rc, dmu_dot, th_bar = self.size_state(cohorts, fam, th_dots)
             mc = np.array([co["m"] for co in cohorts])
             dmu_dm = -dmu_dot / (3.0 * np.maximum(mc, 1.0))                  # continuum: mu_dot - g_bulk ~ m^(-1/3)
+            if self.facet_area and len(cohorts):
+                dmu_dm = self._fa_dmu_dm(cohorts, Ac, rc, th_bar)          # the facet law's own d mu_dot / dm
             mg = mug = None
-            if self.grid_mu_on and len(cohorts):
+            if self.grid_mu_on and len(cohorts) and not self.facet_area:
                 # within the grid's sizes a dot's chemical potential is the grid's own (grid_mu, linear in m between
                 # the grid sizes); beyond the grid's top, the continuum's Gibbs-Thomson
                 mg, mug = self.grid_mu(mu_mx)
@@ -1714,7 +2008,7 @@ class Growth:
             fmask = (mc > self.m_top + 1) if (facet_on and len(cohorts)) else np.zeros(len(cohorts), bool)
             shape_on = self.P["kinetics"].get("growth_law", "size") == "shape"
             smask = (mc > self.m_top + 1) if (shape_on and len(cohorts)) else np.zeros(len(cohorts), bool)
-            if shape_on and len(cohorts):
+            if (shape_on or self.facet_area) and len(cohorts):
                 res_d, res_r = self.resistances(Ac, rc, th_bar)
             fr, fv = {}, {}                                    # per facet dot: C -> (dm/dt, v_f), set up once a step
             for i in np.flatnonzero(fmask):
@@ -1722,11 +2016,13 @@ class Growth:
                 rate0[i], fv[i] = fr[i](C_M)
             vmax = float(np.abs(rate0 / np.maximum(mc, 1e-12)).max(initial=0.0))           # fastest relative change
             dt = outs[0] - t
-            gam_now = {f: fam[f]["gamma"] for f in self.F}
-            # the Wulff shape at fixed gamma is scale-free: the dot of one unit, scaled by m^(1/3) (h) and m^(2/3) (A)
-            h1 = self.shape.wulff(gam_now, self.Om)
-            area1, _v1, _s1 = self.shape(h1)
-            sigma_now = sum(gam_now[f] * area1[f] for f in self.F)                    # continuum: (2/3) sigma m^(-1/3)
+            h1 = area1 = sigma_now = None
+            if not self.facet_area:
+                gam_now = {f: fam[f]["gamma"] for f in self.F}
+                # the Wulff shape at fixed gamma is scale-free: the dot of one unit, scaled by m^(1/3) (h) and m^(2/3) (A)
+                h1 = self.shape.wulff(gam_now, self.Om)
+                area1, _v1, _s1 = self.shape(h1)
+                sigma_now = sum(gam_now[f] * area1[f] for f in self.F)                # continuum: (2/3) sigma m^(-1/3)
             with np.errstate(over="ignore", divide="ignore"):
                 g_, d_ = rate0 > 0, rate0 < 0
                 if mg is not None and grid_dots:
@@ -1737,6 +2033,15 @@ class Growth:
                         m_try = mc[i] * (1 + frac) if g_[i] else mc[i] * (1 - frac)
                         if rate0[i] != 0 and abs(self._stop_at_equilibrium(mc[i], m_try, mu0 - self.gb, mg, mug, sigma_now) - m_try) > 1e-12:
                             g_[i] = d_[i] = False
+                if self.facet_area and len(cohorts):
+                    # facet-area law (collision-limited facets: dots exchange with the pool within microseconds): a dot
+                    # in a stable well (mu_dot rising with m, s < 0) whose own equilibrium lies within the allowed change
+                    # of its size, |rate / s| <= 2 % (growing) or 20 % (dissolving) of m, cannot overshoot it under the
+                    # backward-Euler size update below: it does not limit the step
+                    s_w = -self.conductance(Ac, rc, th_bar) * c_eq * dmu_dm / self.kt
+                    near = (s_w < 0) & (np.abs(rate0) <= np.where(rate0 > 0, 0.02, 0.2) * np.maximum(mc, 1.0) * -s_w)
+                    g_ &= ~near
+                    d_ &= ~near
                 if g_.any():
                     # a growing dot changes m by < 2 % a step, measured against the larger of its own size and 5 % of
                     # the largest dot: newborn nuclei that grow fast (diffusion-limited) take larger relative steps,
@@ -1829,6 +2134,22 @@ class Growth:
                               for f in self.F}
                     new, up_m, up_k = [], 0.0, 0.0
                     for i, co in enumerate(cohorts):
+                        if self.facet_area:
+                            # facet-area law: m from the channels' rate; each exposed plane moves at Omega_m j_f (a
+                            # facet with j_f < 0 dissolves), hidden planes are held; areas and edges from the dot
+                            # built on the fly (or the model's polyhedron), k = sum_f A_f rho_f theta_f
+                            m_new = max(co["m"] + rate[i] * dt, 1e-6)
+                            if i not in vs:
+                                vs[i] = self.facet_speeds(co, math.exp(lnC), C_M, mu0, res_d[i])
+                            h_new = self._fa_step(co, m_new, vs[i])
+                            area, edges, built = self.geometry(h_new, m_new)
+                            k_new = sum(k_area[f] * area[f] for f in self.F)
+                            up_m += co["N"] * (m_new - co["m"])
+                            up_k += co["N"] * (k_new - co["k"])
+                            new.append({"h": h_new, "m": m_new, "k": k_new, "area": area, "edges": edges,
+                                        "build": built and {"dc": built["dc"], "m": built["m"],
+                                                            "h_err_A": built["h_err_A"]}})
+                            continue
                         if fmask[i]:                                       # facet law: each facet moves by v_f dt
                             if i not in vs:
                                 vs[i] = fr[i](math.exp(lnC))[1]
@@ -1917,7 +2238,8 @@ class Growth:
                 if pending > self.P["material"].get("N_min", 1e-15):
                     t_last_birth = t
                     m_new = pending_m / pending                          # the interval's mean birth size
-                    h0 = self.shape.wulff({f: fam[f]["gamma"] for f in self.F}, m_new * self.Om)
+                    h0 = (self.fa_start_h(m_new) if self.facet_area
+                          else self.shape.wulff({f: fam[f]["gamma"] for f in self.F}, m_new * self.Om))
                     # the nuclei took m0 MA and k*(t) MX_q each from the pool; a Wulff dot of that volume may hold a
                     # slightly different m and k: the difference goes back to (or comes from) the pool. When the MX_q
                     # left cannot cover the new dots at the dots' coverage, the shared coverage of all dots is lowered
@@ -1946,8 +2268,13 @@ class Growth:
                         self.mx_shortfall = getattr(self, "mx_shortfall", 0.0) + dk - C_X
                     C_M += pending_m - pending * m_
                     C_X = max(C_X + pending_k - pending * k_, 1e-30)   # a shortfall is counted in mx_shortfall
-                    cohorts.append({"t_b": t, "N": pending, "h": {f: min(h0[f], support[f]) for f in self.F},
-                                    "m": m_, "k": k_, "area": area})
+                    born = {"t_b": t, "N": pending, "h": {f: min(h0[f], support[f]) for f in self.F},
+                            "m": m_, "k": k_, "area": area}
+                    if self.facet_area:                          # hidden planes are held where the start shape has them
+                        _a, edges, built = self.geometry(h0, m_)
+                        born.update(h=dict(h0), edges=edges,
+                                    build=built and {"dc": built["dc"], "m": built["m"], "h_err_A": built["h_err_A"]})
+                    cohorts.append(born)
                     pending = pending_m = pending_k = 0.0
                     self._merge(cohorts)
             if at_out:
@@ -1969,12 +2296,20 @@ class Growth:
                        "gamma": {f: fam[f]["gamma"] for f in self.F}}
                 series.append(row)
                 snaps.append({"t": t, "cohorts": [{"t_b": co["t_b"], "N": co["N"], "m": co["m"], "k": co["k"],
-                                                   "h": co["h"], "area": co["area"]} for co in cohorts]})
+                                                   "h": co["h"], "area": co["area"],
+                                                   **({"edges": co.get("edges"), "build": co.get("build")}
+                                                      if self.facet_area else {})} for co in cohorts]})
                 if log:
                     log(f"[growth] t = {t:9.3g} s  P = {P_:.3g} M  C_M = {C_M:.3g} M  barrier {barrier:.3f} eV  "
                         f"J = {J:.3g} M/s  dots {N:.3g} M  <m> = {mean:.1f}")
                 outs.pop(0)
+        bg = self.__dict__.get("_bgeo")
+        geo = ({"source": self._fa().get("geometry", "builder"), "builds": bg.builds if bg else 0,
+                "build_seconds": round(bg.seconds, 2) if bg else 0.0, "dots": len(bg.cache) if bg else 0,
+                "fallbacks": getattr(self, "geometry_fallbacks", 0), "last_error": getattr(self, "geometry_error", None)}
+               if self.facet_area else None)
         return {"params": self.P, "match_m0": self.match, "handover": self.handover, "m0": self.m0, "series": series,
+                "geometry": geo,
                 "snapshots": snaps, "seeded": seeded, "V0_L": V0, "nucleation_window": nucleation_window(track),
                 "sphere": getattr(self, "sphere_used", None),
                 "survivor_window": survivor_window(cohorts)}
@@ -2035,6 +2370,36 @@ def conservation(res) -> dict:
     return out
 
 
+def facet_area_from_roles(roles: dict, start_h: dict, builder: dict, rate_form: str = "first_order") -> dict:
+    """kinetics.facet_area block from the per-role block (kinetics.roles: envs {role: {m: [[n, dmu, bind], ...]}},
+    neb {role: {dir, disp}}), computed values only:
+      facets   per family: dG_bind_eV = Cd-weighted plain mean of the terrace (facet:f) binding over every computed
+               size (gas phase, 1 M); dmu_eV = per size, the Cd-weighted plain mean of the terrace Delta mu_e (a_X = 1);
+               neb = the facet NEBs
+      edges    per edge type: dG_bind_eV pooled the same way over the edge:e environments; neb = the edge NEBs (null
+               until computed: the edge is then left out of the step band)
+    Vertices and the edges' Delta mu are not used (Delta mu from the terraces only)."""
+    def pooled(by):
+        n = b = 0.0
+        for envs in by.values():
+            for x in envs:
+                n += x[0]
+                b += x[0] * x[2]
+        return round(b / n, 4)
+
+    facets, edges = {}, {}
+    for role, by in roles["envs"].items():
+        kind, fams = role.split(":")
+        if kind == "facet":
+            dmu = {int(m): round(sum(x[0] * x[1] for x in envs) / sum(x[0] for x in envs), 4) for m, envs in by.items()}
+            facets[fams] = {"dG_bind_eV": pooled(by), "dmu_eV": dict(sorted(dmu.items())),
+                            "neb": (roles.get("neb") or {}).get(role)}
+        elif kind == "edge":
+            edges[fams] = {"dG_bind_eV": pooled(by), "neb": (roles.get("neb") or {}).get(role)}
+    return {"T_K": roles.get("T_K"), "rate_form": rate_form, "geometry": "builder", "geometry_step_A": 0.5,
+            "start_h_A": dict(start_h), "builder": dict(builder), "facets": facets, "edges": edges}
+
+
 def builder_recipe(res, t: float, preset: dict, which: str = "mode", cohort: int | None = None) -> dict:
     """QD_builder recipe of the dot at time t: the cohort with the most dots ('mode'), the one closest to the
     number-weighted mean size ('mean'), the one holding the most material ('mass'), or cohort number `cohort` of
@@ -2054,6 +2419,26 @@ def builder_recipe(res, t: float, preset: dict, which: str = "mode", cohort: int
     else:
         co = max(cos, key=lambda c: c["N"])
     row = min(res["series"], key=lambda r: abs(r["t"] - snap["t"]))
+    if res["params"]["kinetics"].get("size_law") == "facet_area":
+        # the dot built on the fly for this cohort (its construction distances), then the model's Z-type CdCl2:
+        # target k, split over the families as sum_f A_f rho_f theta_f (the terms of k)
+        b = co.get("build")
+        if not b:
+            raise ValueError("no built dot for this cohort: kinetics.facet_area.geometry must be 'builder'")
+        spec = res["params"]["kinetics"]["facet_area"]["builder"]
+        a = (4.0 * float(res["params"]["material"]["Omega_m"])) ** (1.0 / 3.0)
+        z = {f: row["theta"][f] / (a * a / 2.0 if f == "100" else SQ3 * a * a / 4.0) * co["area"].get(f, 0.0)
+             for f in FA_FAMILIES}
+        recipe = {"charges": copy.deepcopy(spec["charges"]), "passivation": copy.deepcopy(spec["passivation"]),
+                  "symmetry": copy.deepcopy(spec.get("symmetry", {})),
+                  "construction_origin": {"center_on_species": spec["centre"]},
+                  "facet_distances": {f: round(float(v), 4) for f, v in b["dc"].items()},
+                  "post_treatment": {"z_type_target": {"target_total": int(round(co["k"])),
+                                                       "per_family": {f: round(float(v), 4) for f, v in z.items()
+                                                                      if v > 0}}}}
+        import os
+        return {"t": snap["t"], "cohort_born": co["t_b"], "m": co["m"], "k": co["k"], "recipe": recipe,
+                "cif": os.path.expandvars(spec["cif"]), "positive_q_mode": spec.get("positive_q_mode", "add")}
     F = res["params"]["families"]
     z = {f: row["theta"][f] * gamma_max(F[f]) * co["area"].get(f, 0.0) for f in F}
     recipe = {k: copy.deepcopy(v) for k, v in preset.items() if k not in ("facets", "size_unit_cells")}
@@ -2062,6 +2447,63 @@ def builder_recipe(res, t: float, preset: dict, which: str = "mode", cohort: int
     recipe.setdefault("post_treatment", {})["z_type_target"] = {
         "target_total": int(round(co["k"])), "per_family": {f: round(float(v), 4) for f, v in z.items() if v > 0}}
     return {"t": snap["t"], "cohort_born": co["t_b"], "m": co["m"], "k": co["k"], "recipe": recipe}
+
+
+def build_frames(res, out_dir, which: str = "mode", even: bool = True, log=print) -> list:
+    """The growth film of a facet-area run: at every output time with dots, the chosen cohort ('mode', 'mean', 'mass')
+    built by QD_builder: the charge-balanced dot at the cohort's construction distances (the dot built on the fly for
+    its geometry), then z_type_target adds or displaces neutral CdCl2 units to the model's k, split over the families
+    as A_f rho_f theta_f and placed evenly over the facets, strongest-bound family first (ztype_even). Writes
+    frame_NNN.xyz and frames.json (model against built: m, k, lattice-site areas, units per family); returns the
+    records."""
+    import tempfile
+    from builder.scripts.generate_library import _build
+    from .ztype_even import even_placement
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    B = res["params"]["kinetics"]["facet_area"]["facets"]
+    anion = res["params"]["kinetics"]["facet_area"]["builder"].get("anion", "Se")
+    frames = []
+    for i, snap in enumerate(res["snapshots"]):
+        if not snap["cohorts"]:
+            continue
+        r = builder_recipe(res, snap["t"], {}, which)
+        zt = r["recipe"]["post_treatment"]["z_type_target"]
+        zt["per_family"] = dict(sorted(zt["per_family"].items(), key=lambda kv: float(B[kv[0]]["dG_bind_eV"])))
+        rec = {"frame": i, "t": r["t"], "cohort_born": r["cohort_born"],
+               "model": {"m": r["m"], "k": r["k"]}, "recipe": r["recipe"]}
+        with tempfile.TemporaryDirectory() as tmp, even_placement(even):
+            o = _build(r["cif"], r["recipe"], r["positive_q_mode"], Path(tmp) / "b")
+        if not o or "error" in o:
+            rec["error"] = (o or {}).get("error", "no output")
+            frames.append(rec)
+            log(f"[film] t = {r['t']:.4g} s: build failed: {rec['error']}")
+            continue
+        syms = list(o["symbols"])
+        pts = np.asarray(o["pts"], float)
+        man = o.get("manifest") or {}
+        lf = (man.get("facet_geometry") or {}).get("lattice_fitted") or {}
+        led = man.get("z_type_target_ledger") or {}
+        cation = next(e for e, q in r["recipe"]["charges"].items() if q > 0)
+        rec["built"] = {"m": syms.count(anion), "k": syms.count(cation) - syms.count(anion), "n_atoms": len(syms),
+                        "composition": {e: syms.count(e) for e in sorted(set(syms))},
+                        "areas_A2": lf.get("areas_A2"), "edges": lf.get("edges")}
+        rec["z_type"] = {k: led.get(k) for k in ("target_total", "k_X", "direction", "units", "achieved_total",
+                                                  "shortfall", "error")}
+        rec["z_type"]["per_family"] = {f: {k: v.get(k) for k in ("requested", "added", "removed", "even_count",
+                                                                  "facets", "per_facet") if k in v}
+                                       for f, v in (led.get("per_family") or {}).items()}
+        xyz = out / f"frame_{i:03d}.xyz"
+        with open(xyz, "w") as fh:
+            fh.write(f"{len(syms)}\nt = {r['t']:.4g} s, model m = {r['m']:.1f}, k = {r['k']:.1f}\n")
+            for e, p in zip(syms, pts):
+                fh.write(f"{e:2s} {p[0]:12.6f} {p[1]:12.6f} {p[2]:12.6f}\n")
+        rec["xyz"] = xyz.name
+        frames.append(rec)
+        log(f"[film] t = {r['t']:.4g} s: model m {r['m']:.1f} k {r['k']:.1f} -> built m {rec['built']['m']} "
+            f"k {rec['built']['k']} ({rec['z_type'].get('direction')} {rec['z_type'].get('units')})")
+    (out / "frames.json").write_text(json.dumps(frames, indent=1, default=float))
+    return frames
 
 
 def main(argv=None) -> int:
@@ -2075,6 +2517,8 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True)
     p.add_argument("--recipe-at", type=float, help="also write the builder recipe of the dot at this time (s)")
     p.add_argument("--preset", help="material config whose preset (charges, passivation) goes into the recipe")
+    p.add_argument("--films", help="facet-area law: directory for the growth film (the most numerous cohort built by "
+                                   "QD_builder at every output time, with the model's CdCl2 placed evenly)")
     a = ap.parse_args(argv)
     if a.cmd == "params":
         Path(a.out).write_text("# Growth-model parameters: every value is a PLACEHOLDER until the shape-library fits replace it.\n"
@@ -2086,6 +2530,9 @@ def main(argv=None) -> int:
     if a.recipe_at is not None:
         preset = yaml.safe_load(Path(a.preset).read_text())["preset"] if a.preset else {}
         res["recipe"] = builder_recipe(res, a.recipe_at, preset)
+    if a.films:
+        res["films"] = str(Path(a.films).resolve())
+        build_frames(res, a.films)
     Path(a.out).write_text(json.dumps(res, default=float))
     return 0
 
