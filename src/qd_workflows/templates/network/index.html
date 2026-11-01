@@ -190,6 +190,19 @@ button:disabled { opacity: .55; cursor: progress; }
           shown. Click the map to move the time there.</div>
       </div>
     </div>
+    <div class="chart-title" style="margin-top:8px">From the pool to the dots: ΔΩ(m) = Ω(m) − Ω(1) at the time shown, grid (m ≤ 13) and the network's dots beyond</div>
+    <div class="lawpick" role="radiogroup" aria-label="Pool of the profile">
+      <span>Pool:</span>
+      <label><input type="radio" name="profsrc" value="pre" id="prof_pre" checked> precursor only (no nuclei)</label>
+      <label><input type="radio" name="profsrc" value="run" id="prof_run" disabled> network run (after the nuclei take their CdSe)</label>
+      <span class="cap" id="profNote" style="margin:0"></span>
+    </div>
+    <div class="chart tall" id="cProfile"></div>
+    <div class="cap">Ω(m) = −kT ln Σ e<sup>−Ω/kT</sup> over every state of size m (shells and isomers) at the pool's μ, so a size
+      holds c(m) = c° e<sup>−Ω(m)/kT</sup> when it is in equilibrium with the pool. m = 1 is the pool itself; m = 2–13 the
+      nucleation grid; past the dotted line the network's dots (builder structures). Orange circles, with a run: where
+      the run's clusters and dots are, −kT ln(N(m)/c°); on the line where a size is in equilibrium with the pool, above
+      it where the run has not filled it. Click a point for the lowest structure of that size.</div>
   </section>
 
   <div class="col">
@@ -299,7 +312,67 @@ function syncT(fromRange) {
   else $("tnowR").value = Math.log10(tNow());
   onConds();
 }
-function onConds() { requestNuc(); liveMap(); }
+function onConds() { requestNuc(); liveMap(); requestProfile(); }
+
+// ---------------- the profile from the pool to the dots (precursor-only pool, or the run's at the time shown)
+let profTok = 0, profTimer = null;
+function requestProfile() {
+  clearTimeout(profTimer);
+  profTimer = setTimeout(async () => {
+    const ok = sameRun();
+    $("prof_run").disabled = !ok;
+    if (!ok) $("prof_pre").checked = true;
+    $("profNote").textContent = ok ? "" : (RUN ? "the run is for other conditions" : "run the growth to compare");
+    const tok = ++profTok;
+    let body;
+    if (ok && $("prof_run").checked) {
+      const t = RUN.series.t, lt = Math.log(tNow());
+      let i = 0; t.forEach((x, j) => { if (Math.abs(Math.log(x) - lt) < Math.abs(Math.log(t[i]) - lt)) i = j; });
+      body = { run_id: RUN.run_id, i };
+    } else body = { conditions: conditions(), t: tNow() };
+    try { const o = await api("/api/profile", body); if (tok === profTok) drawProfile(o); }
+    catch (e) { $("profNote").textContent = e.message; }
+  }, 60);
+}
+function drawProfile(o) {
+  const mg = o.m_grid, kt = KB * (RUN && o.run ? RUN.cond.T : +$("in_T").value);
+  const idx = o.m.map((m, i) => i).filter((i) => o.dOmega[i] != null);
+  const pick = (f) => idx.filter((i) => f(o.m[i]));
+  const cd = (ii) => ii.map((i) => {
+    const lo = o.lowest[i];
+    return [lo[2], lo[1], lo[0], o.run && o.N[i] != null ? fmt(o.N[i]) + " M" : "–", sciLog(-(o.dOmega[i]) / kt / Math.LN10)];
+  });
+  const hov = "m = %{x}: ΔΩ = %{y:.2f} eV<br>lowest state %{customdata[0]} (k %{customdata[1]}), %{customdata[2]:.2f} eV" +
+    (o.run ? "<br>in the run: %{customdata[3]}" : "") + "<extra></extra>";
+  const gi = pick((m) => m <= mg), ni = pick((m) => m >= mg);
+  const traces = [
+    { x: gi.map((i) => o.m[i]), y: gi.map((i) => o.dOmega[i]), customdata: cd(gi), type: "scatter", mode: "lines+markers",
+      name: "grid", line: { color: css("--series-1"), width: 2 }, marker: { size: 7, color: css("--series-1") }, hovertemplate: hov },
+    { x: ni.map((i) => o.m[i]), y: ni.map((i) => o.dOmega[i]), customdata: cd(ni), type: "scatter", mode: "lines",
+      name: "network dots", line: { color: css("--series-4"), width: 1.5 }, hovertemplate: hov }];
+  if (o.run) {
+    const pi = o.m.map((m, i) => i).filter((i) => o.pop[i] != null);
+    traces.push({ x: pi.map((i) => o.m[i]), y: pi.map((i) => o.pop[i]), type: "scatter", mode: "markers", name: "run",
+      marker: { size: 7, symbol: "circle-open", color: css("--series-2"), line: { width: 1.5 } },
+      customdata: pi.map((i) => fmt(o.N[i])), hovertemplate: "m = %{x}: the run holds %{customdata} M (−kT ln N = %{y:.2f} eV)<extra></extra>" });
+  }
+  const L = layout("linear", { hovermode: "closest", showlegend: true,
+    legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { size: 10 } }, margin: { l: 50, r: 8, t: 24, b: 34 } });
+  L.xaxis = { type: "log", gridcolor: css("--grid"), zeroline: false, title: { text: "m (CdSe units), log", standoff: 4 } };
+  L.yaxis = { gridcolor: css("--grid"), zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
+  L.shapes = [{ type: "line", xref: "x", yref: "paper", x0: mg + 0.5, x1: mg + 0.5, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } }];
+  L.annotations = [{ x: Math.log10(mg + 0.5), y: 1, xref: "x", yref: "paper", yanchor: "top", xanchor: "left", xshift: 4, showarrow: false,
+    text: "grid | dots", font: { size: 10, color: css("--text-muted") } },
+    { xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
+      text: `${o.run ? "run's pool" : "precursor only"} at ${fmt(o.t)} s: CdSe in solution ${fmt(o.c_MA)} M, μ<sub>CdSe</sub> ${o.mu_MA.toFixed(3)} eV`,
+      font: { size: 11, color: css("--text-primary") } }];
+  Plotly.react("cProfile", traces, L, PCONF);
+  onClick("cProfile", (ev) => {
+    const p = ev.points[0], i = o.m.indexOf(p.x), lo = o.lowest[i];
+    if (!lo || lo[3] === "pool") return;
+    if (lo[3] === "grid") showGrid(p.x, lo[1]); else pickComposition(p.x, lo[1]);
+  });
+}
 let liveTimer = null;
 function liveMap() {
   clearTimeout(liveTimer);
@@ -605,6 +678,7 @@ async function run() {
     $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
     drawRun(); setTime(RUN.series.t.length - 1);
     if (L0) drawNucleation(L0);
+    $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
   $("runBtn").disabled = false;
 }
@@ -718,6 +792,7 @@ for (const [id, r] of [["rAll", "all"], ["rGrid", "grid"]]) $(id).addEventListen
 });
 $("tnow").addEventListener("change", () => syncT(false));
 document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
+document.querySelectorAll('input[name="profsrc"]').forEach((r) => r.addEventListener("change", requestProfile));
 $("runBtn").addEventListener("click", run);
 let tTimer = null;
 $("tbar").addEventListener("input", () => { clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });

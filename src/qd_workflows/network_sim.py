@@ -164,6 +164,50 @@ class NetSim:
         out["dOmega"] = [list(col) for col in zip(*cols)]
         return out
 
+    def profile(self, body):
+        """Omega(m) = -kT ln sum_states e^(-Omega/kT) of every size, from the pool's complexes (m = 1) through the grid
+        (m <= 13) to the network's dots, at the precursor-only pool at time t, or at the pool a run leaves at its
+        output i; with a run, the population of each size as -kT ln(N(m)/c0), equal to Omega(m) where the size is in
+        equilibrium with the pool and above it where the run has not filled it. Relative to Omega(1)."""
+        net = self.net
+        if body.get("run_id"):
+            r = self.runs[str(body["run_id"])]
+            i = int(body["i"])
+            c = r["cond"]
+            _g, th, _pa = net.G(c["T"], c["eps"])
+            pl, N, t = ng._pool(th, r["c_MA"][i], r["c_X_left"][i]), r["N"][i].astype(float), r["t"][i]
+        else:
+            c = self._cond(body.get("conditions"))
+            t = float(body.get("t", 10.0))
+            x = converted(t, k_conv_at(c["T"], c["k_conv_500K"], c["Ea_conv"]), c["c_P0"], c["c_MX0"])
+            _g, th, _pa = net.G(c["T"], c["eps"])
+            pl, N = ng._pool(th, x, c["c_MX0"] - x), None
+        kt = ng.KB_EV * c["T"]
+        g = _g
+        om = g - net.m * pl["mu_MA"] - net.k * pl["mu_MX"]
+        om1 = np.array([th["G"][(1, n)] - pl["mu_MA"] - n * pl["mu_MX"] for n in net.mono_k])
+        ref = float(om1.min() - kt * np.log(np.exp(-(om1 - om1.min()) / kt).sum()))
+        ms = np.arange(2, int(net.m.max()) + 1)
+        omm, low, pop = [], [], []
+        for m in ms:
+            sel = np.where(net.m == m)[0]
+            if not len(sel):
+                omm.append(None); low.append(None); pop.append(None)
+                continue
+            o = om[sel]
+            omm.append(float(o.min() - kt * np.log(np.exp(-(o - o.min()) / kt).sum()) - ref))
+            j = sel[np.argmin(o)]
+            low.append([float(om[j] - ref), int(net.k[j]), net.label[j], "grid" if j < net.n_grid else "network"])
+            if N is not None:
+                n_m = float(N[sel].sum())
+                pop.append(float(-kt * math.log(n_m) - ref) if n_m > 1e-30 else None)
+        out = {"t": t, "m": [1] + ms.tolist(), "dOmega": [0.0] + omm, "lowest": [[0.0, None, "pool", "pool"]] + low,
+               "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "m_grid": ng.M_DOT, "run": N is not None}
+        if N is not None:
+            out["pop"] = [float(-kt * math.log(pl["c_MA"]) - ref)] + pop
+            out["N"] = [pl["c_MA"]] + [None if q is None else math.exp(-(q + ref) / kt) for q in pop]
+        return out
+
     def grid_structure(self, m, k):
         if self.nuc is None:
             raise ValueError("started without the growth template")
@@ -301,6 +345,10 @@ def make_app(sim: NetSim):
     @app.post("/api/nucleation")
     def nucleation(body: dict = Body(...)):
         return guard(sim.nucleation, body)
+
+    @app.post("/api/profile")
+    def profile(body: dict = Body(...)):
+        return guard(sim.profile, body)
 
     @app.get("/api/grid_structure")
     def grid_structure(m: int, k: int):
