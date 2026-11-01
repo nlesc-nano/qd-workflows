@@ -219,6 +219,13 @@ class NetSim:
                 routes.append([m1, k1, m2, k2, float(j)])
         cells = [[m, k, float(best[j] - ref), float(pop[j]), len(self.comp[(m, k)])]
                  for j, (m, k) in enumerate(self.comp_keys)]
+        # the m = 1 row: the pool's complexes CdSe(CdCl2)_n (not states: the pool), Omega at the same mu, their
+        # concentration c_MA x_n during a run
+        _g, th, _pa = net.G(c["T"], c["eps"])
+        for n in net.mono_k:
+            om1 = th["G"][(1, n)] - pl["mu_MA"] - n * pl["mu_MX"]
+            cells.append([1, n, float(om1 - ref), float(pl["c_MA"] * pl["speciation"].get(n, 0.0)) if N is not None
+                          else 0.0, 1])
         return {"t": t, "alpha": float(pl["c_MA"] / c["c_P0"]) if N is None else None, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
                 "seed": net.label[net.seed], "cells": cells, "routes": routes, "barriers": r["table"]}
 
@@ -226,6 +233,8 @@ class NetSim:
         """The states of one composition (lowest G first) with their populations at a run's output."""
         net = self.net
         ids = self.comp.get((m, k))
+        if m == 1 and not ids:
+            return {"m": m, "k": k, "states": [], "pool": True}
         if not ids:
             raise KeyError(f"no state with m = {m}, k = {k}")
         N = self.runs[run_id]["N"][int(i)] if run_id else None

@@ -225,9 +225,11 @@ button:disabled { opacity: .55; cursor: progress; }
     <section class="card">
       <h2>4 · Map <small id="mapWhen"></small></h2>
       <div class="pickrow">colour <button id="mSeed" class="on">Ω from the seed</button><button id="mBest">Ω from the best shell at each m</button></div>
+      <div class="pickrow">sizes <button id="rAll" class="on">all m</button><button id="rGrid">m ≤ 30 (grid and first dots)</button></div>
       <div class="chart map" id="cMap"></div>
       <div class="cap" id="mapCap">Each cell is one (m, k) composition (its lowest state). Circles: where the dots are
-        at the bar's time; lines: the steps carrying the most net flux. Click a cell for its structures.</div>
+        at the bar's time; lines: the steps carrying the most net flux. m = 1 is the pool (the CdSe(CdCl₂)ₙ complexes),
+        m 2–13 the nucleation grid's nodes, which the run passes through like any other state. Click a cell for its structures.</div>
     </section>
     <section class="card">
       <h2>5 · Structure</h2>
@@ -246,7 +248,7 @@ const CTRL = [
   ["k_conv_500K", "k_conv (500 K)", "1/(M s)"], ["Ea_conv", "E_a of the conversion", "eV"], ["t_end", "time", "s"],
   ["s_nu", "kinetic scale s_ν", "×"], ["eta_mPas", "viscosity η", "mPa s"], ["a_site_A2", "site area", "Å²"],
 ];
-let D = null, RUN = null, IDX = 0, MAPMODE = "seed", VIEW = null, SEL = null;
+let D = null, RUN = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", VIEW = null, SEL = null, LASTMAP = null;
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -545,11 +547,13 @@ async function showGrid(m, k) {
 }
 
 function drawMap(m, when) {
+  LASTMAP = [m, when];
   $("mapWhen").textContent = when;
   const best = new Map();
   for (const [mm, k, om] of m.cells) if (!best.has(mm) || om < best.get(mm)) best.set(mm, om);
   const v = m.cells.map(([mm, k, om]) => MAPMODE === "seed" ? om : om - best.get(mm));
-  const sorted = [...v].sort((a, b) => a - b), q = p => sorted[Math.floor(p * (sorted.length - 1))];
+  // colour range from the cells in view (m <= 30 when zoomed on the grid)
+  const sorted = v.filter((_, i) => MAPRANGE !== "grid" || m.cells[i][0] <= 30).sort((a, b) => a - b), q = p => sorted[Math.floor(p * (sorted.length - 1))];
   const lo = MAPMODE === "seed" ? q(0.03) : 0, hi = MAPMODE === "seed" ? q(0.97) : q(0.9);
   const ramp = [[0, css("--seq-9")], [0.25, css("--seq-7")], [0.5, css("--seq-5")], [0.75, css("--seq-3")], [1, css("--seq-1")]];
   const traces = [{ type: "scattergl", mode: "markers", x: m.cells.map(c => c[0]), y: m.cells.map(c => c[1]),
@@ -570,8 +574,11 @@ function drawMap(m, when) {
       marker: { size: sel.map(c => 5 + 13 * Math.sqrt(c[3] / pmax)), color: "rgba(0,0,0,0)", line: { color: css("--series-2"), width: 2 } },
       customdata: sel.map(c => c[3]), hovertemplate: "m %{x}, k %{y}<br>%{customdata:.3g} M<extra></extra>" });
   }
-  Plotly.react("cMap", traces, base({ margin: { l: 44, r: 10, t: 6, b: 36 }, xaxis: { title: { text: "m (CdSe units)", standoff: 4 } },
-    yaxis: { title: { text: "k (CdCl₂ units)", standoff: 4 } } }), CFG);
+  const zoom = MAPRANGE === "grid", kz = m.cells.filter(c => c[0] <= 30).map(c => c[1]);
+  if (zoom) traces[0].marker.size = 11;
+  Plotly.react("cMap", traces, base({ margin: { l: 44, r: 10, t: 6, b: 36 },
+    xaxis: { title: { text: "m (CdSe units)", standoff: 4 }, ...(zoom ? { range: [0.4, 30.6], dtick: 2 } : {}) },
+    yaxis: { title: { text: "k (CdCl₂ units)", standoff: 4 }, ...(zoom ? { range: [-0.6, Math.max(...kz) + 0.6] } : {}) } }), CFG);
   $("cMap").removeAllListeners?.("plotly_click");
   $("cMap").on("plotly_click", ev => { const p = ev.points[0]; if (p && p.curveNumber === 0) pickComposition(p.x, p.y); });
   if (m.barriers && !RUN) barrierTable(m.barriers);
@@ -679,6 +686,7 @@ function topTable(rows) {
 
 async function pickComposition(m, k) {
   try {
+    if (m === 1) { if (D.nucleation) showGrid(1, k); return; }       // the pool's complex: its grid structure
     const c = await api(`/api/composition?m=${m}&k=${k}` + (RUN ? `&run_id=${RUN.run_id}&i=${IDX}` : ""));
     $("topTable").innerHTML = `<tr><th>states of (${m}, ${k})</th><th>registry id</th><th></th><th>N (M)</th></tr>` +
       c.states.map(([i, lab, rid, N]) => `<tr class="pick" data-s="${i}"><td>${lab}</td><td>${rid < 0 ? "grid" : rid}</td><td></td><td>${N === null ? "–" : fmt(N)}</td></tr>`).join("");
@@ -704,6 +712,10 @@ async function show(state) {
 $("mSeed").addEventListener("click", () => { MAPMODE = "seed"; $("mSeed").classList.add("on"); $("mBest").classList.remove("on"); RUN ? setTime(IDX) : liveMap(); });
 $("mBest").addEventListener("click", () => { MAPMODE = "best"; $("mBest").classList.add("on"); $("mSeed").classList.remove("on"); RUN ? setTime(IDX) : liveMap(); });
 $("tnowR").addEventListener("input", () => syncT(true));
+for (const [id, r] of [["rAll", "all"], ["rGrid", "grid"]]) $(id).addEventListener("click", () => {
+  MAPRANGE = r; $("rAll").classList.toggle("on", r === "all"); $("rGrid").classList.toggle("on", r === "grid");
+  if (LASTMAP) drawMap(...LASTMAP);
+});
 $("tnow").addEventListener("change", () => syncT(false));
 document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
 $("runBtn").addEventListener("click", run);
