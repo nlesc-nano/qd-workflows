@@ -91,6 +91,12 @@ python -m qd_workflows.network_sim --network DIR --thermo thermo_merged.json --p
 `python -m qd_workflows.network_growth run|check ...` runs the model or the detailed-balance check from the command
 line.
 
+The page's step 1 is the nucleation simulator's (`simulator.Simulator.omega_live`, run nucleation-only with the nucleus
+at the seed's $m = 13$): the grid's $\Delta\Omega(m)$, $P(m,k)$, the barrier along the time and $\Delta\Omega(m,t)$ from
+the precursor alone, on the same thermo, solvation and pool (`grid_thermo.pool`) as the network, so its $\mu$ at a time
+equals the live map's. After a run it adds the grid's $\Omega$ at the pool the run leaves (dashed). The Becker–Döring
+$J$ of the old growth model is left out: the network forms its nuclei from the complexes itself.
+
 ## First result (the template's synthesis: 500 K, 0.025 M Se precursor, 0.03 M CdCl$_2$, 600 s)
 
 The 12,474-state network (12,370 relaxed dots, 132 grid nodes, 74,125 steps) runs in about 3 minutes (204 implicit
@@ -103,6 +109,14 @@ falls to 0.86 eV at $C_M = 3\times10^{-3}$ M and 0.79 eV at $10^{-2}$ M (0.56 an
 states at these pools are dots of $m$ 165–198, about 10 eV below the seed, out of reach. Whether the $m$ 20–50 hump
 is real (a magic-size trap) or a gap of the network (only the lineage's intermediates were relaxed there) decides
 whether this model grows dots at all.
+
+No condition in the page's range changes that: ten times faster conversion, four times the precursor ($c_{P,0} = 0.1$
+M, $c_{\mathrm{MX},0} = 0.12$ M) or 560 K all end at $\langle m \rangle = 13$ after 600 s, because the seeds and the
+$m$ 10–12 clusters hold $C_M$ below about $10^{-3}$ M whatever the supply. At that pool the lowest state of every $m$
+from 14 to 71 lies 0.5–2 eV above the seed (none below it before $m \approx 72$), and the best route climbs 2.15 eV,
+about 1.1 eV more than the lowest states alone would need: the low states of different lineage edges are not one
+layer apart. The window is also thin in shells: 1,530 of the 1,953 Se frameworks at $m$ 20–50 have one CdCl$_2$
+count only.
 
 ## Limits
 

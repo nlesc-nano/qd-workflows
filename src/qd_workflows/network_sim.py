@@ -2,9 +2,10 @@
 Network growth simulator: a local web page on top of the network growth model (network_growth.py).
 
 The page sets the conditions (T, solvent, precursor and CdCl2 concentrations, conversion rate, the kinetic scale s_nu,
-viscosity), shows the grand-potential map of the network live for a conversion, runs the model, and plots the pool,
-the dots, the size distribution, the growth of each facet family, the island barriers and the most populated
-structures at any time.
+viscosity), shows step 1 as the nucleation simulator has it (the grid's Omega(m) up to the seed's m = 13 from the
+precursor alone, simulator.Simulator.omega_live) and the grand-potential map of the network live at a time, runs the
+model, and plots the pool, the dots, the size distribution, the growth of each facet family, the island barriers and
+the most populated structures at any time.
 
     python -m qd_workflows.network_sim --network DIR --thermo thermo_merged.json --params cdse_zb.yaml [--port 8773]
 
@@ -22,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from . import network_growth as ng
+from .grid_thermo import converted, k_conv_at
 
 PAGE = Path(__file__).parent / "templates" / "network" / "index.html"
 VOLUME_A3 = 59.667                       # zinc-blende CdSe volume per CdSe unit (a = 6.203 A): d = (6 m V / pi)^(1/3)
@@ -33,8 +35,17 @@ def diameter_nm(m):
 
 
 class NetSim:
-    def __init__(self, net: ng.Network):
+    def __init__(self, net: ng.Network, params: dict | None = None):
+        """params: the full growth template; with it, step 1 (the nucleation simulator's grid Omega, nucleus at the
+        seed's m) on the same thermo, solvation and pool as the network."""
         self.net = net
+        self.nuc = None
+        if params is not None:
+            from .simulator import Simulator
+            self.nuc = Simulator(net.thermo, params, {}, thermo_dir=net.thermo_dir, nucleation_only=True, m0=ng.M_DOT)
+            for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps"):
+                if k in ng.LIMITS:
+                    self.nuc.limits[k] = list(ng.LIMITS[k])        # the network's ranges, not the old page's
         self.runs: OrderedDict = OrderedDict()
         self.jobs: dict = {}
         g = np.load(net.folder / "geometry.npz")
@@ -55,7 +66,9 @@ class NetSim:
                 "network": {"states": int(net.n), "grid_nodes": int(net.n_grid), "steps": int(len(net.a)),
                             "kinds": kinds, "island_curves": len(net.isl), "m_max": int(net.m.max()),
                             "d_max_nm": float(diameter_nm(net.m.max())), "seed": net.label[net.seed],
-                            "compositions": len(self.comp_keys)}}
+                            "compositions": len(self.comp_keys)},
+                "nucleation": self.nuc is not None,
+                "no_thermo": sorted([m, k] for m, k in self.nuc.no_thermo) if self.nuc else []}
 
     def _cond(self, body):
         c = {**ng.DEFAULTS}
@@ -109,11 +122,56 @@ class NetSim:
                                     "cdse_flux", "attach_flux", "barriers")}
         series["d_mean_nm"] = diameter_nm(r["m_mean"]).tolist()
         return {"run_id": rid, "cond": c, "series": series, "psd": {"m": ms.tolist(), "d_nm": diameter_nm(ms).tolist(),
-                                                                    "N": psd}, "top": top,
+                                                                    "N": psd}, "top": top, "omega_run": self._omega_run(r),
                 "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"]}}
 
+    # ---------------- step 1: the nucleation simulator's grid Omega
+    @staticmethod
+    def _nuc_cond(c):
+        return {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps")}
+
+    def nucleation(self, body):
+        """Omega(m) of the grid up to m = 13 at time t from the precursor alone, and the barrier along the time
+        (simulator.Simulator.omega_live)."""
+        if self.nuc is None:
+            raise ValueError("started without the growth template: no nucleation panel")
+        c = self._cond(body.get("conditions"))
+        return self.nuc.omega_live({**self._nuc_cond(c), "t": float(body.get("t", 10.0))})
+
+    def _omega_run(self, r):
+        """The grid's Omega(m) at the pool a network run leaves at each output (CdSe in solution and CdCl2 left),
+        as the nucleation simulator's growth-run curves: barrier, m*, S and Delta Omega(m, t)."""
+        if self.nuc is None:
+            return None
+        c = r["cond"]
+        out = {"t": [], "barrier": [], "m_star": [], "C_M": [], "C_X": [], "c_X_free": [], "S": [], "m": None,
+               "dOmega": []}
+        cols = []
+        for t, cm, cx in zip(r["t"], r["c_MA"], r["c_X_left"]):
+            o = self.nuc._omega_at(float(c["T"]), float(cm), float(cx), ng.M_DOT, float(c["eps"]), {})
+            if o is None:
+                continue
+            rows = [q for q in o["per_m"] if q["m"] <= o["m0"]]
+            out["t"].append(float(t))
+            out["barrier"].append(o["barrier"])
+            out["m_star"].append(o["m_star"])
+            out["C_M"].append(o["C_M"])
+            out["C_X"].append(o["C_X"])
+            out["c_X_free"].append(o["c_MX_free"])
+            out["S"].append(o["S"])
+            out["m"] = [q["m"] for q in rows]
+            cols.append([q["Omega_m"] - rows[0]["Omega_m"] for q in rows])
+        out["dOmega"] = [list(col) for col in zip(*cols)]
+        return out
+
+    def grid_structure(self, m, k):
+        if self.nuc is None:
+            raise ValueError("started without the growth template")
+        return self.nuc.structure(m, k)
+
     def _pool_at(self, body):
-        """The pool of a run's output i, or of the conditions at conversion alpha with no dots (live)."""
+        """The pool of a run's output i, or of the conditions with no dots (live) at time t from the start (the
+        precursor converted by then), or at conversion alpha."""
         if body.get("run_id"):
             r = self.runs[str(body["run_id"])]
             i = int(body["i"])
@@ -121,12 +179,16 @@ class NetSim:
             _g, th, _pa = self.net.G(c["T"], c["eps"])
             return c, ng._pool(th, r["c_MA"][i], r["c_X_left"][i]), r["N"][i], r["t"][i]
         c = self._cond(body.get("conditions"))
-        alpha = float(body.get("alpha", 0.2))
-        if not 0 < alpha < 1:
-            raise ValueError("alpha must be in (0, 1)")
+        if body.get("t") is not None:
+            t = float(body["t"])
+            x = converted(t, k_conv_at(c["T"], c["k_conv_500K"], c["Ea_conv"]), c["c_P0"], c["c_MX0"])
+        else:
+            t = None
+            x = float(body.get("alpha", 0.2)) * c["c_P0"]
+        if not 0 < x < c["c_P0"]:
+            raise ValueError("the conversion must be in (0, 1)")
         _g, th, _pa = self.net.G(c["T"], c["eps"])
-        x = alpha * c["c_P0"]
-        return c, ng._pool(th, x, c["c_MX0"] - x), None, None
+        return c, ng._pool(th, x, c["c_MX0"] - x), None, t
 
     def map(self, body):
         """Omega per composition (the lowest state; eV, from the seed's), the population per composition, and the
@@ -157,7 +219,7 @@ class NetSim:
                 routes.append([m1, k1, m2, k2, float(j)])
         cells = [[m, k, float(best[j] - ref), float(pop[j]), len(self.comp[(m, k)])]
                  for j, (m, k) in enumerate(self.comp_keys)]
-        return {"t": t, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
+        return {"t": t, "alpha": float(pl["c_MA"] / c["c_P0"]) if N is None else None, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
                 "seed": net.label[net.seed], "cells": cells, "routes": routes, "barriers": r["table"]}
 
     def composition(self, m, k, run_id=None, i=None):
@@ -227,6 +289,14 @@ def make_app(sim: NetSim):
     def map_(body: dict = Body(...)):
         return guard(sim.map, body)
 
+    @app.post("/api/nucleation")
+    def nucleation(body: dict = Body(...)):
+        return guard(sim.nucleation, body)
+
+    @app.get("/api/grid_structure")
+    def grid_structure(m: int, k: int):
+        return guard(sim.grid_structure, m, k)
+
     @app.get("/api/composition")
     def composition(m: int, k: int, run_id: str | None = None, i: int | None = None):
         return guard(sim.composition, m, k, run_id, i)
@@ -247,7 +317,8 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8773)
     a = ap.parse_args(argv)
     import uvicorn
-    sim = NetSim(ng.load(a.network, a.thermo, a.params))
+    import yaml
+    sim = NetSim(ng.load(a.network, a.thermo, a.params), yaml.safe_load(Path(a.params).read_text()))
     uvicorn.run(make_app(sim), host=a.host, port=a.port, log_level="warning")
     return 0
 
