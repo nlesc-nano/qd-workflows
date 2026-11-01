@@ -32,6 +32,7 @@ Nothing is taken from growth.py (no k_f, island beta, facet gamma, coverage isot
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 import sys
@@ -66,10 +67,11 @@ DEFAULTS = {
     "eta_mPas": 0.5,                         # solvent viscosity (1-octadecene near 500 K), Stokes-Einstein
     "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
+    "prune_eV": 0.0,                         # > 0: leave out dots this far above the best of their size (prune)
 }
 LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0": (1e-4, 1.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
-          "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200)}
+          "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200), "prune_eV": (0.0, 20.0)}
 
 
 def _complex(n: int) -> tuple[float, float]:
@@ -165,6 +167,48 @@ class Network:
             self.isl.setdefault((r["parent"], r["family"]), []).append((r["dm"], r["dk"], r["row"]))
         self.isl_m = {key: st[key[0]]["m"] for key in self.isl}
         self._g_cache = {}
+
+    def subset(self, keep):
+        """The network on the states in `keep` (bool per state; every grid node must be kept): states and steps
+        re-indexed, the islands and the thermochemistry shared. .full maps the subset's states to this network's."""
+        keep = np.asarray(keep, bool)
+        if not keep[:self.n_grid].all() or not keep[self.seed]:
+            raise ValueError("a subset keeps every grid node and the seed")
+        sub = copy.copy(self)
+        new = np.full(self.n, -1)
+        new[keep] = np.arange(int(keep.sum()))
+        sub.full = np.where(keep)[0]
+        sub.n = int(keep.sum())
+        for name in ("m", "k", "S", "row", "reg_id", "grows"):
+            setattr(sub, name, getattr(self, name)[keep])
+        sub.label = [lab for lab, q in zip(self.label, keep) if q]
+        sub.seed = int(new[self.seed])
+        st = keep[self.a] & keep[self.b]
+        sub.a, sub.b = new[self.a[st]], new[self.b[st]]
+        for name in ("dm", "dk", "kind", "fam", "sites", "spc", "par"):
+            setattr(sub, name, getattr(self, name)[st])
+        sub.n_net_steps = int(st[:self.n_net_steps].sum())
+        sub.grows = np.zeros(sub.n, bool)
+        sub.grows[sub.a[sub.dm > 0]] = True
+        for name in ("lay", "groups", "group_idx", "curve_keys", "_adj"):
+            sub.__dict__.pop(name, None)
+        sub._g_cache = {}
+        return sub
+
+    def prune(self, T, eps, c_mx_hi, c_mx_lo, window):
+        """States to keep for a run whose CdCl2 left goes from c_mx_hi down to c_mx_lo: every grid node, the seed, and
+        each dot within `window` eV of the lowest state of its size at some point of that range. Within one size
+        mu_CdSe cancels, so the order depends on mu_CdCl2 only, which is checked at both ends and the middle."""
+        g, th, _pa = self.G(T, eps)
+        keep = np.zeros(self.n, bool)
+        keep[:self.n_grid] = True
+        keep[self.seed] = True
+        for c in (c_mx_hi, math.sqrt(c_mx_hi * c_mx_lo), c_mx_lo):
+            om = g - self.k * _pool(th, 1e-4, c)["mu_MX"]
+            low = np.full(int(self.m.max()) + 1, np.inf)
+            np.minimum.at(low, self.m, om)
+            keep |= om - low[self.m] <= window
+        return keep
 
     # ---------------- thermochemistry
     def G(self, T: float, eps: float):
@@ -394,11 +438,26 @@ def _pool(th, c_m, c_x):
 
 
 def simulate(net: Network, cond: dict | None = None, log=None) -> dict:
-    """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times."""
+    """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times.
+    prune_eV > 0: on the subset of Network.prune (the CdCl2 left from c_MX0 down to c_MX0 - c_P0, at least 1e-6 M),
+    populations returned on the whole network."""
     c = {**DEFAULTS, **(cond or {})}
     for key, (lo, hi) in LIMITS.items():
         if key in c and not lo <= float(c[key]) <= hi:
             raise ValueError(f"{key} = {c[key]} is outside [{lo}, {hi}]")
+    if float(c["prune_eV"]) > 0:
+        keep = net.prune(float(c["T"]), float(c["eps"]), float(c["c_MX0"]),
+                         max(float(c["c_MX0"]) - float(c["c_P0"]), 1e-6), float(c["prune_eV"]))
+        sub = net.subset(keep)
+        r = simulate(sub, {**c, "prune_eV": 0.0}, log)
+        r["cond"] = c
+        full = []
+        for Ns in r["N"]:
+            Nf = np.zeros(net.n, np.float32)
+            Nf[sub.full] = Ns
+            full.append(Nf)
+        r["N"], r["states"] = full, sub.n
+        return r
     T, eps = float(c["T"]), float(c["eps"])
     c_p0, c_mx0 = float(c["c_P0"]), float(c["c_MX0"])
     k_conv = k_conv_at(T, float(c["k_conv_500K"]), float(c["Ea_conv"]))

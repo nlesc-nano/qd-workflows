@@ -106,3 +106,18 @@ def test_conservation_and_island_slowdown(tmp_path):
         runs[dg] = r
     lo, hi = runs[-1.9]["cdse_flux"]["111B"], runs[-0.5]["cdse_flux"]["111B"]
     assert max(lo[1:]) > max(hi[1:])                            # the higher barrier grows {111}B slower
+
+
+def test_pruned_run(tmp_path):
+    cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.01, "c_MX0": 0.02, "k_conv_500K": 10.0, "t_start": 1e-3,
+            "t_end": 5.0, "n_out": 6}
+    net = _network(tmp_path)
+    exact = ng.simulate(net, cond)
+    wide = ng.simulate(net, {**cond, "prune_eV": 15.0})       # keeps every state: the same run
+    assert wide["states"] == net.n
+    assert np.allclose(np.array(wide["N"]), np.array(exact["N"]), rtol=1e-6, atol=1e-14)
+    narrow = ng.simulate(net, {**cond, "prune_eV": 0.01})     # grid nodes, the seed and each size's best only
+    assert narrow["states"] < net.n
+    x = np.array(narrow["alpha"]) * cond["c_P0"]
+    held = np.array([net.m @ n for n in narrow["N"]])
+    assert np.allclose(np.array(narrow["c_MA"]) + held, x, rtol=1e-5, atol=1e-12)
