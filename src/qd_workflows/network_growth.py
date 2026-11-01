@@ -67,7 +67,8 @@ DEFAULTS = {
     "eta_mPas": 0.5,                         # solvent viscosity (1-octadecene near 500 K), Stokes-Einstein
     "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
-    "prune_eV": 0.0,                         # > 0: leave out dots this far above the best of their size (prune)
+    "prune_eV": 2.0,                         # leave out dots this far above the best of their size (0: exact);
+                                             # 2 eV: 5-11x faster, CdSe beyond m = 13 within 1 % of the exact run
 }
 LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0": (1e-4, 1.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
