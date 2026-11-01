@@ -46,17 +46,24 @@ EPS_MIN = 1.8                                     # the cavity term's lower boun
 
 
 def surface(symbols, positions, scale: float = SOLVATION["vdw_scale"], density: float = 4.0) -> float:
-    """Solvent-exposed area (A^2) of the union of the scaled vdW spheres (points on each sphere outside all others)."""
+    """Solvent-exposed area (A^2) of the union of the scaled vdW spheres (points on each sphere outside all others).
+    Each atom's points are tested only against the atoms within r_a + r_max (KD-tree): the same number as testing all
+    atoms, in seconds for thousands of atoms."""
+    from scipy.spatial import cKDTree
     from .reaction.solvation import VDW, _sphere_points
     x = np.asarray(positions, float)
     r = np.array([VDW.get(s, 2.0) for s in symbols]) * scale
+    tree, rmax = cKDTree(x), r.max()
+    pts = {}
     total = 0.0
     for a in range(len(x)):
         n = max(12, int(4 * math.pi * r[a] ** 2 * density))
-        p = x[a] + r[a] * _sphere_points(n)
-        d = np.linalg.norm(p[:, None, :] - x[None, :, :], axis=2)
-        d[:, a] = np.inf
-        total += (d > r[None, :]).all(axis=1).sum() * 4 * math.pi * r[a] ** 2 / n
+        if n not in pts:
+            pts[n] = _sphere_points(n)
+        p = x[a] + r[a] * pts[n]
+        nb = [j for j in tree.query_ball_point(x[a], r[a] + rmax) if j != a]
+        free = n if not nb else int((np.linalg.norm(p[:, None, :] - x[nb][None], axis=2) > r[nb][None, :]).all(axis=1).sum())
+        total += free * 4 * math.pi * r[a] ** 2 / n
     return float(total)
 
 
