@@ -50,6 +50,7 @@ class NetSim:
         self.jobs: dict = {}
         g = np.load(net.folder / "geometry.npz")
         self.geo = (g["symbols"], g["positions"], g["offsets"])
+        self.elements = net.meta.get("elements", ("Cd", "Se", "Cl"))   # exports before the carboxylate networks: no list
         self.comp = {}                                           # (m, k) -> states
         for i, (m, k) in enumerate(zip(net.m.tolist(), net.k.tolist())):
             self.comp.setdefault((m, k), []).append(i)
@@ -301,7 +302,7 @@ class NetSim:
         sym, pos, off = self.geo
         z, x = sym[off[row]:off[row + 1]], pos[off[row]:off[row + 1]]
         lines = [str(len(z)), f"{net.label[state]} registry id {int(net.reg_id[state])}"]
-        lines += [f"{('Cd', 'Se', 'Cl')[int(a)]} {p[0]:.4f} {p[1]:.4f} {p[2]:.4f}" for a, p in zip(z, x)]
+        lines += [f"{self.elements[int(a)]} {p[0]:.4f} {p[1]:.4f} {p[2]:.4f}" for a, p in zip(z, x)]
         return {"state": state, "label": net.label[state], "m": int(net.m[state]), "k": int(net.k[state]),
                 "source": "network", "registry_id": int(net.reg_id[state]), "xyz": "\n".join(lines) + "\n"}
 

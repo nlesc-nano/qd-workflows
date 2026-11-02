@@ -9,7 +9,7 @@ Reads the tree registry and its products and writes one self-contained folder:
     arrays.npz     per structure (the states, then the islands and ladder rungs): G_gas on the grid's temperatures
                    (ideal gas at 1 M, no solvation; the rotational symmetry number included) and the vdW surface S
                    (A^2), so that G(T, eps) = interp(T, G_gas) + per_area(eps) S, as for the grid's clusters
-    geometry.npz   symbols and positions of every state (the structure panel)
+    geometry.npz   symbols (codes into network.json's elements) and positions of every state (the structure panel)
 
 Inputs (formats of the tree scripts): registry.json (dots: key -> id, framework "se"; lineage "0": the seed dot),
 results_by_key.json (key -> symbols, positions, E_eV, frequencies_cm1, n_imaginary), g_cache.json
@@ -38,13 +38,20 @@ from . import grid_solvation as gs
 from . import grid_thermo as gt
 
 FACETS = ("100", "111A", "111B", "110")
-ELEMENTS = ("Cd", "Se", "Cl")
+KEY_ELEMENTS = ("Cd", "Se", "Cl")                    # the registry key's sites (Cl: the X site, whatever the ligand)
+ELEMENTS = ("Cd", "Se", "Cl", "C", "O", "H")         # geometry.npz symbol codes (C, O, H: carboxylate ligands)
 _ATOM = re.compile(r"'(Cd|Se|Cl)'")
 
 
 def counts(key: str) -> dict:
     c = collections.Counter(_ATOM.findall(key))
-    return {e: c.get(e, 0) for e in ELEMENTS}
+    return {e: c.get(e, 0) for e in KEY_ELEMENTS}
+
+
+def formula(symbols) -> str:
+    """Formula of the relaxed structure (Cd and Se always, other elements when present)."""
+    c = collections.Counter(symbols)
+    return "".join(f"{e}{c[e]}" for e in ELEMENTS if c[e] or e in ("Cd", "Se"))
 
 
 def _thermal(job):
@@ -210,9 +217,8 @@ def export(a) -> dict:
     # ---- write
     states = []
     for i in ids:
-        c = comp[i]
         s = res[key_of[i]]
-        states.append({"id": i, "formula": f"Cd{c['Cd']}Se{c['Se']}Cl{c['Cl']}", "m": mk[i][0], "k": mk[i][1],
+        states.append({"id": i, "formula": formula(s["symbols"]), "m": mk[i][0], "k": mk[i][1],
                        "fw": fw_of[i], "n_imag": int(s.get("n_imaginary", 0))})
     fw_index = {}
     for s in states:
@@ -220,7 +226,7 @@ def export(a) -> dict:
     islands = [{"parent": row[p], "family": f, "dm": dm, "dk": dk, "src": src, "row": len(ids) + j}
                for j, (p, f, dm, dk, src, _s) in enumerate(extra)]
     meta = {"source": {k: str(v) for k, v in vars(a).items() if k not in ("island_states",)},
-            "temperatures": temps, "seed": row[seed], "seed_id": seed, "vdw_scale": P["vdw_scale"],
+            "temperatures": temps, "seed": row[seed], "seed_id": seed, "vdw_scale": P["vdw_scale"], "elements": ELEMENTS,
             "states": states, "steps": st_out, "islands": islands}
     (out / "network.json").write_text(json.dumps(meta, separators=(",", ":")))
     np.savez_compressed(out / "arrays.npz", G_gas=G, S=S, sigma=sig)
