@@ -145,9 +145,7 @@ best route to $m \ge 50$ still climbs 1.94 eV (its top an attach step $(43,5) \t
   to 2.6 eV. A run with $c_{\mathrm{MX},0} = 0.1$ M still ends at 13.00.
 - **The solvent of the free species decides it.** $\varepsilon = 1$ at the same concentrations: every size below the
   complexes, climb 0.85 eV ($\mu_\mathrm{CdSe}$ +0.10 eV); $\varepsilon = 5$: climb 2.35 eV. The wall is 0.03–0.10
-  eV per CdSe, the size of the COSMO solvation difference of the free complexes between these solvents, so the COSMO
-  (free species) and $\sigma S$ (clusters, dots) energies must agree to a few 10 meV per CdSe for the plateau to mean
-  anything.
+  eV per CdSe, the size of the solvation shift of the free complexes between these solvents.
 
 ## Limits
 
