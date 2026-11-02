@@ -49,7 +49,7 @@ NA = 6.02214076e23
 KB_J = 1.380649e-23
 H_EV = 4.135667696e-15
 AMU = 1.66053907e-27
-MASS = {"Cd": 112.414, "Se": 78.971, "Cl": 35.453}
+MASS = {"Cd": 112.414, "Se": 78.971, "Cl": 35.453, "C": 12.011, "O": 15.999, "H": 1.008}
 TOL = 1e-8                                   # pool residual (relative to the totals)
 NEWTON_MAX = 0.2                             # largest Newton step in ln C_M, ln C_X
 CH_MAX = 0.2                                 # largest change per time step of ln C and of ln(number of dots)
@@ -72,13 +72,30 @@ LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0":
           "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200)}
 
 
-def _complex(n: int) -> tuple[float, float]:
-    """(mass amu, radius A) of the CdSe(CdCl2)_n carrier, n = -1: free CdCl2 (radii from the COSMO surfaces)."""
-    s = gs.SOLVATION
+def _complex(n: int, solv: dict, m_x: float = MASS["Cl"]) -> tuple[float, float]:
+    """(mass amu, radius A) of the CdSe(CdCl2)_n carrier, n = -1: free CdCl2 (MX = Cd X2, X of mass m_x: Cl, or the
+    carboxylate of an acetate network); radii from the COSMO surfaces of the run's solvation block (the module's
+    CdCl2 defaults where it has none)."""
+    mono = solv.get("monomers") or gs.SOLVATION["monomers"]
+    cplx = solv.get("complexes", gs.SOLVATION["complexes"]) if "monomers" in solv else gs.SOLVATION["complexes"]
+    mx = MASS["Cd"] + 2 * m_x
     if n < 0:
-        return MASS["Cd"] + 2 * MASS["Cl"], math.sqrt(s["monomers"]["CdCl2"]["S_A2"] / (4 * math.pi))
-    area = s["complexes"][str(n)]["S_A2"] if str(n) in s["complexes"] else s["monomers"]["CdSe"]["S_A2"]
-    return MASS["Cd"] + MASS["Se"] + n * (MASS["Cd"] + 2 * MASS["Cl"]), math.sqrt(area / (4 * math.pi))
+        return mx, math.sqrt(mono["CdCl2"]["S_A2"] / (4 * math.pi))
+    area = cplx[str(n)]["S_A2"] if str(n) in cplx else mono["CdSe"]["S_A2"]
+    return MASS["Cd"] + MASS["Se"] + n * mx, math.sqrt(area / (4 * math.pi))
+
+
+def _x_mass(folder: Path, meta: dict) -> float:
+    """Mass of one X of the MX = Cd X2 unit, from the seed's relaxed structure: (M - m (Cd + Se) - k Cd) / 2k. Cl when
+    the export has no geometry or the seed no MX."""
+    st = meta["states"][meta["seed"]]
+    if not (folder / "geometry.npz").exists() or st["k"] <= 0:
+        return MASS["Cl"]
+    g = np.load(folder / "geometry.npz")
+    els = meta.get("elements", ("Cd", "Se", "Cl"))
+    off = g["offsets"]
+    mass = sum(MASS[els[int(a)]] for a in g["symbols"][off[meta["seed"]]:off[meta["seed"] + 1]])
+    return (mass - st["m"] * (MASS["Cd"] + MASS["Se"]) - st["k"] * MASS["Cd"]) / (2 * st["k"])
 
 
 class Network:
@@ -91,6 +108,7 @@ class Network:
         meta = json.loads((folder / "network.json").read_text())
         arr = np.load(folder / "arrays.npz")
         self.meta, self.G_gas, self.S_row = meta, arr["G_gas"], arr["S"]
+        self.m_x = _x_mass(folder, meta)                        # X of the MX unit (Cl, or the carboxylate)
         self.temps = np.asarray(meta["temperatures"], float)
         if not np.allclose(self.temps, thermo["temperatures"]):
             raise ValueError("the network and the grid thermo have different temperature grids")
@@ -295,9 +313,9 @@ class Network:
 
         sites_all = np.maximum(self.S / a_site_A2, 1.0)
         out = np.empty(len(self.a))
-        carriers = {n: _complex(n) for n in self.mono_k}
+        carriers = {n: _complex(n, self.solv, self.m_x) for n in self.mono_k}
         ma = carriers.get(1, carriers[self.mono_k[0]])
-        mx = _complex(-1)
+        mx = _complex(-1, self.solv, self.m_x)
         for spc in np.unique(self.spc):
             sel = self.spc == spc
             if spc == SP_NONE:
