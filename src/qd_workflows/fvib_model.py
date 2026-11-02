@@ -7,17 +7,21 @@ floored at 10 cm-1), the vibrational part of the network's G (references.ideal_g
 additive on the relaxed geometry and linear in its descriptor, one weight set per temperature:
 
     F_vib(T) = sum_{i<j} sum_n w_{s_i s_j, n}(T) phi_n(r_ij) f_c(r_ij) + sum_i sum_p c_{s_i, p}(T) g_p(rho_i)
+               + sum_i sum_{j<k in shell(i)} sum_c a_{s_i, c}(T) psi_c(cos theta_jik) + sum_i d_{s_i, n_i}(T)
                + sum_s b_s(T) N_s + b_0(T)
 
 phi_n: Gaussians of width 0.25 A on 2-7 A every 0.25 A; f_c: cosine cutoff at 7.5 A; rho_i: the atom's smooth
-coordination (sum_j exp(-((r_ij - 2.7)/0.3)^2)), g_p in (rho, rho^2, sqrt(rho)). Ridge on standardised features.
+coordination (sum_j exp(-((r_ij - 2.7)/0.3)^2)), g_p in (rho, rho^2, sqrt(rho)); psi_c: Gaussians of width 0.12 on the
+cosine of the bond angles at atom i (first shell, r < 3.2 A) every 1/6 from -1 to 1; n_i: the atom's first-shell
+count (0-6, 6 for more). Ridge on standardised features.
 
 Inputs (formats of the tree scripts, as network_export): results_by_key.json (key -> symbols, positions,
 frequencies_cm1, n_imaginary), registry.json (dots: key -> id, framework "se"), layer_steps.json (a, b, dSe, dCd,
-edge), and the grid's thermo_merged.json (temperatures).
+edge), and the grid's thermo_merged.json (temperatures). --extra adds relaxed states outside the registry (the
+"states" of relax_states.py's states.json, such as the P1 dots at m 250-500): trained on, each its own lineage group.
 
     python -m qd_workflows.fvib_model fit --results results_by_key.json --registry registry.json \
-        --steps layer_steps.json --thermo thermo_merged.json --out DIR [--nproc 4] [--lam L]
+        --steps layer_steps.json --thermo thermo_merged.json --out DIR [--extra states.json ...] [--nproc 4] [--lam L]
     python -m qd_workflows.fvib_model predict --model DIR/model.json file.xyz ...
 
 fit writes model.json (trained on every dot), validation.json (size and lineage-edge splits, random as a reference),
@@ -46,18 +50,25 @@ REPORT_T = (400.0, 500.0, 600.0)
 SEEN = 0.05                   # a feature value above this counts as present (a twentieth of a pair)
 RARE = 0.05                   # present in fewer than this share of the training dots: a rare feature
 BOND_R = 3.5                  # pair features up to this distance are the bonding shell (the domain check)
+ANG_R = 3.2                   # first shell for the bond angles and the coordination count
+COS_C = np.linspace(-1, 1, 13)
+COS_W = 0.12
+N_COORD = 7                   # coordination 0..6, 6 for more
 
 
 def feature_names() -> list[str]:
     return ([f"N_{s}" for s in SPECIES] + [f"pair_{a}{b}_{r:.2f}" for a, b in PAIRS for r in CENTRES]
-            + [f"emb_{s}_{g}" for s in SPECIES for g in EMBED])
+            + [f"emb_{s}_{g}" for s in SPECIES for g in EMBED]
+            + [f"ang_{s}_{c:+.2f}" for s in SPECIES for c in COS_C] + [f"coord_{s}_{n}" for s in SPECIES
+                                                                       for n in range(N_COORD)])
 
 
 BOND = np.array([n.startswith("pair_") and float(n.rsplit("_", 1)[1]) <= BOND_R for n in feature_names()])
 
 
 def descriptor(symbols, positions) -> np.ndarray:
-    """Composition, pair radial sums per species pair, and per-species sums of the embedding functions."""
+    """Composition, pair radial sums per species pair, per-species sums of the embedding functions, bond-angle
+    histograms and first-shell coordination counts per centre species."""
     from scipy.spatial import cKDTree
     sy = np.asarray(symbols)
     X = np.asarray(positions, float)
@@ -76,7 +87,22 @@ def descriptor(symbols, positions) -> np.ndarray:
         x = rho[sy == s]
         emb += [x.sum(), (x * x).sum(), np.sqrt(x).sum()]
     comp = [float((sy == s).sum()) for s in SPECIES]
-    return np.concatenate([comp, np.concatenate(pair), emb])
+    sh = p[r < ANG_R]
+    nb = [[] for _ in sy]
+    for i, j in sh:
+        nb[i].append(j)
+        nb[j].append(i)
+    ang = {s: np.zeros(len(COS_C)) for s in SPECIES}
+    coord = {s: np.zeros(N_COORD) for s in SPECIES}
+    for i, js in enumerate(nb):
+        coord[sy[i]][min(len(js), N_COORD - 1)] += 1
+        if len(js) < 2:
+            continue
+        v = X[js] - X[i]
+        v /= np.linalg.norm(v, axis=1)[:, None]
+        c = (v @ v.T)[np.triu_indices(len(js), 1)]
+        ang[sy[i]] += np.exp(-((c[:, None] - COS_C) / COS_W) ** 2).sum(axis=0)
+    return np.concatenate([comp, np.concatenate(pair), emb] + [ang[s] for s in SPECIES] + [coord[s] for s in SPECIES])
 
 
 def _desc_job(job):
@@ -145,12 +171,12 @@ class FvibModel:
         return int(np.argmin(np.abs(np.array(self.temps) - T)))
 
     def to_json(self) -> dict:
-        return {"kind": "fvib_pair_embedding_ridge", "features": feature_names(), "temps": self.temps,
+        return {"kind": "fvib_pair_embedding_angle_ridge", "features": feature_names(), "temps": self.temps,
                 "lam": self.lam, "min_rows": self.min_rows, "active": self.active.tolist(), "rare": self.rare.tolist(),
                 "xmax": self.xmax.tolist(), "mu": self.mu.tolist(),
                 "sd": self.sd.tolist(), "w": self.w.tolist(), "b": self.b.tolist(),
                 "descriptor": {"centres": CENTRES.tolist(), "width": WIDTH, "r_cut": R_CUT, "rho_r0": RHO_R0,
-                               "rho_w": RHO_W}}
+                               "rho_w": RHO_W, "ang_r": ANG_R, "cos_centres": COS_C.tolist(), "cos_w": COS_W}}
 
     @classmethod
     def from_json(cls, d: dict) -> "FvibModel":
@@ -165,9 +191,12 @@ class FvibModel:
 
 # ---------------------------------------------------------------- data set and validation
 
-def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | None = None) -> dict:
-    """Descriptors, targets and labels of every relaxed dot, the step pairs between them and their lineage edges."""
+def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | None = None, extra=()) -> dict:
+    """Descriptors, targets and labels of every relaxed dot, the step pairs between them and their lineage edges.
+    `extra`: states.json files of relax_states.py; their states are added without steps, each its own lineage group."""
     res = json.loads(Path(results).read_text())
+    for f in extra:
+        res.update({f"extra:{k}": v for k, v in json.loads(Path(f).read_text())["states"].items()})
     keys = list(res)
     if cache is not None and cache.exists():
         z = np.load(cache, allow_pickle=False)
@@ -178,7 +207,7 @@ def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | 
             return data
     reg = json.loads(Path(registry).read_text())["dots"]
     row_of_id = {reg[k]["id"]: j for j, k in enumerate(keys) if k in reg}
-    fw = np.array([str(reg.get(k, {}).get("se", "")) for k in keys])
+    fw = np.array([k if k.startswith("extra:") else str(reg.get(k, {}).get("se", "")) for k in keys])
     cnt = [collections.Counter(res[k]["symbols"]) for k in keys]
     m = np.array([c["Se"] for c in cnt])
     k_ = np.array([c["Cd"] - c["Se"] for c in cnt])
@@ -339,7 +368,7 @@ def fit(a) -> dict:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     temps = json.loads(Path(a.thermo).read_text())["temperatures"]
-    data = load_dataset(a.results, a.registry, a.steps, temps, a.nproc, out / "dataset.npz")
+    data = load_dataset(a.results, a.registry, a.steps, temps, a.nproc, out / "dataset.npz", a.extra)
     print(f"[fvib] {len(data['m'])} dots, {len(data['pairs'])} step pairs "
           f"{dict(collections.Counter(data['pair_kind'].tolist()))}, {len(np.unique(lineage_labels(data)))} lineage "
           f"groups", flush=True)
@@ -379,6 +408,7 @@ def main(argv=None) -> int:
     f.add_argument("--steps", required=True)
     f.add_argument("--thermo", required=True, help="the grid's thermo_merged.json (temperatures)")
     f.add_argument("--out", required=True)
+    f.add_argument("--extra", nargs="*", default=[], help="states.json of relax_states.py with more relaxed dots")
     f.add_argument("--nproc", type=int, default=4)
     f.add_argument("--lam", type=float, default=None, help="ridge strength per row; default: chosen on edge folds")
     p = sub.add_parser("predict", help="F_vib of relaxed structures (xyz)")

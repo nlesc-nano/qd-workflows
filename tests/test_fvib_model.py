@@ -1,5 +1,5 @@
-"""Learned F_vib (fvib_model) on synthetic zinc-blende fragments: descriptor invariance and additivity, the fit, the
-domain check, the splits."""
+"""Learned F_vib (fvib_model) on synthetic zinc-blende fragments: descriptor invariance and additivity, the angle block,
+the fit, the domain check, the splits."""
 import json
 
 import numpy as np
@@ -101,3 +101,11 @@ def test_target_matches_thermo():
     from orchestr_ai.qd.steps.hessian import thermo
     f = [5.0, 80.0, 150.0, 300.0, -20.0]
     assert np.allclose(fm.fvib_target(f, [500.0]), thermo(np.array(f), [500.0])["F_vib_eV"])
+
+
+def test_angular_block_of_a_tetrahedron():
+    t = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) * 2.63 / np.sqrt(3)
+    d = dict(zip(fm.feature_names(), fm.descriptor(["Cd"] + ["Se"] * 4, np.r_[[[0.0, 0, 0]], t])))
+    assert d["coord_Cd_4"] == 1 and d["coord_Se_1"] == 4
+    ang = np.array([d[f"ang_Cd_{c:+.2f}"] for c in fm.COS_C])
+    assert np.allclose(ang, 6 * np.exp(-((fm.COS_C + 1 / 3) / fm.COS_W) ** 2))     # six angles at cos = -1/3
