@@ -82,16 +82,21 @@ class NetSim:
         """Run in a thread (a run takes minutes on the full network); poll with job()."""
         c = self._cond(body.get("conditions"))
         jid = uuid.uuid4().hex[:10]
-        job = {"state": "running", "log": "", "result": None, "error": None}
+        job = {"state": "running", "log": "", "result": None, "error": None, "stop": False}
         self.jobs[jid] = job
 
         def work():
             try:
-                job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s))
+                job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s), stop=lambda: job["stop"])
                 job["state"] = "done"
             except Exception as exc:                            # reported to the page
                 job["state"], job["error"] = "error", str(exc)
         threading.Thread(target=work, daemon=True).start()
+        return {"job": jid}
+
+    def stop(self, jid):
+        """Ask a running job to end at its next step; it returns the outputs it has."""
+        self.jobs[jid]["stop"] = True
         return {"job": jid}
 
     def job(self, jid):
@@ -102,8 +107,8 @@ class NetSim:
             self.jobs.pop(jid, None)
         return out
 
-    def run(self, c, log=None):
-        r = ng.simulate(self.net, c, log=log)
+    def run(self, c, log=None, stop=None):
+        r = ng.simulate(self.net, c, log=log, stop=stop)
         rid = uuid.uuid4().hex[:10]
         self.runs[rid] = r
         while len(self.runs) > MAX_RUNS:
@@ -124,7 +129,7 @@ class NetSim:
         series["d_mean_nm"] = diameter_nm(r["m_mean"]).tolist()
         return {"run_id": rid, "cond": c, "series": series, "psd": {"m": ms.tolist(), "d_nm": diameter_nm(ms).tolist(),
                                                                     "N": psd}, "top": top, "omega_run": self._omega_run(r),
-                "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"]}}
+                "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"], "stopped": r["stopped"]}}
 
     # ---------------- step 1: the nucleation simulator's grid Omega
     @staticmethod
@@ -334,6 +339,10 @@ def make_app(sim: NetSim):
     @app.post("/api/run")
     def run(body: dict = Body(...)):
         return guard(sim.start, body)
+
+    @app.post("/api/stop")
+    def stop(id: str):
+        return guard(sim.stop, id)
 
     @app.get("/api/job")
     def job(id: str):

@@ -135,7 +135,7 @@ button:disabled { opacity: .55; cursor: progress; }
       <div id="controls"></div>
       <div class="ctl"><label class="tog"><input type="checkbox" id="islands" checked> Island barriers on layer steps</label>
         <div class="hint">Off: every layer attaches as soon as it is downhill (attachment-limited growth).</div></div>
-      <button class="primary" id="runBtn">Run the growth</button>
+      <button class="primary" id="runBtn">Run the growth</button> <button id="stopBtn" disabled>Stop</button>
       <div class="status" id="runStatus"></div>
       <h3>Look at Ω at</h3>
       <div class="ctl"><label>time from the start <span class="num"><input id="tnow" value="10" aria-label="time from the start"><i>s</i></span></label>
@@ -260,8 +260,9 @@ const CTRL = [
   ["T", "T", "K"], ["eps", "solvent ε", ""], ["c_P0", "Se precursor c_P0", "M"], ["c_MX0", "CdCl₂ c_MX0", "M"],
   ["k_conv_500K", "k_conv (500 K)", "1/(M s)"], ["Ea_conv", "E_a of the conversion", "eV"], ["t_end", "time", "s"],
   ["s_nu", "kinetic scale s_ν", "×"], ["eta_mPas", "viscosity η", "mPa s"], ["a_site_A2", "site area", "Å²"],
+  ["max_wall_s", "stop the run after", "s wall"],
 ];
-let D = null, RUN = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", VIEW = null, SEL = null, LASTMAP = null;
+let D = null, RUN = null, JOB = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", VIEW = null, SEL = null, LASTMAP = null;
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -661,10 +662,12 @@ function drawMap(m, when) {
 async function run() {
   let c;
   try { c = conditions(); } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; return; }
-  $("runBtn").disabled = true; $("runStatus").className = "status"; $("runStatus").textContent = "running…";
+  $("runBtn").disabled = true; $("stopBtn").disabled = false; $("runStatus").className = "status"; $("runStatus").textContent = "running…";
+  JOB = null;
   const t0 = performance.now();
   try {
     const { job } = await api("/api/run", { conditions: c });
+    JOB = job;
     for (;;) {
       await new Promise(res => setTimeout(res, 1000));
       const j = await api(`/api/job?id=${job}`);
@@ -674,13 +677,14 @@ async function run() {
     }
     const s = RUN.stats;
     $("runStatus").textContent = `${s.steps} implicit steps, ${s.lu} sparse solves, ${s.wall_s.toFixed(1)} s on the server (${((performance.now() - t0) / 1000).toFixed(1)} s in all)`;
+    if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
     $("runWhen").textContent = `T ${c.T} K, c_P0 ${c.c_P0} M, CdCl₂ ${c.c_MX0} M, s_ν ${c.s_nu}${c.islands ? "" : ", no island barriers"}`;
     $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
     drawRun(); setTime(RUN.series.t.length - 1);
     if (L0) drawNucleation(L0);
     $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
-  $("runBtn").disabled = false;
+  $("runBtn").disabled = false; $("stopBtn").disabled = true; JOB = null;
 }
 
 function marker(i) {
@@ -794,6 +798,7 @@ $("tnow").addEventListener("change", () => syncT(false));
 document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
 document.querySelectorAll('input[name="profsrc"]').forEach((r) => r.addEventListener("change", requestProfile));
 $("runBtn").addEventListener("click", run);
+$("stopBtn").addEventListener("click", () => { if (JOB) { api(`/api/stop?id=${JOB}`, {}); $("stopBtn").disabled = true; } });
 let tTimer = null;
 $("tbar").addEventListener("input", () => { clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });
 (async () => { D = await api("/api/defaults"); buildControls(); onConds(); })();

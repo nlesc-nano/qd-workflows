@@ -53,6 +53,7 @@ MASS = {"Cd": 112.414, "Se": 78.971, "Cl": 35.453, "C": 12.011, "O": 15.999, "H"
 TOL = 1e-8                                   # pool residual (relative to the totals)
 NEWTON_MAX = 0.2                             # largest Newton step in ln C_M, ln C_X
 CH_MAX = 0.2                                 # largest change per time step of ln C and of ln(number of dots)
+STALL_TRIES = 400                            # step attempts between two outputs before a run is stopped as stalled
 M_DOT = 13                                   # a dot: m >= the seed's 13 CdSe (the grid -> network hand-over)
 FAMILIES = ("100", "111A", "111B", "110")
 M_BINS = (0, 30, 60, 100, 150, 10 ** 6)      # parent size bins of the median island curves (CdSe units)
@@ -66,10 +67,12 @@ DEFAULTS = {
     "eta_mPas": 0.5,                         # solvent viscosity (1-octadecene near 500 K), Stokes-Einstein
     "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
+    "max_wall_s": 1800.0,                    # a run stops here (and reports why) with the outputs it has
 }
 LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0": (1e-4, 1.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
-          "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200)}
+          "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200),
+          "max_wall_s": (1.0, 86400.0)}
 
 
 def _complex(n: int, solv: dict, m_x: float = MASS["Cl"]) -> tuple[float, float]:
@@ -411,8 +414,10 @@ def _pool(th, c_m, c_x):
     return pl
 
 
-def simulate(net: Network, cond: dict | None = None, log=None) -> dict:
-    """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times."""
+def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dict:
+    """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times.
+    The run ends early, with the outputs it has and the reason in out["stopped"], when stop() is true, after
+    max_wall_s, or when STALL_TRIES step attempts do not reach the next output."""
     c = {**DEFAULTS, **(cond or {})}
     for key, (lo, hi) in LIMITS.items():
         if key in c and not lo <= float(c[key]) <= hi:
@@ -435,7 +440,7 @@ def simulate(net: Network, cond: dict | None = None, log=None) -> dict:
     out = {"cond": c, "t": [], "alpha": [], "c_MA": [], "c_X_left": [], "c_MX_free": [], "mu_MA": [], "mu_MX": [],
            "n_dots": [], "n_clusters": [], "m_mean": [], "m_std": [], "nucleation": [], "frontier": [],
            "layer_flux": {f: [] for f in FAMILIES}, "cdse_flux": {f: [] for f in FAMILIES}, "attach_flux": [],
-           "barriers": [], "N": [], "steps": 0, "lu": 0, "wall_s": 0.0}
+           "barriers": [], "N": [], "steps": 0, "lu": 0, "wall_s": 0.0, "stopped": None}
     w0 = time.time()
     solver = _Solver(net.n)
     dudt = None
@@ -493,7 +498,17 @@ def simulate(net: Network, cond: dict | None = None, log=None) -> dict:
     record(t, N, pl0, net.rates(T, eps, pl0, nu, nu_src, isl))
     t_out.pop(0)
     dt = t0 * 1e-3
+    tries, wall_max = 0, float(c["max_wall_s"])
     while t_out:
+        tries += 1
+        why = ("stopped from the page" if stop is not None and stop() else
+               f"wall-time limit {wall_max:.0f} s" if time.time() - w0 > wall_max else
+               f"stalled: {tries - 1} step attempts without reaching t = {t_out[0]:.4g} s" if tries > STALL_TRIES else None)
+        if why:
+            out["stopped"] = f"{why} (at t = {t:.4g} s, dt = {dt:.3g} s, {diag})"
+            if log:
+                log(out["stopped"])
+            break
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
         x1 = xs(t1)
@@ -529,7 +544,10 @@ def simulate(net: Network, cond: dict | None = None, log=None) -> dict:
             diag["failed"] += 1
             dt *= 0.25
             if dt < 1e-14 * max(t, 1.0):
-                raise RuntimeError(f"the pool does not converge at t = {t:.4g} s")
+                out["stopped"] = f"the pool does not converge (at t = {t:.4g} s, {diag})"
+                if log:
+                    log(out["stopped"])
+                break
             continue
         ch = max(abs(v[0] - u[0]), abs(v[1] - u[1]))
         nd0, nd1 = N[dot].sum(), N1[dot].sum()
@@ -545,6 +563,7 @@ def simulate(net: Network, cond: dict | None = None, log=None) -> dict:
         if t_out and t >= t_out[0] * (1 - 1e-12):
             record(t, N, pl, r)
             t_out.pop(0)
+            tries = 0
             if log:
                 log(f"t = {t:.4g} s: alpha {out['alpha'][-1]:.3f}, C_M {pl['c_MA']:.3g} M, dots {out['n_dots'][-1]:.3g} M, "
                     f"<m> {out['m_mean'][-1]:.1f}, {out['steps']} steps, {solver.n_lu} LU, {solver.n_it} GMRES it, {diag}, {time.time() - w0:.1f} s")
@@ -613,7 +632,8 @@ def main(argv=None) -> int:
                   f"{stationary_residual(net, a.T, a.eps, pl):.2e}")
         return 0
     res = simulate(net, cond, log=lambda s: print(s, flush=True))
-    print(f"{res['steps']} steps, {res['lu']} LU solves, {res['wall_s']:.1f} s")
+    print(f"{res['steps']} steps, {res['lu']} LU solves, {res['wall_s']:.1f} s"
+          + (f"; stopped early: {res['stopped']}" if res["stopped"] else ""))
     if a.json:
         Path(a.json).write_text(json.dumps({k: v for k, v in res.items() if k != "N"}, default=float))
     return 0
