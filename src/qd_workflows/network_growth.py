@@ -34,13 +34,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import LinearOperator, gmres, splu
+from scipy.sparse.linalg import splu
 
 from . import grid_solvation as gs
 from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
@@ -215,17 +216,20 @@ class Network:
     def island_curves(self, T, eps, mu_ma, mu_mx):
         """Per (parent row, family): Omega*(dm) = lowest island or rung with dm CdSe added (any CdCl2), from the parent
         (eV), for dm >= 1."""
+        key = ("isl", round(T, 6), round(eps, 6))
+        if key not in self._g_cache:                             # G of the islands from the parent: T and eps only
+            tab = {}
+            for (p, f), L in self.isl.items():
+                sel = [x for x in L if x[0] >= 1]
+                if sel:
+                    dm = np.array([x[0] for x in sel])
+                    g = self.row_G(T, eps, [x[2] for x in sel]) - self.row_G(T, eps, [p])[0]
+                    tab[(p, f)] = (dm, np.array([x[1] for x in sel]), g, np.unique(dm))
+            self._g_cache[key] = tab
         out = {}
-        for (p, f), L in self.isl.items():
-            rows = [r for _dm, _dk, r in L]
-            g = self.row_G(T, eps, rows) - self.row_G(T, eps, [p])[0]
-            c = {}
-            for (dm, dk, _r), dg in zip(L, g):
-                if dm >= 1:
-                    om = dg - dm * mu_ma - dk * mu_mx
-                    c[dm] = min(c.get(dm, np.inf), om)
-            if c:
-                out[(p, f)] = c
+        for pf, (dm, dk, g, u) in self._g_cache[key].items():
+            om = g - dm * mu_ma - dk * mu_mx
+            out[pf] = {int(d): float(om[dm == d].min()) for d in u}
         return out
 
     @staticmethod
@@ -276,7 +280,7 @@ class Network:
             for key in keys:
                 for dm, v in curves[key].items():
                     pts.setdefault(dm, []).append(v)
-            return {dm: float(np.median(v)) for dm, v in pts.items()}
+            return {dm: _median(v) for dm, v in pts.items()}
 
         bin_of = lambda m: max(x for x in M_BINS if x <= m)                        # noqa: E731
         val = {}
@@ -367,44 +371,98 @@ class Network:
             s_r[i] = sym * nu_src[i] * math.exp(-(t_ - om[j]) / kt)     # 1/s back to the pool
         return {"kf": kf, "kr": kr, "s_f": s_f, "s_r": s_r, "Omega": om, "B": B, "table": table, "w": w}
 
+    def _pattern(self):
+        """CSC pattern of M: every step's four entries, the sources' and the whole diagonal, zeros kept, so every M
+        (and I - dt M) of a run has one structure; and the slot of each of matrix()'s entries in it."""
+        n, a, b, j, d = self.n, self.a, self.b, self.src[:, 2], np.arange(self.n)
+        key, slot = np.unique(np.concatenate([a, b, a, b, j, d]) * n + np.concatenate([b, a, a, b, j, d]),
+                              return_inverse=True)
+        self._indices = (key % n).astype(np.int32)
+        self._indptr = np.searchsorted(key // n, np.arange(n + 1)).astype(np.int32)
+        self._slot, self._diag = slot[:-n], slot[-n:]
+
     def matrix(self, r):
         """dN/dt = M N + s."""
         n = self.n
-        a, b = self.a, self.b
-        rows = np.concatenate([b, a, a, b, self.src[:, 2]])
-        cols = np.concatenate([a, b, a, b, self.src[:, 2]])
+        if not hasattr(self, "_slot"):
+            self._pattern()
         data = np.concatenate([r["kf"], r["kr"], -r["kf"], -r["kr"], -r["s_r"]])
-        M = sp.csc_matrix((data, (rows, cols)), shape=(n, n))
+        M = sp.csc_matrix((np.bincount(self._slot, weights=data, minlength=len(self._indices)), self._indices,
+                           self._indptr), shape=(n, n))
         s = np.bincount(self.src[:, 2], weights=r["s_f"], minlength=n) if len(self.src) else np.zeros(n)
         return M, s
+
+    def system(self, M, dt):
+        """I - dt M on M's pattern."""
+        data = -dt * M.data
+        data[self._diag] += 1.0
+        return sp.csc_matrix((data, self._indices, self._indptr), shape=M.shape)
 
     def fluxes(self, r, N):
         """Net flux of every step (mol/L/s, a -> b positive) and of the nucleus sources."""
         return r["kf"] * N[self.a] - r["kr"] * N[self.b], r["s_f"] - r["s_r"] * N[self.src[:, 2]]
 
 
-class _Solver:
-    """Solves (I - dt M) x = b: GMRES preconditioned by the last LU while it converges fast, a new LU otherwise
-    (the rates change smoothly between Newton iterations and steps; one LU costs ~0.5 s on the 12k-state network)."""
+def _median(v):
+    """np.median of a short list (the same value), without numpy's per-call overhead."""
+    v = sorted(v)
+    h = len(v) // 2
+    return float(v[h]) if len(v) % 2 else float((v[h - 1] + v[h]) / 2)
 
-    def __init__(self, n, max_it=40, rtol=1e-11):
-        self.n, self.lu, self.n_lu, self.n_it, self.max_it, self.rtol = n, None, 0, 0, max_it, rtol
+
+def _threads() -> int:
+    """Threads of the sparse LU: QDW_LU_THREADS, else the cores this process may use, at most 4 (a 7.6k-state LU
+    is no faster on more: M5 Pro 4 threads 0.019 s, 8 threads 0.026 s)."""
+    if os.environ.get("QDW_LU_THREADS"):
+        return max(1, int(os.environ["QDW_LU_THREADS"]))
+    n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    return min(4, n)
+
+
+class _Solver:
+    """Solves (I - dt M) x = b by sparse LU, one factorization per matrix, kept for further solves with the same
+    matrix (the Jacobian's). Every matrix of a run has M's pattern (Network.system), so the fill-reducing ordering
+    and the symbolic analysis are done once. MUMPS (python-mumps, conda-forge: METIS ordering, OpenMP threads) where
+    it is installed, else SciPy's SuperLU (serial, ordering and analysis at every factorization; 5x slower on one core).
+    QDW_LU=superlu forces SuperLU. GMRES on the previous LU is not tried: it almost never reached 1e-11 on a new
+    matrix (619 LU for 610 matrices on the acetate network) and cost ~10 % of the run."""
+
+    def __init__(self, n, threads=None):
+        self.n, self.A, self.lu, self.n_lu, self.n_it = n, None, None, 0, 0
+        self.threads = threads or _threads()
+        self.mumps = None
+        if os.environ.get("QDW_LU", "mumps").lower() != "superlu":
+            try:
+                import mumps
+                self.mumps = mumps.Context()
+            except ImportError:
+                pass
+        self.backend = f"MUMPS ({self.threads} threads)" if self.mumps is not None else "SuperLU"
+        self._analysed, self.n_fallback, self.fallback = False, 0, None
 
     def factor(self, A):
-        self.lu = splu(A, permc_spec="MMD_AT_PLUS_A", options={"SymmetricMode": True})
+        self.A, self.lu = A, None
         self.n_lu += 1
+        if self.mumps is not None:
+            inst = self.mumps
+            try:
+                inst.set_matrix(A)
+                if not self._analysed:
+                    inst.mumps_instance.icntl[6] = 0             # no value-based column permutation: the analysis
+                    inst.mumps_instance.icntl[16] = self.threads  # is structural, valid for every matrix of the run
+                    inst.analyze(ordering="metis")               # (threads set before it: MUMPS error -58 else)
+                    self._analysed = True
+                inst.factor(reuse_analysis=True)
+                return
+            except Exception as e:                               # noqa: BLE001 (mumps.MUMPSError): this matrix by
+                self.n_fallback += 1                             # SuperLU
+                self.fallback = f"{self.n_fallback} matrices by SuperLU after MUMPS errors, the last: {e}"
+        self.lu = splu(A, permc_spec="MMD_AT_PLUS_A", options={"SymmetricMode": True})
 
     def solve(self, A, b):
-        if self.lu is not None:
-            P = LinearOperator(A.shape, self.lu.solve)
-            count = [0]
-            x, info = gmres(A, b, x0=self.lu.solve(b), M=P, rtol=self.rtol, atol=0.0, restart=self.max_it, maxiter=1,
-                            callback=lambda _r: count.__setitem__(0, count[0] + 1), callback_type="pr_norm")
-            self.n_it += count[0]
-            if info == 0:
-                return x
-        self.factor(A)
-        return self.lu.solve(b)
+        if A is not self.A:
+            self.factor(A)
+        return self.lu.solve(b) if self.lu is not None else self.mumps.solve(b)
 
 
 def _pool(th, c_m, c_x):
@@ -436,7 +494,6 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     t = t0
     x = xs(t)
     u = np.array([math.log(x), math.log(c_mx0 - x)])
-    eye = sp.identity(net.n, format="csc")
     out = {"cond": c, "t": [], "alpha": [], "c_MA": [], "c_X_left": [], "c_MX_free": [], "mu_MA": [], "mu_MX": [],
            "n_dots": [], "n_clusters": [], "m_mean": [], "m_std": [], "nucleation": [], "frontier": [],
            "layer_flux": {f: [] for f in FAMILIES}, "cdse_flux": {f: [] for f in FAMILIES}, "attach_flux": [],
@@ -455,7 +512,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     def solve(u_, dt, x1):
         """The step's N for a pool guess and the pool residual F (relative to the totals)."""
         pl, r, M, s = assemble(u_)
-        A = (eye - dt * M).tocsc()
+        A = net.system(M, dt)
         N1 = solver.solve(A, N + dt * s)
         sc = np.array([x1, c_mx0 - x1])
         F = (np.exp(u_) + np.array([mvec @ N1, kvec @ N1]) - np.array([x1, c_mx0 - x1])) / sc
@@ -570,6 +627,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         dt *= min(3.0, max(1.1, 0.5 * CH_MAX / max(ch, 1e-6)))
     out["lu"] = solver.n_lu
     out["gmres_it"] = solver.n_it
+    out["lu_backend"] = solver.backend + (f" ({solver.fallback})" if solver.fallback else "")
     out["diag"] = diag
     out["wall_s"] = time.time() - w0
     return out
