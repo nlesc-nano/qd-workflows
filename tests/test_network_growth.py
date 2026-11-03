@@ -110,7 +110,7 @@ def test_conservation_and_island_slowdown(tmp_path):
 
 def test_run_stops_with_its_outputs(tmp_path):
     cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.01, "c_MX0": 0.02, "k_conv_500K": 10.0, "t_start": 1e-3,
-            "t_end": 5.0, "n_out": 6}
+            "t_end": 5.0, "n_out": 6, "dense_out": False}
     net = _network(tmp_path)
     full = ng.simulate(net, cond)
     assert full["stopped"] is None and len(full["t"]) == 6
@@ -121,3 +121,16 @@ def test_run_stops_with_its_outputs(tmp_path):
     assert np.allclose(r["c_MA"][:n], full["c_MA"][:n], rtol=1e-9) and full["t"][n - 1] < r["t"][-1] < full["t"][n]
     r = ng.simulate(net, {**cond, "max_wall_s": 1.0}, stop=lambda: __import__("time").sleep(0.3) or False)
     assert r["stopped"].startswith("wall-time limit") and len(r["t"]) < 6
+
+
+def test_dense_outputs_keep_the_log_grid(tmp_path):
+    cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.01, "c_MX0": 0.02, "k_conv_500K": 10.0, "t_start": 1e-3,
+            "t_end": 5.0, "n_out": 6}
+    net = _network(tmp_path)
+    log_only = ng.simulate(net, {**cond, "dense_out": False})
+    dense = ng.simulate(net, cond)
+    t = np.array(dense["t"])
+    assert len(t) > len(log_only["t"]) and np.all(np.diff(t) > 0)
+    for t_log, c in zip(log_only["t"], log_only["c_MA"]):        # the log-spaced outputs are still there, unchanged
+        j = int(np.argmin(np.abs(t - t_log)))
+        assert abs(t[j] - t_log) < 1e-9 * t_log and abs(dense["c_MA"][j] - c) < 1e-9 * c
