@@ -122,17 +122,20 @@ class NetSim:
         ms = np.arange(ng.M_DOT, int(net.m.max()) + 1)
         psd = []
         top = []
+        dot_top = []                                             # the most populated dot per output (the movie in time)
         for N in r["N"]:
             h = np.bincount(net.m[dot] - ng.M_DOT, weights=N[dot], minlength=len(ms))
             psd.append(h.tolist())
             order = np.argsort(-N)[:8]
             top.append([[int(i), net.label[i], int(net.m[i]), int(net.k[i]), float(N[i])] for i in order if N[i] > 0])
+            j = int(np.argmax(np.where(dot, N, -1.0)))
+            dot_top.append([j, net.label[j], int(net.m[j]), int(net.k[j]), float(N[j])] if N[j] > 0 else None)
         series = {k: r[k] for k in ("t", "alpha", "c_MA", "c_X_left", "c_MX_free", "mu_MA", "mu_MX", "n_dots",
                                     "n_clusters", "m_mean", "m_std", "nucleation", "frontier", "layer_flux",
                                     "cdse_flux", "attach_flux", "barriers")}
         series["d_mean_nm"] = diameter_nm(r["m_mean"]).tolist()
         return {"run_id": rid, "cond": c, "series": series, "psd": {"m": ms.tolist(), "d_nm": diameter_nm(ms).tolist(),
-                                                                    "N": psd}, "top": top,
+                                                                    "N": psd}, "top": top, "dot_top": dot_top,
                 "path_i": len(r["t"]) - 1, "omega_run": self._omega_run(r),
                 "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"], "stopped": r["stopped"]}}
 

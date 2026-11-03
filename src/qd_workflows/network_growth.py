@@ -54,6 +54,9 @@ MASS = {"Cd": 112.414, "Se": 78.971, "Cl": 35.453, "C": 12.011, "O": 15.999, "H"
 TOL = 1e-8                                   # pool residual (relative to the totals)
 NEWTON_MAX = 0.2                             # largest Newton step in ln C_M, ln C_X
 CH_MAX = 0.2                                 # largest change per time step of ln C and of ln(number of dots)
+OUT_CH = (0.3, 0.5, 0.5)                     # dense outputs: change of ln C_M, ln(number of dots), <m> since the last
+M_STEP = 1.0                                 # largest change of the dots' <m> per step (CdSe units), once they hold
+DOT_SEEN = 1e-12                             # this share of the CdSe (the burst: <m> 13 -> 58 in ~0.3 s)
 STALL_TRIES = 400                            # step attempts between two outputs before a run is stopped as stalled
 M_DOT = 13                                   # a dot: m >= the seed's 13 CdSe (the grid -> network hand-over)
 FAMILIES = ("100", "111A", "111B", "110")
@@ -69,6 +72,7 @@ DEFAULTS = {
     "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
     "max_wall_s": 1800.0,                    # a run stops here (and reports why) with the outputs it has
+    "dense_out": True,                       # also an output at a step that moves ln C_M, ln(dots) or <m> (OUT_CH)
     "frontier_stop": 0.5,                    # stop once this fraction of the dots sits on states without a growth
                                              # step (the network's edge), the dots holding >= 1% of the CdSe; 1: never
 }
@@ -475,7 +479,10 @@ def _pool(th, c_m, c_x):
 
 
 def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dict:
-    """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times.
+    """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times,
+    and with dense_out also at every step that moves ln C_M, ln(number of dots) or <m> by OUT_CH since the last
+    output (the dots' once they hold DOT_SEEN of the CdSe). A step moves the dots' <m> by at most M_STEP, so the
+    nucleation burst is resolved.
     The run ends early, with the outputs it has, its last state and the reason in out["stopped"], when stop() is
     true, after max_wall_s, when STALL_TRIES step attempts do not reach the next output, when the pool does not
     converge, or when frontier_stop of the dots sit on states without a growth step: past that the dots pile up at
@@ -575,6 +582,18 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     t_out.pop(0)
     dt = t0 * 1e-3
     tries, wall_max, f_stop = 0, float(c["max_wall_s"]), float(c["frontier_stop"])
+    dense = bool(c["dense_out"])
+
+    def _moved_since(N_, pl):
+        """The step moved ln C_M, ln(number of dots) or <m> by OUT_CH since the last output."""
+        if abs(math.log(pl["c_MA"] / out["c_MA"][-1])) >= OUT_CH[0]:
+            return True
+        nd = N_[dot].sum()
+        if nd <= 0 or mvec[dot] @ N_[dot] < DOT_SEEN * x:
+            return False
+        nd0 = out["n_dots"][-1]
+        return (nd0 <= 0 or abs(math.log(nd / nd0)) >= OUT_CH[1]
+                or abs((N_[dot] @ mvec[dot]) / nd - out["m_mean"][-1]) >= OUT_CH[2])
 
     def end(why):
         out["stopped"] = why
@@ -610,15 +629,15 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             except np.linalg.LinAlgError:
                 break
             d *= min(1.0, NEWTON_MAX / max(np.abs(d).max(), 1e-30))   # the clusters hold ~exp(m ln C_M)
-            lam, acc = 1.0, False
+            lam, better = 1.0, False
             for _ls in range(8):
                 st2 = solve(v + lam * d, dt, x1)
                 if np.abs(st2["F"]).max() < np.abs(st["F"]).max() * (1 - 0.2 * lam) or np.abs(st2["F"]).max() < TOL:
-                    acc = True
+                    better = True
                     break
                 lam *= 0.3
                 diag["backtrack"] += 1
-            if not acc:
+            if not better:
                 break
             v, st = v + lam * d, st2
         F, N1, pl, r = st["F"], np.maximum(st["N"], 0.0), st["pl"], st["r"]
@@ -633,6 +652,8 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         nd0, nd1 = N[dot].sum(), N1[dot].sum()
         if nd0 > 0 and (mvec[dot] @ N1[dot]) > 1e-3 * x1:      # the dots' number, once they hold CdSe
             ch = max(ch, abs(math.log(max(nd1, 1e-300)) - math.log(nd0)))
+        if nd0 > 0 and nd1 > 0 and (mvec[dot] @ N1[dot]) > DOT_SEEN * x1:   # their size, from the first ones
+            ch = max(ch, CH_MAX * abs(mvec[dot] @ N1[dot] / nd1 - mvec[dot] @ N[dot] / nd0) / M_STEP)
         if ch > CH_MAX and dt > t0 * 1e-6:
             diag["rejected"] += 1
             dt *= 0.3
@@ -645,6 +666,8 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             record(t, N, pl, r)
             t_out.pop(0)
             tries = 0
+        elif dense and _moved_since(N, pl):
+            record(t, N, pl, r)
             if log:
                 log(f"t = {t:.4g} s: alpha {out['alpha'][-1]:.3f}, C_M {pl['c_MA']:.3g} M, dots {out['n_dots'][-1]:.3g} M, "
                     f"<m> {out['m_mean'][-1]:.1f}, {out['steps']} steps, {solver.n_lu} LU, {solver.n_it} GMRES it, {diag}, {time.time() - w0:.1f} s")

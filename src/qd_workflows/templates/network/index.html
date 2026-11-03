@@ -210,6 +210,8 @@ button:disabled { opacity: .55; cursor: progress; }
     <section class="card">
       <h2>2 · Growth <small id="runWhen">no run yet</small></h2>
       <div class="timebar"><button id="playBtn" disabled aria-label="play the run">▶</button><input type="range" id="tbar" min="0" max="0" value="0" aria-label="time" disabled><b id="tval">–</b></div>
+      <div class="pickrow">time axis <button id="axLog" class="on">log</button><button id="axLin">linear</button>
+        <span class="cap" id="outNote" style="margin:0"></span></div>
       <div class="readouts" id="ro"></div>
       <div class="charts">
         <div><div class="chart-title">Pool: CdSe in solution and free CdCl₂ (M)</div><div class="chart" id="cPool"></div></div>
@@ -259,13 +261,16 @@ button:disabled { opacity: .55; cursor: progress; }
       <table class="ptable" id="movTable"></table>
       <div class="what" id="movWhat"></div>
       <div id="movie"><div class="empty">Run the growth to follow its path here.</div></div>
-      <div class="cap">Pick a state at the time bar's time. <b>Growth</b> (most populated): from the pool to that state, the
-        chain of steps along which the most material has moved so far, i.e. whose narrowest step carried the most (the
-        net flux integrated over the run); played forward, how it was built, step by step (a frame per output time would
-        skip it: between two outputs the dots can grow from 13 to 60 CdSe). <b>Dissolution</b> (the populated dots losing
-        more CdSe to smaller states than they gain, right then): from that dot down the steps with net flux to the smaller state at that time, the
-        chain with the largest narrowest flux, back to the pool when the flux reaches it. Every frame on the scale of the
-        largest, centred; drag to turn it, the turn is kept from frame to frame.</div>
+      <div class="cap"><b>Over time</b>: the most populated dot at each output, with the time bar, and the dots' shares at
+        the seed, on the way and at the network's edge; dense outputs resolve the nucleation burst. In the acetate
+        network the dots wait at the seed and cross to the edge faster than the outputs (under 3 % ever sit in between),
+        so the burst is the shares moving and the growth of one dot is a growth path. <b>Growth</b> (pick one of the
+        most populated at the time bar's time): from the pool to that state, the chain of steps along which the most
+        material has moved so far, i.e. whose narrowest step carried the most (the net flux integrated over the run),
+        played forward step by step. <b>Dissolution</b> (the populated dots losing more CdSe to smaller states than they
+        gain, right then): from that dot down the steps with net flux to the smaller state at that time, the chain with
+        the largest narrowest flux, back to the pool when the flux reaches it. Every frame on the scale of the largest,
+        centred; drag to turn it, the turn is kept from frame to frame.</div>
     </section>
   </div>
 </main>
@@ -714,6 +719,7 @@ async function run() {
     $("runWhen").textContent = `T ${c.T} K, c_P0 ${c.c_P0} M, CdCl₂ ${c.c_MX0} M, s_ν ${c.s_nu}${c.islands ? "" : ", no island barriers"}`;
     $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
     $("playBtn").disabled = false;
+    $("outNote").textContent = `${RUN.series.t.length} outputs: ${RUN.cond.n_out} log-spaced, the others where C_M, the number of dots or ⟨m⟩ move fast`;
     drawRun(); setTime(RUN.series.t.length - 1); buildMovie(RUN.path_i);
     if (L0) drawNucleation(L0);
     $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
@@ -774,6 +780,7 @@ async function setTime(i) {
   barrierTable(s.barriers[i]);
   topTable(RUN.top[i]);
   if (!PLAY) movTable(i);
+  if (MOV && MOV.mode === "time" && !MOV.play) movFrame(Math.max(0, MOV.idx.findLastIndex(j => j <= i)));
   try { drawMap(await api("/api/map", { run_id: RUN.run_id, i }), `t = ${fmt(t)} s of the run`); } catch (e) { $("mapCap").textContent = e.message; }
 }
 
@@ -863,18 +870,38 @@ async function buildMovie(i, state = null, mode = "growth") {
   try {
     const p = await api(`/api/path?run_id=${RUN.run_id}&i=${i}&mode=${mode}` + (state === null ? "" : `&state=${state}`)), fr = p.frames;
     if (!fr.length) { $("movWhat").textContent = mode === "growth" ? `nothing formed by t = ${fmt(p.t)} s` : `no dot loses CdSe at t = ${fmt(p.t)} s`; return; }
-    const got = await Promise.all(fr.map(frameXyz));
-    const xyz = new Map(got.map(([k, s]) => [k, centred(s.xyz)]));
-    if (!MVIEW) MVIEW = molViewer($("movie"));
-    const big = got.reduce((a, b) => parseInt(b[1].xyz, 10) > parseInt(a[1].xyz, 10) ? b : a);
-    MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big[0]), "xyz"); MVIEW.zoomTo();
-    MOV = { fr, keys: got.map(g => g[0]), xyz, i: 0, play: false, t: p.t, mode };
-    $("movBar").max = fr.length - 1; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = false;
-    const last = fr.at(-1);
-    $("movWhen").textContent = `${mode} at t = ${fmt(p.t)} s, ${fr.length} frames, m ${fr[0][2]} → ${last[2]}`;
-    for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === mode && +tr.dataset.s === (state ?? (mode === "growth" ? last[0] : fr[0][0])));
-    movFrame(0);
+    await loadMovie(fr, mode, `${mode} at t = ${fmt(p.t)} s, ${fr.length} frames, m ${fr[0][2]} → ${fr.at(-1)[2]}`, null);
+    const pick = state ?? (mode === "growth" ? fr.at(-1)[0] : fr[0][0]);
+    for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === mode && +tr.dataset.s === pick);
+    MOV.t = p.t;
   } catch (e) { $("movWhat").textContent = e.message; }
+}
+// the most populated dot at every output once the dots hold 1e-12 of the CdSe (DOT_SEEN): the burst at dense outputs
+async function timeMovie() {
+  if (MOV) MOV.play = false;
+  const s = RUN.series, idx = [];
+  s.t.forEach((_, i) => { if (RUN.dot_top[i] && s.n_dots[i] * s.m_mean[i] >= 1e-12 * s.alpha[i] * RUN.cond.c_P0) idx.push(i); });
+  if (!idx.length) { $("movWhat").textContent = "no dots in this run"; return; }
+  const fr = idx.map(i => { const [x, lab, m, k, N] = RUN.dot_top[i]; return [x, lab, m, k, s.t[i], "time", N]; });
+  try {
+    await loadMovie(fr, "time", `the most populated dot over time: ${fmt(s.t[idx[0]])} → ${fmt(s.t.at(-1))} s, ${fr.length} outputs`, idx);
+    MOV.t = s.t.at(-1);
+    for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === "time");
+    movFrame(Math.max(0, idx.findLastIndex(j => j <= IDX)));
+  } catch (e) { $("movWhat").textContent = e.message; }
+}
+async function loadMovie(fr, mode, when, idx) {
+  $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = true;
+  $("movWhat").textContent = `Loading ${new Set(fr.map(f => f[0])).size} structures…`;
+  const got = await Promise.all(fr.map(frameXyz));
+  const xyz = new Map(got.map(([k, s]) => [k, centred(s.xyz)]));
+  if (!MVIEW) MVIEW = molViewer($("movie"));
+  const big = got.reduce((a, b) => parseInt(b[1].xyz, 10) > parseInt(a[1].xyz, 10) ? b : a);
+  MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big[0]), "xyz"); MVIEW.zoomTo();
+  MOV = { fr, keys: got.map(g => g[0]), xyz, i: 0, play: false, mode, idx };
+  $("movBar").max = fr.length - 1; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = false;
+  $("movWhen").textContent = when;
+  movFrame(0);
 }
 function movFrame(i) {
   if (!MOV) return;
@@ -887,6 +914,14 @@ function movFrame(i) {
   MVIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
   MVIEW.setView(v); MVIEW.render();
   const d = m >= 13 ? `, d ≈ ${(Math.cbrt(6 * m * 59.667 / Math.PI) / 10).toFixed(2)} nm` : "";
+  if (MOV.mode === "time") {
+    const j = MOV.idx[i], s = RUN.series;
+    $("movT").textContent = `${fmt(f)} s`;
+    const h = RUN.psd.N[j], tot = h.reduce((a, b) => a + b, 0) || 1, seed = h[0] / tot, edge = s.frontier[j];
+    $("movWhat").innerHTML = `<b>${lab}</b>: m = ${m}, k = ${k}${d}, N = ${fmt(N)} M, the most populated dot at ${fmt(f)} s; all dots ⟨m⟩ ${s.m_mean[j].toFixed(1)} ± ${s.m_std[j].toFixed(1)}, ${fmt(s.n_dots[j])} M: `
+      + `<b>${(100 * seed).toFixed(1)} %</b> at the seed's m = 13, <b>${(100 * Math.max(1 - seed - edge, 0)).toFixed(1)} %</b> on the way, <b>${(100 * edge).toFixed(1)} %</b> at the network's edge (no growth step)`;
+    return;
+  }
   let step;
   if (MOV.mode === "growth") step = how === "nucleus" ? `the nucleus, from the pool (${fmt(f)} M formed so far)` : `by a ${how} step, ${fmt(f)} M moved along it so far`;
   else step = how === "start" ? "the dissolving dot" : how === "to the pool" ? `back to the pool, net ${fmt(f)} M/s` : `down a ${how} step, net ${fmt(f)} M/s`;
@@ -894,7 +929,8 @@ function movFrame(i) {
 }
 async function movTable(i) {
   const top = RUN.top[i], t = fmt(RUN.series.t[i]);
-  let h = `<tr><th>grow to: most populated at ${t} s</th><th>m</th><th>k</th><th>N (M)</th><th></th></tr>` +
+  let h = `<tr class="pick" data-mode="time" data-s="-1"><td colspan="5"><b>▶ the dots over time</b> (the most populated, one frame per output; follows the time bar)</td></tr>` +
+    `<tr><th>grow to: most populated at ${t} s</th><th>m</th><th>k</th><th>N (M)</th><th></th></tr>` +
     top.map(([x, lab, m, k, N]) => `<tr class="pick" data-mode="growth" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td></td></tr>`).join("");
   try {
     const d = await api(`/api/dissolving?run_id=${RUN.run_id}&i=${i}`);
@@ -903,7 +939,8 @@ async function movTable(i) {
         : `<tr><td colspan="5">no populated dot is shrinking at this time</td></tr>`);
   } catch (e) { h += `<tr><td colspan="5">${e.message}</td></tr>`; }
   $("movTable").innerHTML = h;
-  for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.addEventListener("click", () => buildMovie(i, +tr.dataset.s, tr.dataset.mode));
+  for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.addEventListener("click", () => tr.dataset.mode === "time" ? timeMovie() : buildMovie(i, +tr.dataset.s, tr.dataset.mode));
+  if (MOV) for (const tr of $("movTable").querySelectorAll("tr.pick")) if (tr.dataset.mode === "time") tr.classList.toggle("on", MOV.mode === "time");
 }
 let MOV_FPS = 5;
 async function playMovie(record) {
@@ -943,6 +980,10 @@ $("stopBtn").addEventListener("click", () => { if (JOB) { api(`/api/stop?id=${JO
 let tTimer = null;
 $("tbar").addEventListener("input", () => { PLAY = false; clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });
 $("playBtn").addEventListener("click", playRun);
+for (const [id, ty] of [["axLog", "log"], ["axLin", "linear"]]) $(id).addEventListener("click", () => {
+  tAxis.type = ty; $("axLog").classList.toggle("on", ty === "log"); $("axLin").classList.toggle("on", ty === "linear");
+  if (RUN) { drawRun(); for (const c of ["cPool", "cAlpha", "cDots", "cSize", "cPSD", "cFacet", "cShare"]) Plotly.relayout(c, marker(IDX)); }
+});
 $("movPlay").addEventListener("click", () => playMovie(false));
 $("movRec").addEventListener("click", () => playMovie(true));
 
