@@ -69,11 +69,13 @@ DEFAULTS = {
     "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
     "max_wall_s": 1800.0,                    # a run stops here (and reports why) with the outputs it has
+    "frontier_stop": 0.5,                    # stop once this fraction of the dots sits on states without a growth
+                                             # step (the network's edge), the dots holding >= 1% of the CdSe; 1: never
 }
 LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0": (1e-4, 1.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
           "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200),
-          "max_wall_s": (1.0, 86400.0)}
+          "max_wall_s": (1.0, 86400.0), "frontier_stop": (0.01, 1.0)}
 
 
 def _complex(n: int, solv: dict, m_x: float = MASS["Cl"]) -> tuple[float, float]:
@@ -474,8 +476,10 @@ def _pool(th, c_m, c_x):
 
 def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dict:
     """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times.
-    The run ends early, with the outputs it has and the reason in out["stopped"], when stop() is true, after
-    max_wall_s, or when STALL_TRIES step attempts do not reach the next output."""
+    The run ends early, with the outputs it has, its last state and the reason in out["stopped"], when stop() is
+    true, after max_wall_s, when STALL_TRIES step attempts do not reach the next output, when the pool does not
+    converge, or when frontier_stop of the dots sit on states without a growth step: past that the dots pile up at
+    the network's edge, C_M collapses and the run says nothing about growth."""
     c = {**DEFAULTS, **(cond or {})}
     for key, (lo, hi) in LIMITS.items():
         if key in c and not lo <= float(c[key]) <= hi:
@@ -490,6 +494,10 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     isl = bool(c["islands"])
     xs = lambda t: converted(t, k_conv, c_p0, c_mx0)                     # noqa: E731
     mvec, kvec = net.m.astype(float), net.k.astype(float)
+    # the CdSe and X each step and nucleus source moves from the pool (b - a; the fast isomerisations move none)
+    d_mk = np.array([mvec[net.b] - mvec[net.a], kvec[net.b] - kvec[net.a]])
+    js = net.src[:, 2]
+    mk_src = np.array([mvec[js], kvec[js]])
     N = np.zeros(net.n)
     t = t0
     x = xs(t)
@@ -509,24 +517,34 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         r = net.rates(T, eps, pl, nu, nu_src, isl)
         return pl, r, *net.matrix(r)
 
+    def moved(r, N1):
+        """CdSe and X taken from the pool over the step, dt x (sum of the steps' and sources' net fluxes x what
+        they move): equal to (m, k) . (N1 - N) for the exact N1, without the round-off of the isomerisations'
+        ~1e13 1/s terms, which leaves (m, k) . N1 noisy at ~1e-7 of the totals, above TOL."""
+        J, j_s = net.fluxes(r, N1)
+        return d_mk @ J + mk_src @ j_s
+
     def solve(u_, dt, x1):
         """The step's N for a pool guess and the pool residual F (relative to the totals)."""
         pl, r, M, s = assemble(u_)
         A = net.system(M, dt)
         N1 = solver.solve(A, N + dt * s)
         sc = np.array([x1, c_mx0 - x1])
-        F = (np.exp(u_) + np.array([mvec @ N1, kvec @ N1]) - np.array([x1, c_mx0 - x1])) / sc
-        return {"F": F, "N": N1, "pl": pl, "r": r, "A": A, "M": M, "s": s, "sc": sc}
+        F = (np.exp(u_) + np.array([mvec @ N, kvec @ N]) + dt * moved(r, N1) - sc) / sc
+        return {"F": F, "N": N1, "pl": pl, "r": r, "A": A, "M": M, "s": s, "sc": sc, "dt": dt}
 
     def jacobian(st, u_, dt):
         """Exact Jacobian of F in ln C_M, ln C_X: the rates' derivatives by differences of the assembly, the
         population's through the same matrix."""
         J = np.diag(np.exp(u_) / st["sc"])
+        r, N1 = st["r"], st["N"]
         for q in range(2):
             h = np.zeros(2); h[q] = 1e-6
-            _p, _r, Mh, sh = assemble(u_ + h)
-            dN = solver.solve(st["A"], dt * (((Mh - st["M"]) @ st["N"]) + (sh - st["s"])) / 1e-6)
-            J[:, q] += np.array([mvec @ dN, kvec @ dN]) / st["sc"]
+            _p, rh, Mh, sh = assemble(u_ + h)
+            dN = solver.solve(st["A"], dt * (((Mh - st["M"]) @ N1) + (sh - st["s"])) / 1e-6)
+            dr = {key: (rh[key] - r[key]) / 1e-6 for key in ("kf", "kr", "s_f", "s_r")}
+            d_flux = moved(dr, N1) + moved({**r, "s_f": np.zeros_like(r["s_f"])}, dN)  # rates' and N1's change
+            J[:, q] += dt * d_flux / st["sc"]
         return J
 
     def record(t_, N_, pl, r):
@@ -552,19 +570,26 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         out["N"].append(N_.astype(np.float32))
 
     pl0 = _pool(th, math.exp(u[0]), math.exp(u[1]))
-    record(t, N, pl0, net.rates(T, eps, pl0, nu, nu_src, isl))
+    acc = (pl0, net.rates(T, eps, pl0, nu, nu_src, isl))   # the last accepted step's pool and rates
+    record(t, N, *acc)
     t_out.pop(0)
     dt = t0 * 1e-3
-    tries, wall_max = 0, float(c["max_wall_s"])
+    tries, wall_max, f_stop = 0, float(c["max_wall_s"]), float(c["frontier_stop"])
+
+    def end(why):
+        out["stopped"] = why
+        if out["t"][-1] < t:
+            record(t, N, *acc)
+        if log:
+            log(why)
+
     while t_out:
         tries += 1
         why = ("stopped from the page" if stop is not None and stop() else
                f"wall-time limit {wall_max:.0f} s" if time.time() - w0 > wall_max else
                f"stalled: {tries - 1} step attempts without reaching t = {t_out[0]:.4g} s" if tries > STALL_TRIES else None)
         if why:
-            out["stopped"] = f"{why} (at t = {t:.4g} s, dt = {dt:.3g} s, {diag})"
-            if log:
-                log(out["stopped"])
+            end(f"{why} (at t = {t:.4g} s, dt = {dt:.3g} s, {diag})")
             break
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
@@ -601,9 +626,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             diag["failed"] += 1
             dt *= 0.25
             if dt < 1e-14 * max(t, 1.0):
-                out["stopped"] = f"the pool does not converge (at t = {t:.4g} s, {diag})"
-                if log:
-                    log(out["stopped"])
+                end(f"the pool does not converge (at t = {t:.4g} s, {diag})")
                 break
             continue
         ch = max(abs(v[0] - u[0]), abs(v[1] - u[1]))
@@ -616,6 +639,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             continue
         dudt = (v - u) / dt
         t, x, u, N = t1, x1, v, N1
+        acc = (pl, r)
         out["steps"] += 1
         if t_out and t >= t_out[0] * (1 - 1e-12):
             record(t, N, pl, r)
@@ -624,6 +648,13 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             if log:
                 log(f"t = {t:.4g} s: alpha {out['alpha'][-1]:.3f}, C_M {pl['c_MA']:.3g} M, dots {out['n_dots'][-1]:.3g} M, "
                     f"<m> {out['m_mean'][-1]:.1f}, {out['steps']} steps, {solver.n_lu} LU, {solver.n_it} GMRES it, {diag}, {time.time() - w0:.1f} s")
+        nd = N[dot].sum()
+        if f_stop < 1.0 and nd > 0 and mvec[dot] @ N[dot] >= 1e-2 * x:
+            fr = N[dot & ~net.grows].sum() / nd
+            if fr > f_stop:
+                end(f"network edge: {fr:.0%} of the dots are on states without a growth step (the network ends at "
+                    f"m = {int(net.m.max())}; at t = {t:.4g} s, <m> {(N[dot] @ net.m[dot]) / nd:.1f})")
+                break
         dt *= min(3.0, max(1.1, 0.5 * CH_MAX / max(ch, 1e-6)))
     out["lu"] = solver.n_lu
     out["gmres_it"] = solver.n_it
