@@ -12,7 +12,8 @@ Reads the tree registry and its products and writes one self-contained folder:
     geometry.npz   symbols (codes into network.json's elements) and positions of every state (the structure panel)
 
 Inputs (formats of the tree scripts): registry.json (dots: key -> id, framework "se"; lineage "0": the seed dot),
-results_by_key.json (key -> symbols, positions, E_eV, frequencies_cm1, n_imaginary), g_cache.json
+results_by_key.json (key -> symbols, positions, E_eV, frequencies_cm1, n_imaginary; a state relaxed without a
+Hessian has F_vib_model_eV instead, the learned F_vib (fvib_model) on the thermo temperatures), g_cache.json
 ("T|key|E" -> G at T with the solvation at eps, which gives back the symmetry number), layer_steps.json (a, b, dSe,
 dCd, dCl, dir, sheet, same_slab_next), ladders.json ("parent|family" -> rungs b, dm, dk), the island index
 (states_index.json: parent, family, dSe, dCd, status, pure, key, name) and the relaxed island states (states.json).
@@ -54,15 +55,25 @@ def formula(symbols) -> str:
     return "".join(f"{e}{c[e]}" for e in ELEMENTS if c[e] or e in ("Cd", "Se"))
 
 
+def _vib(s):
+    """(frequencies, None) of a state with a Hessian, or ([], learned F_vib on the temperatures) of one without."""
+    if s.get("frequencies_cm1") is not None:
+        return s["frequencies_cm1"], None
+    return [], s["F_vib_model_eV"]
+
+
 def _thermal(job):
-    """G_gas with symmetry number 1 on the temperatures, and the vdW surface; sigma when asked (no cache)."""
-    symbols, pos, energy, freqs, temps, scale, want_sigma = job
+    """G_gas with symmetry number 1 on the temperatures, and the vdW surface; sigma when asked (no cache). Without
+    frequencies: translation, rotation and pV from ideal_gas_g plus the learned F_vib."""
+    symbols, pos, energy, (freqs, fvib), temps, scale, want_sigma = job
     from ase import Atoms
     from orchestr_ai.qd.references import ideal_gas_g, rotational_symmetry_number
     pos = np.asarray(pos, float)
     sigma = rotational_symmetry_number(symbols, pos) if want_sigma else 1
-    g = ideal_gas_g(Atoms(list(symbols), positions=pos), energy, np.asarray(freqs, float), temps, sigma)
-    return np.array(g, float), gs.surface(list(symbols), pos, scale), int(sigma)
+    g = np.array(ideal_gas_g(Atoms(list(symbols), positions=pos), energy, np.asarray(freqs, float), temps, sigma), float)
+    if fvib is not None:
+        g += np.asarray(fvib, float)
+    return g, gs.surface(list(symbols), pos, scale), int(sigma)
 
 
 def export(a) -> dict:
@@ -189,9 +200,14 @@ def export(a) -> dict:
     if a.limit:
         extra = extra[:a.limit]
     jobs = [(res[key_of[i]]["symbols"], res[key_of[i]]["positions"], res[key_of[i]]["E_eV"],
-             res[key_of[i]]["frequencies_cm1"], temps, P["vdw_scale"], False) for i in ids]
-    jobs += [(s["symbols"], s["positions"], s["E_eV"], s["frequencies_cm1"], temps, P["vdw_scale"], True)
+             _vib(res[key_of[i]]), temps, P["vdw_scale"], False) for i in ids]
+    jobs += [(s["symbols"], s["positions"], s["E_eV"], _vib(s), temps, P["vdw_scale"], True)
              for *_x, s in extra]
+    if any(fv is not None and len(fv) != len(temps) for *_x, (_f, fv), _t, _sc, _w in jobs):
+        raise SystemExit("F_vib_model_eV is not on the thermo temperatures")
+    n_model = sum(fv is not None for *_x, (_f, fv), _t, _sc, _w in jobs)
+    if n_model:
+        print(f"[export] {n_model} of {len(jobs)} structures without a Hessian: learned F_vib", flush=True)
     G = np.zeros((len(jobs), len(temps)))
     S = np.zeros(len(jobs))
     sig = np.ones(len(jobs), int)
@@ -219,7 +235,9 @@ def export(a) -> dict:
     for i in ids:
         s = res[key_of[i]]
         states.append({"id": i, "formula": formula(s["symbols"]), "m": mk[i][0], "k": mk[i][1],
-                       "fw": fw_of[i], "n_imag": int(s.get("n_imaginary", 0))})
+                       "fw": fw_of[i], "n_imag": int(s.get("n_imaginary") or 0)})
+        if s.get("frequencies_cm1") is None:                   # learned F_vib; out of the model's domain flagged
+            states[-1]["fvib"] = "model_ood" if s.get("fvib_out_of_domain") else "model"
     fw_index = {}
     for s in states:
         s["fw"] = fw_index.setdefault(s["fw"], len(fw_index))
