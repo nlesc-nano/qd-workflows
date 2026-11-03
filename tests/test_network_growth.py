@@ -116,7 +116,8 @@ def test_run_stops_with_its_outputs(tmp_path):
     assert full["stopped"] is None and len(full["t"]) == 6
     calls = []
     r = ng.simulate(net, cond, stop=lambda: len(calls.append(0) or calls) > full["steps"] // 2)   # from the page
-    assert r["stopped"].startswith("stopped from the page") and 1 <= len(r["t"]) < 6
-    assert np.allclose(r["c_MA"], full["c_MA"][:len(r["t"])], rtol=1e-9)
+    assert r["stopped"].startswith("stopped from the page") and 2 <= len(r["t"]) <= 6
+    n = len(r["t"]) - 1                                       # the outputs before the stop, then its last state
+    assert np.allclose(r["c_MA"][:n], full["c_MA"][:n], rtol=1e-9) and full["t"][n - 1] < r["t"][-1] < full["t"][n]
     r = ng.simulate(net, {**cond, "max_wall_s": 1.0}, stop=lambda: __import__("time").sleep(0.3) or False)
     assert r["stopped"].startswith("wall-time limit") and len(r["t"]) < 6
