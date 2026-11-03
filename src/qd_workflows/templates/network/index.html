@@ -96,6 +96,7 @@ button:disabled { opacity: .55; cursor: progress; }
 .timebar { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
 .timebar input { flex: 1; }
 .timebar b { font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; font-size: 15px; }
+.timebar button { min-width: 40px; padding: 4px 10px; }
 .ptable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .ptable th, .ptable td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: right; }
 .ptable th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
@@ -106,9 +107,9 @@ button:disabled { opacity: .55; cursor: progress; }
 .pickrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 8px; font-size: 12px; color: var(--text-secondary); align-items: center; }
 .pickrow button { font-size: 12px; padding: 3px 9px; }
 .pickrow button.on { border-color: var(--accent); color: var(--accent); }
-#viewer { position: relative; width: 100%; height: 340px; border-radius: 8px; overflow: hidden;
+#viewer, #movie { position: relative; width: 100%; height: 340px; border-radius: 8px; overflow: hidden;
   background: var(--surface-0); border: 1px solid var(--border); }
-#viewer .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
+#viewer .empty, #movie .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
 .what { font-size: 13px; margin: 8px 0; min-height: 1.4em; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); margin: 2px 4px 6px; }
 .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
@@ -208,7 +209,7 @@ button:disabled { opacity: .55; cursor: progress; }
   <div class="col">
     <section class="card">
       <h2>2 · Growth <small id="runWhen">no run yet</small></h2>
-      <div class="timebar"><input type="range" id="tbar" min="0" max="0" value="0" aria-label="time" disabled><b id="tval">–</b></div>
+      <div class="timebar"><button id="playBtn" disabled aria-label="play the run">▶</button><input type="range" id="tbar" min="0" max="0" value="0" aria-label="time" disabled><b id="tval">–</b></div>
       <div class="readouts" id="ro"></div>
       <div class="charts">
         <div><div class="chart-title">Pool: CdSe in solution and free CdCl₂ (M)</div><div class="chart" id="cPool"></div></div>
@@ -249,6 +250,19 @@ button:disabled { opacity: .55; cursor: progress; }
       <table class="ptable" id="topTable"></table>
       <div class="what" id="what"></div>
       <div id="viewer"><div class="empty">Run the growth, then pick a state, or click a cell of the map.</div></div>
+    </section>
+    <section class="card">
+      <h2>6 · Growth movie <small id="movWhen"></small></h2>
+      <div class="timebar"><button id="movPlay" disabled aria-label="play the movie">▶</button><input type="range" id="movBar" min="0" max="0" value="0" aria-label="movie frame" disabled><b id="movT">–</b></div>
+      <div class="pickrow">speed <button data-fps="2">slow</button><button data-fps="5" class="on">normal</button><button data-fps="12">fast</button>
+        <button id="movAt" disabled>path up to the time bar's time</button><button id="movRec" disabled>save as video (.webm)</button></div>
+      <div class="what" id="movWhat"></div>
+      <div id="movie"><div class="empty">Run the growth to follow its path here.</div></div>
+      <div class="cap">The run's path up to one time (after a run: its end; or the time bar's): from the pool to the most
+        populated dot, the chain of steps along which the most material has moved so far, i.e. whose narrowest step
+        carried the most (the net flux integrated over the run). Played forward, it shows how that dot was built, step
+        by step: a frame per output time would skip it, since between two outputs the dots can grow from 13 to 60 CdSe.
+        Every frame on the scale of the largest, centred; drag to turn it, the turn is kept from frame to frame.</div>
     </section>
   </div>
 </main>
@@ -605,19 +619,34 @@ function gridWhat() {
     + (s.thermo === false ? `; <b>no thermochemistry</b> (energy only, not in Ω)` : `; at ${fmt(o.t)} s Ω = ${om == null ? "–" : om.toFixed(3)} eV, P(k | m) = ${pk == null ? "–" : fmt(pk)}`);
 }
 async function showGrid(m, k) {
+  const tok = ++structTok;
   $("what").textContent = `Loading the grid cluster m = ${m}, k = ${k}…`;
   try {
     const s = await api(`/api/grid_structure?m=${m}&k=${k}`);
+    if (tok !== structTok) return;
     GSEL = { m, k, s }; SEL = null;
     gridWhat();
-    $("viewer").innerHTML = "";
-    VIEW = $3Dmol.createViewer($("viewer"), { backgroundColor: css("--surface-0") });
-    VIEW.addModel(s.xyz, "xyz");
-    VIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
-    VIEW.zoomTo(); VIEW.render();
+    drawMol(s.xyz);
     Plotly.relayout("cHeat", { shapes: gselShape() });
     $("viewer").scrollIntoView({ behavior: "smooth", block: "nearest" });
-  } catch (e) { $("what").textContent = e.message; }
+  } catch (e) { if (tok === structTok) noMol(e.message); }
+}
+// the Structure card's viewer: one per page, its model replaced; a failed load empties it (no stale structure)
+let structTok = 0;
+function molViewer(el) {
+  el.innerHTML = "";
+  return $3Dmol.createViewer(el, { backgroundColor: css("--surface-0"), preserveDrawingBuffer: true });
+}
+function drawMol(xyz) {
+  if (!VIEW) VIEW = molViewer($("viewer"));
+  VIEW.removeAllModels();
+  VIEW.addModel(xyz, "xyz");
+  VIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
+  VIEW.zoomTo(); VIEW.render();
+}
+function noMol(msg) {
+  if (VIEW) { VIEW.removeAllModels(); VIEW.render(); }
+  $("what").textContent = msg;
 }
 
 function drawMap(m, when) {
@@ -680,7 +709,8 @@ async function run() {
     if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
     $("runWhen").textContent = `T ${c.T} K, c_P0 ${c.c_P0} M, CdCl₂ ${c.c_MX0} M, s_ν ${c.s_nu}${c.islands ? "" : ", no island barriers"}`;
     $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
-    drawRun(); setTime(RUN.series.t.length - 1);
+    $("playBtn").disabled = false; $("movAt").disabled = false;
+    drawRun(); setTime(RUN.series.t.length - 1); buildMovie(RUN.path_i);
     if (L0) drawNucleation(L0);
     $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
@@ -776,15 +806,98 @@ async function pickComposition(m, k) {
 async function show(state) {
   SEL = state;
   if (GSEL) { GSEL = null; Plotly.relayout("cHeat", { shapes: [] }); }
+  for (const tr of $("topTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", +tr.dataset.s === state);
+  const tok = ++structTok;
+  $("what").textContent = "Loading…";
   try {
-    const s = await api(`/api/structure?state=${state}`);
+    const s = await structure(state);
+    if (tok !== structTok) return;
     $("what").innerHTML = `<b>${s.label}</b>: m = ${s.m}, k = ${s.k}, ${s.source === "grid" ? "nucleation grid node" : "registry id " + s.registry_id}`;
-    $("viewer").innerHTML = "";
-    VIEW = $3Dmol.createViewer($("viewer"), { backgroundColor: css("--surface-0") });
-    VIEW.addModel(s.xyz, "xyz");
-    VIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
-    VIEW.zoomTo(); VIEW.render();
-  } catch (e) { $("what").textContent = e.message; }
+    drawMol(s.xyz);
+  } catch (e) { if (tok === structTok) noMol(e.message); }
+}
+const STRUCT = new Map();                                      // state -> /api/structure reply
+async function structure(state) {
+  if (!STRUCT.has(state)) STRUCT.set(state, await api(`/api/structure?state=${state}`));
+  return STRUCT.get(state);
+}
+
+// ---------------- play the run (time bar) and the growth movie (step 6)
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+let PLAY = false;
+async function playRun() {
+  if (PLAY) { PLAY = false; return; }
+  const last = RUN.series.t.length - 1;
+  let i = +$("tbar").value;
+  if (i >= last) i = 0;
+  PLAY = true; $("playBtn").textContent = "⏸"; $("playBtn").setAttribute("aria-label", "pause");
+  while (PLAY && i <= last) {
+    $("tbar").value = i;
+    await setTime(i);
+    await sleep(250);
+    i++;
+  }
+  PLAY = false; $("playBtn").textContent = "▶"; $("playBtn").setAttribute("aria-label", "play the run");
+}
+let MOV = null, MVIEW = null;
+function centred(xyz) {
+  const L = xyz.trim().split("\n"), n = parseInt(L[0], 10), at = L.slice(2, 2 + n).map(l => l.trim().split(/\s+/));
+  const c = [1, 2, 3].map(j => at.reduce((a, x) => a + +x[j], 0) / n);
+  return [n, L[1], ...at.map(x => `${x[0]} ${(+x[1] - c[0]).toFixed(4)} ${(+x[2] - c[1]).toFixed(4)} ${(+x[3] - c[2]).toFixed(4)}`)].join("\n") + "\n";
+}
+async function buildMovie(i) {
+  MOV = null; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = true;
+  $("movWhat").textContent = `Following the run's path at t = ${fmt(RUN.series.t[i])} s…`;
+  try {
+    const p = await api(`/api/path?run_id=${RUN.run_id}&i=${i}`), fr = p.frames;
+    if (!fr.length) { $("movWhat").textContent = `no net flux out of the pool at t = ${fmt(p.t)} s`; return; }
+    const ids = [...new Set(fr.map(f => f[0]))];
+    $("movWhat").textContent = `Loading ${ids.length} structures…`;
+    const got = await Promise.all(ids.map(structure));
+    const xyz = new Map(got.map(s => [s.state, centred(s.xyz)]));
+    if (!MVIEW) MVIEW = molViewer($("movie"));
+    const big = got.reduce((a, s) => parseInt(s.xyz, 10) > parseInt(a.xyz, 10) ? s : a);
+    MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big.state), "xyz"); MVIEW.zoomTo();
+    MOV = { fr, xyz, i: 0, play: false, t: p.t };
+    $("movBar").max = fr.length - 1; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = false;
+    $("movWhen").textContent = `path up to t = ${fmt(p.t)} s, ${fr.length} states, m ${fr[0][2]} → ${fr.at(-1)[2]}`;
+    movFrame(0);
+  } catch (e) { $("movWhat").textContent = e.message; }
+}
+function movFrame(i) {
+  if (!MOV) return;
+  MOV.i = i; $("movBar").value = i;
+  const [state, lab, m, k, j, how, N] = MOV.fr[i];
+  $("movT").textContent = `${i + 1} / ${MOV.fr.length}`;
+  const v = MVIEW.getView();
+  MVIEW.removeAllModels();
+  MVIEW.addModel(MOV.xyz.get(state), "xyz");
+  MVIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
+  MVIEW.setView(v); MVIEW.render();
+  const d = m >= 13 ? `, d ≈ ${(Math.cbrt(6 * m * 59.667 / Math.PI) / 10).toFixed(2)} nm` : "";
+  $("movWhat").innerHTML = `<b>${lab}</b>: m = ${m}, k = ${k}${d}; ${how === "nucleus" ? "the nucleus, from the pool" : `by a ${how} step`}, ${fmt(j)} M moved along it so far; N = ${fmt(N)} M`;
+}
+let MOV_FPS = 5;
+async function playMovie(record) {
+  if (MOV.play) { MOV.play = false; return; }
+  const last = MOV.fr.length - 1;
+  let i = record || MOV.i >= last ? 0 : MOV.i, rec = null, parts = [];
+  if (record) {
+    const cv = $("movie").querySelector("canvas"), mime = ["video/webm;codecs=vp9", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
+    rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime });
+    rec.ondataavailable = e => e.data.size && parts.push(e.data);
+    rec.start();
+  }
+  MOV.play = true; $("movPlay").textContent = "⏸"; $("movRec").disabled = true;
+  while (MOV.play && i <= last) { movFrame(i); await sleep(1000 / MOV_FPS); i++; }
+  MOV.play = false; $("movPlay").textContent = "▶"; $("movRec").disabled = false;
+  if (rec) {
+    await new Promise(res => { rec.onstop = res; rec.stop(); });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(parts, { type: "video/webm" }));
+    a.download = `growth_path_T${RUN.cond.T}_cP${RUN.cond.c_P0}_t${fmt(MOV.t)}s.webm`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
 }
 
 $("mSeed").addEventListener("click", () => { MAPMODE = "seed"; $("mSeed").classList.add("on"); $("mBest").classList.remove("on"); RUN ? setTime(IDX) : liveMap(); });
@@ -800,7 +913,15 @@ document.querySelectorAll('input[name="profsrc"]').forEach((r) => r.addEventList
 $("runBtn").addEventListener("click", run);
 $("stopBtn").addEventListener("click", () => { if (JOB) { api(`/api/stop?id=${JOB}`, {}); $("stopBtn").disabled = true; } });
 let tTimer = null;
-$("tbar").addEventListener("input", () => { clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });
+$("tbar").addEventListener("input", () => { PLAY = false; clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });
+$("playBtn").addEventListener("click", playRun);
+$("movPlay").addEventListener("click", () => playMovie(false));
+$("movRec").addEventListener("click", () => playMovie(true));
+$("movAt").addEventListener("click", () => { if (MOV) MOV.play = false; buildMovie(+$("tbar").value); });
+$("movBar").addEventListener("input", () => { if (MOV) { MOV.play = false; movFrame(+$("movBar").value); } });
+document.querySelectorAll("[data-fps]").forEach(b => b.addEventListener("click", () => {
+  MOV_FPS = +b.dataset.fps; document.querySelectorAll("[data-fps]").forEach(x => x.classList.toggle("on", x === b));
+}));
 (async () => { D = await api("/api/defaults"); buildControls(); onConds(); })();
 </script>
 </body>

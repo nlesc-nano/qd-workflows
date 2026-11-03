@@ -14,6 +14,7 @@ Run it in an environment with FastAPI, uvicorn and scipy.
 from __future__ import annotations
 
 import argparse
+import heapq
 import math
 import threading
 import uuid
@@ -28,6 +29,8 @@ from .grid_thermo import converted, k_conv_at
 PAGE = Path(__file__).parent / "templates" / "network" / "index.html"
 VOLUME_A3 = 59.667                       # zinc-blende CdSe volume per CdSe unit (a = 6.203 A): d = (6 m V / pi)^(1/3)
 MAX_RUNS = 6
+PATH_MAX = 500                           # states on a run's path (the growth movie)
+KIND_NAME = {v: k for k, v in ng.KIND.items()}
 
 
 def diameter_nm(m):
@@ -128,7 +131,8 @@ class NetSim:
                                     "cdse_flux", "attach_flux", "barriers")}
         series["d_mean_nm"] = diameter_nm(r["m_mean"]).tolist()
         return {"run_id": rid, "cond": c, "series": series, "psd": {"m": ms.tolist(), "d_nm": diameter_nm(ms).tolist(),
-                                                                    "N": psd}, "top": top, "omega_run": self._omega_run(r),
+                                                                    "N": psd}, "top": top,
+                "path_i": len(r["t"]) - 1, "omega_run": self._omega_run(r),
                 "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"], "stopped": r["stopped"]}}
 
     # ---------------- step 1: the nucleation simulator's grid Omega
@@ -279,6 +283,77 @@ class NetSim:
         return {"t": t, "alpha": float(pl["c_MA"] / c["c_P0"]) if N is None else None, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
                 "seed": net.label[net.seed], "cells": cells, "routes": routes, "barriers": r["table"]}
 
+    def _transfer(self, run_id):
+        """Net transfer of every step and nucleus source up to each output (M; the fluxes at the outputs integrated
+        by the trapezoid rule)."""
+        r = self.runs[run_id]
+        if "_transfer" not in r:
+            J = [self.net.fluxes(self._rates_at(run_id, i), r["N"][i]) for i in range(len(r["t"]))]
+            t = np.asarray(r["t"])
+            acc, out = [np.zeros_like(J[0][0]), np.zeros_like(J[0][1])], []
+            for i in range(len(t)):
+                if i:
+                    for q in range(2):
+                        acc[q] = acc[q] + 0.5 * (J[i][q] + J[i - 1][q]) * (t[i] - t[i - 1])
+                out.append((acc[0].copy(), acc[1].copy()))
+            r["_transfer"] = out
+        return r["_transfer"]
+
+    def _rates_at(self, run_id, i):
+        c, pl, _N, _t = self._pool_at({"run_id": run_id, "i": i})
+        nu, nu_src = self.net.prefactors(c["T"], c["eta_mPas"], c["s_nu"], c["a_site_A2"])
+        return self.net.rates(c["T"], c["eps"], pl, nu, nu_src, c["islands"])
+
+    def path(self, run_id, i):
+        """The run's path up to output i: from the pool to the most populated dot (the most populated state before
+        there are dots), the chain of steps along which the most material has moved so far, i.e. whose narrowest step
+        has the largest net transfer (the flux integrated over the run; steps to the larger state, isomerisations
+        either way; the nucleus sources as the first steps). Frames: state, label, m, k, the transfer (M) of the step
+        into it, that step's kind, N (M) at output i."""
+        net = self.net
+        i = int(i)
+        N = np.asarray(self.runs[run_id]["N"][i], float)
+        t = float(self.runs[run_id]["t"][i])
+        if N.max() <= 0:
+            return {"t": t, "i": i, "frames": []}
+        X, xs = self._transfer(run_id)[i]
+        if not hasattr(self, "_from"):
+            out = [[] for _ in range(net.n)]
+            for e, (a, b) in enumerate(zip(net.a.tolist(), net.b.tolist())):
+                out[a].append((e, b, 1.0))
+                if net.dm[e] == 0 and net.dk[e] == 0:
+                    out[b].append((e, a, -1.0))
+            self._from = out
+        width, par = np.zeros(net.n), [None] * net.n
+        heap = []
+        for q, (_n1, _n2, j) in enumerate(net.src.tolist()):           # the pool's nuclei
+            if xs[q] > width[j]:
+                width[j], par[j] = xs[q], (-1, "nucleus", xs[q])
+                heapq.heappush(heap, (-xs[q], j))
+        done = np.zeros(net.n, bool)
+        while heap:                                                     # max-bottleneck Dijkstra
+            w, a = heapq.heappop(heap)
+            if done[a]:
+                continue
+            done[a] = True
+            for e, b, sign in self._from[a]:
+                x = min(-w, sign * X[e])
+                if x > width[b] and not done[b]:
+                    width[b], par[b] = x, (a, KIND_NAME[int(net.kind[e])], sign * X[e])
+                    heapq.heappush(heap, (-x, b))
+        dot = net.m >= ng.M_DOT
+        reach = width > 0
+        cand = dot & reach if (dot & reach & (N > 0)).any() else reach
+        if not cand.any():
+            return {"t": t, "i": i, "frames": []}
+        cur = int(np.argmax(np.where(cand, N, -1.0)))
+        frames = []
+        while cur >= 0 and len(frames) < PATH_MAX:
+            prev, how, x = par[cur]
+            frames.append([cur, net.label[cur], int(net.m[cur]), int(net.k[cur]), float(x), how, float(N[cur])])
+            cur = prev
+        return {"t": t, "i": i, "frames": frames[::-1]}
+
     def composition(self, m, k, run_id=None, i=None):
         """The states of one composition (lowest G first) with their populations at a run's output."""
         net = self.net
@@ -363,6 +438,10 @@ def make_app(sim: NetSim):
     @app.get("/api/grid_structure")
     def grid_structure(m: int, k: int):
         return guard(sim.grid_structure, m, k)
+
+    @app.get("/api/path")
+    def path(run_id: str, i: int):
+        return guard(sim.path, run_id, i)
 
     @app.get("/api/composition")
     def composition(m: int, k: int, run_id: str | None = None, i: int | None = None):
