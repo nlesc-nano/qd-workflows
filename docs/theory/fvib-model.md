@@ -115,3 +115,29 @@ The model is meant for the relaxed states beyond $m = 223$, with each state's $F
 or predicted in the export. Expect about 0.04 eV per step at 500 K for dots of 600–1,200 atoms. That is a factor of
 about 2.5 in a rate, with 5–10 % of steps above 0.1 eV. Where single rates matter (the lowest-$\Omega$ path), an FD
 Hessian on those states removes the error.
+
+## Acetate-capped dots
+
+`--species Cd,Se,O,C,H` (`fvib_model.SPECIES_ACETATE`) builds the same descriptor on the acetate elements. The bonds
+inside an acetate (C–H, C–O, C–C) lie below the 2 Å pair grid. Their modes are nearly the same in every acetate, so
+the composition terms absorb them. Cd–O and the crowding of neighbouring acetates fall in the pair, angle and
+coordination features.
+
+Test (NHR, 3 Nov 2026): 10,473 acetate network dots with FD Hessians, from the P0 runs ($m$ 7–13), P1 ($m$ 14–60) and
+the finished part of P2 ($m$ 61–223, 2,620 dots), λ 1e-7 from the lineage folds. At 500 K:
+
+| split | growth step MAE | > 0.1 eV | absolute MAE | drift (eV per 100 m) | out of domain |
+|---|---|---|---|---|---|
+| train $m < 61$ (P0 + P1), test P2 | 0.062 | 19 % | 0.054 | −0.018 | 32 |
+| train $m < 100$ | 0.066 | 23 % | 0.052 | +0.051 | 3 |
+| lineage folds | 0.050 | 12 % | 0.039 | −0.002 | 9 |
+| random 80/20 | 0.047 | 9 % | 0.036 | +0.007 | 9 |
+
+The error is about 2.5 times that for CdCl2 dots, but it hardly grows with $m$: on P2 the absolute MAE goes from
+0.044 eV at $m$ 61–89 to 0.064 eV at $m$ 160–223, with a mean of −0.01 to −0.03 eV. It also grows with the number
+of imaginary modes, from 0.045 eV with none to 0.069 eV with seven or more. Those soft acetate modes make the FD
+reference itself noisy. Steps of 1–2 CdSe have 0.057 eV.
+
+For comparison, the same start relaxed on two machines lands 0.27 eV rms apart in $E$ (acetate network P0). A
+step error of 0.06 eV in $F_\mathrm{vib}$ is small against that noise, so the network's acetate states can be relaxed
+without an FD Hessian. Out-of-domain states (about 1 % with the $m \le 60$ training set) still need a Hessian.

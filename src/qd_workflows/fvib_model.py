@@ -1,5 +1,5 @@
 """
-Learned vibrational free energy of relaxed builder dots (CdSe/CdCl2), for states of the network growth model that are
+Learned vibrational free energy of relaxed builder dots (CdSe/CdCl2, or acetate-capped with --species), for states of the network growth model that are
 relaxed with MACE but get no finite-difference Hessian.
 
 The target is the quasi-RRHO F_vib(T) of orchestr_ai.qd.steps.hessian.thermo (harmonic U, Grimme entropy, modes
@@ -38,8 +38,8 @@ from pathlib import Path
 
 import numpy as np
 
-SPECIES = ("Cd", "Se", "Cl")
-PAIRS = tuple((a, b) for i, a in enumerate(SPECIES) for b in SPECIES[i:])
+SPECIES = ("Cd", "Se", "Cl")            # CdSe/CdCl2 dots; acetate-capped dots: SPECIES_ACETATE
+SPECIES_ACETATE = ("Cd", "Se", "O", "C", "H")
 CENTRES = np.arange(2.0, 7.001, 0.25)
 WIDTH = 0.25
 R_CUT = 7.5
@@ -56,44 +56,52 @@ COS_W = 0.12
 N_COORD = 7                   # coordination 0..6, 6 for more
 
 
-def feature_names() -> list[str]:
-    return ([f"N_{s}" for s in SPECIES] + [f"pair_{a}{b}_{r:.2f}" for a, b in PAIRS for r in CENTRES]
-            + [f"emb_{s}_{g}" for s in SPECIES for g in EMBED]
-            + [f"ang_{s}_{c:+.2f}" for s in SPECIES for c in COS_C] + [f"coord_{s}_{n}" for s in SPECIES
+def _pairs(species) -> tuple:
+    return tuple((a, b) for i, a in enumerate(species) for b in species[i:])
+
+
+def feature_names(species=SPECIES) -> list[str]:
+    return ([f"N_{s}" for s in species] + [f"pair_{a}{b}_{r:.2f}" for a, b in _pairs(species) for r in CENTRES]
+            + [f"emb_{s}_{g}" for s in species for g in EMBED]
+            + [f"ang_{s}_{c:+.2f}" for s in species for c in COS_C] + [f"coord_{s}_{n}" for s in species
                                                                        for n in range(N_COORD)])
 
 
-BOND = np.array([n.startswith("pair_") and float(n.rsplit("_", 1)[1]) <= BOND_R for n in feature_names()])
+def bond_mask(species=SPECIES) -> np.ndarray:
+    """The pair features of the bonding shell (up to BOND_R)."""
+    return np.array([n.startswith("pair_") and float(n.rsplit("_", 1)[1]) <= BOND_R for n in feature_names(species)])
 
 
-def descriptor(symbols, positions) -> np.ndarray:
+def descriptor(symbols, positions, species=SPECIES) -> np.ndarray:
     """Composition, pair radial sums per species pair, per-species sums of the embedding functions, bond-angle
     histograms and first-shell coordination counts per centre species."""
     from scipy.spatial import cKDTree
     sy = np.asarray(symbols)
+    if not set(sy) <= set(species):
+        raise ValueError(f"elements {sorted(set(sy) - set(species))} are not in the descriptor's species {species}")
     X = np.asarray(positions, float)
     p = cKDTree(X).query_pairs(R_CUT, output_type="ndarray").reshape(-1, 2)
     r = np.linalg.norm(X[p[:, 0]] - X[p[:, 1]], axis=1)
     fc = 0.5 * (1 + np.cos(np.pi * r / R_CUT))
     g = np.exp(-((r[:, None] - CENTRES) / WIDTH) ** 2) * fc[:, None]
     si, sj = sy[p[:, 0]], sy[p[:, 1]]
-    pair = [g[((si == a) & (sj == b)) | ((si == b) & (sj == a))].sum(axis=0) for a, b in PAIRS]
+    pair = [g[((si == a) & (sj == b)) | ((si == b) & (sj == a))].sum(axis=0) for a, b in _pairs(species)]
     rho = np.zeros(len(sy))
     w = np.exp(-((r - RHO_R0) / RHO_W) ** 2)
     np.add.at(rho, p[:, 0], w)
     np.add.at(rho, p[:, 1], w)
     emb = []
-    for s in SPECIES:
+    for s in species:
         x = rho[sy == s]
         emb += [x.sum(), (x * x).sum(), np.sqrt(x).sum()]
-    comp = [float((sy == s).sum()) for s in SPECIES]
+    comp = [float((sy == s).sum()) for s in species]
     sh = p[r < ANG_R]
     nb = [[] for _ in sy]
     for i, j in sh:
         nb[i].append(j)
         nb[j].append(i)
-    ang = {s: np.zeros(len(COS_C)) for s in SPECIES}
-    coord = {s: np.zeros(N_COORD) for s in SPECIES}
+    ang = {s: np.zeros(len(COS_C)) for s in species}
+    coord = {s: np.zeros(N_COORD) for s in species}
     for i, js in enumerate(nb):
         coord[sy[i]][min(len(js), N_COORD - 1)] += 1
         if len(js) < 2:
@@ -102,18 +110,19 @@ def descriptor(symbols, positions) -> np.ndarray:
         v /= np.linalg.norm(v, axis=1)[:, None]
         c = (v @ v.T)[np.triu_indices(len(js), 1)]
         ang[sy[i]] += np.exp(-((c[:, None] - COS_C) / COS_W) ** 2).sum(axis=0)
-    return np.concatenate([comp, np.concatenate(pair), emb] + [ang[s] for s in SPECIES] + [coord[s] for s in SPECIES])
+    return np.concatenate([comp, np.concatenate(pair), emb] + [ang[s] for s in species] + [coord[s] for s in species])
 
 
 def _desc_job(job):
     return descriptor(*job)
 
 
-def descriptors(structs, nproc: int = 1) -> np.ndarray:
+def descriptors(structs, nproc: int = 1, species=SPECIES) -> np.ndarray:
+    jobs = [(s, x, species) for s, x in structs]
     if nproc > 1:
         with Pool(nproc) as pool:
-            return np.array(pool.map(_desc_job, structs, chunksize=64))
-    return np.array([descriptor(s, x) for s, x in structs])
+            return np.array(pool.map(_desc_job, jobs, chunksize=64))
+    return np.array([descriptor(*j) for j in jobs])
 
 
 def fvib_target(freqs_cm1, temps) -> np.ndarray:
@@ -130,8 +139,9 @@ class FvibModel:
     (present in < 5 % of the training dots, such as Se-Se at 2.7 A) than any training dot has. A larger dot is not
     out of domain for being larger."""
 
-    def __init__(self, temps, lam: float = 1e-6, min_rows: int = 20):
+    def __init__(self, temps, lam: float = 1e-6, min_rows: int = 20, species=SPECIES):
         self.temps = [float(t) for t in temps]
+        self.species = tuple(species)
         self.lam = float(lam)
         self.min_rows = int(min_rows)
         self.mu = self.sd = self.w = self.b = self.active = self.rare = self.xmax = None
@@ -159,19 +169,21 @@ class FvibModel:
     def out_of_domain(self, X) -> np.ndarray:
         """True for structures with a feature the model was not trained on."""
         X = np.atleast_2d(X)
-        new = BOND & ~self.active
-        rare = BOND & self.rare
+        bond = bond_mask(self.species)
+        new = bond & ~self.active
+        rare = bond & self.rare
         return (X[:, new] > SEEN).any(axis=1) | (X[:, rare] > 1.1 * self.xmax[rare] + SEEN).any(axis=1)
 
     def predict_structure(self, symbols, positions) -> tuple[np.ndarray, bool]:
-        x = descriptor(symbols, positions)
+        x = descriptor(symbols, positions, self.species)
         return self.predict(x)[0], bool(self.out_of_domain(x)[0])
 
     def at(self, T: float) -> int:
         return int(np.argmin(np.abs(np.array(self.temps) - T)))
 
     def to_json(self) -> dict:
-        return {"kind": "fvib_pair_embedding_angle_ridge", "features": feature_names(), "temps": self.temps,
+        return {"kind": "fvib_pair_embedding_angle_ridge", "species": list(self.species),
+                "features": feature_names(self.species), "temps": self.temps,
                 "lam": self.lam, "min_rows": self.min_rows, "active": self.active.tolist(), "rare": self.rare.tolist(),
                 "xmax": self.xmax.tolist(), "mu": self.mu.tolist(),
                 "sd": self.sd.tolist(), "w": self.w.tolist(), "b": self.b.tolist(),
@@ -180,9 +192,10 @@ class FvibModel:
 
     @classmethod
     def from_json(cls, d: dict) -> "FvibModel":
-        if d["features"] != feature_names():
+        species = tuple(d.get("species", SPECIES))
+        if d["features"] != feature_names(species):
             raise ValueError("model.json was written with a different descriptor")
-        m = cls(d["temps"], d["lam"], d["min_rows"])
+        m = cls(d["temps"], d["lam"], d["min_rows"], species)
         m.mu, m.sd, m.w, m.b = (np.array(d[k]) for k in ("mu", "sd", "w", "b"))
         m.active, m.rare = np.array(d["active"], bool), np.array(d["rare"], bool)
         m.xmax = np.array(d["xmax"])
@@ -191,7 +204,8 @@ class FvibModel:
 
 # ---------------------------------------------------------------- data set and validation
 
-def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | None = None, extra=()) -> dict:
+def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | None = None, extra=(),
+                 species=SPECIES) -> dict:
     """Descriptors, targets and labels of every relaxed dot, the step pairs between them and their lineage edges.
     `extra`: states.json files of relax_states.py; their states are added without steps, each its own lineage group."""
     res = json.loads(Path(results).read_text())
@@ -200,9 +214,10 @@ def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | 
     keys = list(res)
     if cache is not None and cache.exists():
         z = np.load(cache, allow_pickle=False)
-        if list(z["keys"]) == keys and np.allclose(z["temps"], temps):
+        cached = tuple(z["species"]) if "species" in z.files else SPECIES
+        if list(z["keys"]) == keys and np.allclose(z["temps"], temps) and cached == tuple(species):
             data = {k: z[k] for k in z.files}
-            data["temps"] = list(temps)
+            data["temps"], data["species"] = list(temps), tuple(species)
             print(f"[fvib] descriptors from {cache}", flush=True)
             return data
     reg = json.loads(Path(registry).read_text())["dots"]
@@ -212,7 +227,7 @@ def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | 
     m = np.array([c["Se"] for c in cnt])
     k_ = np.array([c["Cd"] - c["Se"] for c in cnt])
     print(f"[fvib] {len(keys)} relaxed dots, descriptors on {nproc} processes", flush=True)
-    X = descriptors([(res[k]["symbols"], res[k]["positions"]) for k in keys], nproc)
+    X = descriptors([(res[k]["symbols"], res[k]["positions"]) for k in keys], nproc, species)
     Y = np.array([fvib_target(res[k]["frequencies_cm1"], temps) for k in keys])
     E = np.array([res[k]["E_eV"] for k in keys])
     nimag = np.array([int(res[k].get("n_imaginary", 0)) for k in keys])
@@ -238,17 +253,18 @@ def load_dataset(results, registry, steps, temps, nproc: int = 1, cache: Path | 
             kinds[(j, i2)] = "shell"
     P = np.array(sorted(pairs), dtype=np.int64).reshape(-1, 2)
     edge = np.array([edge_votes[j].most_common(1)[0][0] if edge_votes[j] else "" for j in range(len(keys))])
-    data = {"keys": np.array(keys), "temps": list(temps), "X": X, "Y": Y, "m": m, "k": k_, "fw": fw, "edge": edge,
+    data = {"keys": np.array(keys), "temps": list(temps), "species": tuple(species), "X": X, "Y": Y, "m": m, "k": k_, "fw": fw, "edge": edge,
             "n_imag": nimag, "pairs": P, "pair_kind": np.array([kinds[tuple(p)] for p in P])}
     if cache is not None:
-        np.savez_compressed(cache, **{k: v for k, v in data.items() if k != "temps"}, temps=np.array(temps))
+        np.savez_compressed(cache, **{k: v for k, v in data.items() if k not in ("temps", "species")},
+                            temps=np.array(temps), species=np.array(species))
     return data
 
 
 def split_metrics(data: dict, train, test, lam: float, report_t=REPORT_T) -> tuple[dict, np.ndarray]:
     """Train on `train`, score on the in-domain part of `test`: absolute, within-size and step errors (both ends of a
     step in it). Out-of-domain test dots (a feature the training set lacks) are counted, not scored."""
-    model = FvibModel(data["temps"], lam).fit(data["X"][train], data["Y"][train])
+    model = FvibModel(data["temps"], lam, species=data.get("species", SPECIES)).fit(data["X"][train], data["Y"][train])
     R = data["Y"] - model.predict(data["X"])                       # residual, (dots, temps)
     m = data["m"]
     test = np.asarray(test)
@@ -288,11 +304,11 @@ def lineage_labels(data: dict) -> np.ndarray:
                      for e, f in zip(data["edge"], data["fw"])])
 
 
-def splits(data: dict, n_folds: int = 5, seed: int = 0) -> dict:
+def splits(data: dict, n_folds: int = 5, seed: int = 0, size_cuts=SIZE_CUTS) -> dict:
     """Size cuts (train m < cut, test m >= cut), lineage edges in folds, and a random 80/20 split for reference."""
     m, idx = data["m"], np.arange(len(data["m"]))
     rng = np.random.default_rng(seed)
-    out = {f"size_m<{c}": (idx[m < c], idx[m >= c]) for c in SIZE_CUTS}
+    out = {f"size_m<{c}": (idx[m < c], idx[m >= c]) for c in size_cuts}
     label = lineage_labels(data)
     edges = np.unique(label)
     fold_of = dict(zip(rng.permutation(edges), np.arange(len(edges)) % n_folds))
@@ -316,9 +332,9 @@ def choose_lam(data: dict, grid=(1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2), T: float =
     return float(best), scan
 
 
-def validate(data: dict, lam: float) -> tuple[dict, dict]:
+def validate(data: dict, lam: float, size_cuts=SIZE_CUTS) -> tuple[dict, dict]:
     report, resid = {}, {}
-    for name, (tr, te) in splits(data).items():
+    for name, (tr, te) in splits(data, size_cuts=size_cuts).items():
         report[name], R = split_metrics(data, tr, te, lam)
         resid[name] = (te, R)
     report["edges_mean"] = _mean_of([v for k, v in report.items() if k.startswith("edges_")])
@@ -332,12 +348,12 @@ def _mean_of(rows: list):
     return float(np.nanmean(rows))
 
 
-def plot(data: dict, resid: dict, path: Path, T: float = 500.0) -> None:
+def plot(data: dict, resid: dict, path: Path, T: float = 500.0, size_cuts=SIZE_CUTS) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     it = int(np.argmin(np.abs(np.array(data["temps"]) - T)))
-    names = [f"size_m<{c}" for c in SIZE_CUTS]
+    names = [f"size_m<{c}" for c in size_cuts]
     fig, ax = plt.subplots(2, len(names), figsize=(4.2 * len(names), 7), squeeze=False)
     P, kind = data["pairs"], data["pair_kind"]
     for j, name in enumerate(names):
@@ -368,7 +384,9 @@ def fit(a) -> dict:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     temps = json.loads(Path(a.thermo).read_text())["temperatures"]
-    data = load_dataset(a.results, a.registry, a.steps, temps, a.nproc, out / "dataset.npz", a.extra)
+    species = tuple(a.species.split(","))
+    cuts = tuple(int(c) for c in a.size_cuts.split(","))
+    data = load_dataset(a.results, a.registry, a.steps, temps, a.nproc, out / "dataset.npz", a.extra, species)
     print(f"[fvib] {len(data['m'])} dots, {len(data['pairs'])} step pairs "
           f"{dict(collections.Counter(data['pair_kind'].tolist()))}, {len(np.unique(lineage_labels(data)))} lineage "
           f"groups", flush=True)
@@ -377,12 +395,12 @@ def fit(a) -> dict:
     if lam is None:
         lam, scan = choose_lam(data)
         print(f"[fvib] lam {lam:g} (edge-fold growth-step MAE at 500 K: {scan})", flush=True)
-    report, resid = validate(data, lam)
-    model = FvibModel(temps, lam).fit(data["X"], data["Y"])
+    report, resid = validate(data, lam, cuts)
+    model = FvibModel(temps, lam, species=species).fit(data["X"], data["Y"])
     (out / "model.json").write_text(json.dumps(model.to_json()))
     (out / "validation.json").write_text(json.dumps({"lam": lam, "lam_scan": scan, "splits": report}, indent=1))
-    plot(data, resid, out / "residuals.png")
-    for name in [f"size_m<{c}" for c in SIZE_CUTS] + ["edges_mean", "random_80_20"]:
+    plot(data, resid, out / "residuals.png", size_cuts=cuts)
+    for name in [f"size_m<{c}" for c in cuts] + ["edges_mean", "random_80_20"]:
         r = report[name]["T"]["500"]
         print(f"[fvib] {name:14s} 500 K: growth step MAE {r['step_growth']['mae']:.4f} eV "
               f"(>0.1 eV {r['step_growth']['frac_gt_0.1']:.3f}), shell {r['step_shell']['mae']:.4f}, "
@@ -411,6 +429,9 @@ def main(argv=None) -> int:
     f.add_argument("--extra", nargs="*", default=[], help="states.json of relax_states.py with more relaxed dots")
     f.add_argument("--nproc", type=int, default=4)
     f.add_argument("--lam", type=float, default=None, help="ridge strength per row; default: chosen on edge folds")
+    f.add_argument("--species", default=",".join(SPECIES),
+                   help="descriptor elements, comma separated; acetate-capped dots: " + ",".join(SPECIES_ACETATE))
+    f.add_argument("--size-cuts", default=",".join(map(str, SIZE_CUTS)), help="size splits: train m < cut, test the rest")
     p = sub.add_parser("predict", help="F_vib of relaxed structures (xyz)")
     p.add_argument("--model", required=True)
     p.add_argument("--T", type=float, default=500.0)

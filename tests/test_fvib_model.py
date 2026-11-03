@@ -109,3 +109,25 @@ def test_angular_block_of_a_tetrahedron():
     assert d["coord_Cd_4"] == 1 and d["coord_Se_1"] == 4
     ang = np.array([d[f"ang_Cd_{c:+.2f}"] for c in fm.COS_C])
     assert np.allclose(ang, 6 * np.exp(-((fm.COS_C + 1 / 3) / fm.COS_W) ** 2))     # six angles at cos = -1/3
+
+
+def test_species_parameter_for_acetate_dots():
+    rng = np.random.default_rng(5)
+    sym, X = _zb(80, rng)
+    ac = [("O", [1.2, 0, 0]), ("O", [-1.2, 0, 0]), ("C", [0, 0.7, 0]), ("C", [0, 2.2, 0]), ("H", [0.9, 2.6, 0.4])]
+    sy2 = sym + [s for s, _ in ac]
+    X2 = np.r_[X, np.array([v for _, v in ac]) + [20.0, 0, 0]]
+    with pytest.raises(ValueError):
+        fm.descriptor(sy2, X2)                                   # O, C, H are not in the CdCl2 species
+    d = fm.descriptor(sy2, X2, fm.SPECIES_ACETATE)
+    names = fm.feature_names(fm.SPECIES_ACETATE)
+    assert d.shape == (len(names),)
+    assert dict(zip(names, d))["N_H"] == 1
+    data = {"temps": [300.0, 500.0], "X": np.array([fm.descriptor(*_zb(60 + i, rng), fm.SPECIES_ACETATE)
+                                                    for i in range(30)])}
+    data["Y"] = np.c_[data["X"][:, 0], 2 * data["X"][:, 1]] * 0.01
+    model = fm.FvibModel(data["temps"], species=fm.SPECIES_ACETATE).fit(data["X"], data["Y"])
+    back = fm.FvibModel.from_json(json.loads(json.dumps(model.to_json())))
+    assert back.species == fm.SPECIES_ACETATE
+    assert np.allclose(back.predict(data["X"]), model.predict(data["X"]))
+    assert back.out_of_domain(d)[0]                              # an O-O pair at 2.4 A: never seen in training
