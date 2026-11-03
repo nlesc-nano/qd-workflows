@@ -255,14 +255,17 @@ button:disabled { opacity: .55; cursor: progress; }
       <h2>6 · Growth movie <small id="movWhen"></small></h2>
       <div class="timebar"><button id="movPlay" disabled aria-label="play the movie">▶</button><input type="range" id="movBar" min="0" max="0" value="0" aria-label="movie frame" disabled><b id="movT">–</b></div>
       <div class="pickrow">speed <button data-fps="2">slow</button><button data-fps="5" class="on">normal</button><button data-fps="12">fast</button>
-        <button id="movAt" disabled>path up to the time bar's time</button><button id="movRec" disabled>save as video (.webm)</button></div>
+        <button id="movRec" disabled>save as video (.webm)</button></div>
+      <table class="ptable" id="movTable"></table>
       <div class="what" id="movWhat"></div>
       <div id="movie"><div class="empty">Run the growth to follow its path here.</div></div>
-      <div class="cap">The run's path up to one time (after a run: its end; or the time bar's): from the pool to the most
-        populated dot, the chain of steps along which the most material has moved so far, i.e. whose narrowest step
-        carried the most (the net flux integrated over the run). Played forward, it shows how that dot was built, step
-        by step: a frame per output time would skip it, since between two outputs the dots can grow from 13 to 60 CdSe.
-        Every frame on the scale of the largest, centred; drag to turn it, the turn is kept from frame to frame.</div>
+      <div class="cap">Pick a state at the time bar's time. <b>Growth</b> (most populated): from the pool to that state, the
+        chain of steps along which the most material has moved so far, i.e. whose narrowest step carried the most (the
+        net flux integrated over the run); played forward, how it was built, step by step (a frame per output time would
+        skip it: between two outputs the dots can grow from 13 to 60 CdSe). <b>Dissolution</b> (the populated dots losing
+        more CdSe to smaller states than they gain, right then): from that dot down the steps with net flux to the smaller state at that time, the
+        chain with the largest narrowest flux, back to the pool when the flux reaches it. Every frame on the scale of the
+        largest, centred; drag to turn it, the turn is kept from frame to frame.</div>
     </section>
   </div>
 </main>
@@ -709,7 +712,7 @@ async function run() {
     if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
     $("runWhen").textContent = `T ${c.T} K, c_P0 ${c.c_P0} M, CdCl₂ ${c.c_MX0} M, s_ν ${c.s_nu}${c.islands ? "" : ", no island barriers"}`;
     $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
-    $("playBtn").disabled = false; $("movAt").disabled = false;
+    $("playBtn").disabled = false;
     drawRun(); setTime(RUN.series.t.length - 1); buildMovie(RUN.path_i);
     if (L0) drawNucleation(L0);
     $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
@@ -769,6 +772,7 @@ async function setTime(i) {
     base({ xaxis: { title: { text: "d (nm)", standoff: 4 } }, yaxis: { title: { text: "share", standoff: 4 } }, bargap: 0.05 }), CFG);
   barrierTable(s.barriers[i]);
   topTable(RUN.top[i]);
+  if (!PLAY) movTable(i);
   try { drawMap(await api("/api/map", { run_id: RUN.run_id, i }), `t = ${fmt(t)} s of the run`); } catch (e) { $("mapCap").textContent = e.message; }
 }
 
@@ -838,6 +842,7 @@ async function playRun() {
     i++;
   }
   PLAY = false; $("playBtn").textContent = "▶"; $("playBtn").setAttribute("aria-label", "play the run");
+  movTable(+$("tbar").value);
 }
 let MOV = null, MVIEW = null;
 function centred(xyz) {
@@ -845,37 +850,59 @@ function centred(xyz) {
   const c = [1, 2, 3].map(j => at.reduce((a, x) => a + +x[j], 0) / n);
   return [n, L[1], ...at.map(x => `${x[0]} ${(+x[1] - c[0]).toFixed(4)} ${(+x[2] - c[1]).toFixed(4)} ${(+x[3] - c[2]).toFixed(4)}`)].join("\n") + "\n";
 }
-async function buildMovie(i) {
+async function frameXyz(f) {
+  const key = f[0] < 0 ? `pool${f[3]}` : f[0];
+  if (!STRUCT.has(key)) STRUCT.set(key, f[0] < 0 ? await api(`/api/grid_structure?m=1&k=${f[3]}`) : await api(`/api/structure?state=${f[0]}`));
+  return [key, STRUCT.get(key)];
+}
+async function buildMovie(i, state = null, mode = "growth") {
+  if (MOV) MOV.play = false;
   MOV = null; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = true;
-  $("movWhat").textContent = `Following the run's path at t = ${fmt(RUN.series.t[i])} s…`;
+  $("movWhat").textContent = `Following the ${mode} path at t = ${fmt(RUN.series.t[i])} s…`;
   try {
-    const p = await api(`/api/path?run_id=${RUN.run_id}&i=${i}`), fr = p.frames;
-    if (!fr.length) { $("movWhat").textContent = `no net flux out of the pool at t = ${fmt(p.t)} s`; return; }
-    const ids = [...new Set(fr.map(f => f[0]))];
-    $("movWhat").textContent = `Loading ${ids.length} structures…`;
-    const got = await Promise.all(ids.map(structure));
-    const xyz = new Map(got.map(s => [s.state, centred(s.xyz)]));
+    const p = await api(`/api/path?run_id=${RUN.run_id}&i=${i}&mode=${mode}` + (state === null ? "" : `&state=${state}`)), fr = p.frames;
+    if (!fr.length) { $("movWhat").textContent = mode === "growth" ? `nothing formed by t = ${fmt(p.t)} s` : `no dot loses CdSe at t = ${fmt(p.t)} s`; return; }
+    const got = await Promise.all(fr.map(frameXyz));
+    const xyz = new Map(got.map(([k, s]) => [k, centred(s.xyz)]));
     if (!MVIEW) MVIEW = molViewer($("movie"));
-    const big = got.reduce((a, s) => parseInt(s.xyz, 10) > parseInt(a.xyz, 10) ? s : a);
-    MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big.state), "xyz"); MVIEW.zoomTo();
-    MOV = { fr, xyz, i: 0, play: false, t: p.t };
+    const big = got.reduce((a, b) => parseInt(b[1].xyz, 10) > parseInt(a[1].xyz, 10) ? b : a);
+    MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big[0]), "xyz"); MVIEW.zoomTo();
+    MOV = { fr, keys: got.map(g => g[0]), xyz, i: 0, play: false, t: p.t, mode };
     $("movBar").max = fr.length - 1; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = false;
-    $("movWhen").textContent = `path up to t = ${fmt(p.t)} s, ${fr.length} states, m ${fr[0][2]} → ${fr.at(-1)[2]}`;
+    const last = fr.at(-1);
+    $("movWhen").textContent = `${mode} at t = ${fmt(p.t)} s, ${fr.length} frames, m ${fr[0][2]} → ${last[2]}`;
+    for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === mode && +tr.dataset.s === (state ?? (mode === "growth" ? last[0] : fr[0][0])));
     movFrame(0);
   } catch (e) { $("movWhat").textContent = e.message; }
 }
 function movFrame(i) {
   if (!MOV) return;
   MOV.i = i; $("movBar").value = i;
-  const [state, lab, m, k, j, how, N] = MOV.fr[i];
+  const [state, lab, m, k, f, how, N] = MOV.fr[i];
   $("movT").textContent = `${i + 1} / ${MOV.fr.length}`;
   const v = MVIEW.getView();
   MVIEW.removeAllModels();
-  MVIEW.addModel(MOV.xyz.get(state), "xyz");
+  MVIEW.addModel(MOV.xyz.get(MOV.keys[i]), "xyz");
   MVIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
   MVIEW.setView(v); MVIEW.render();
   const d = m >= 13 ? `, d ≈ ${(Math.cbrt(6 * m * 59.667 / Math.PI) / 10).toFixed(2)} nm` : "";
-  $("movWhat").innerHTML = `<b>${lab}</b>: m = ${m}, k = ${k}${d}; ${how === "nucleus" ? "the nucleus, from the pool" : `by a ${how} step`}, ${fmt(j)} M moved along it so far; N = ${fmt(N)} M`;
+  let step;
+  if (MOV.mode === "growth") step = how === "nucleus" ? `the nucleus, from the pool (${fmt(f)} M formed so far)` : `by a ${how} step, ${fmt(f)} M moved along it so far`;
+  else step = how === "start" ? "the dissolving dot" : how === "to the pool" ? `back to the pool, net ${fmt(f)} M/s` : `down a ${how} step, net ${fmt(f)} M/s`;
+  $("movWhat").innerHTML = `<b>${state < 0 ? `the pool's CdSe(${XL})<sub>${k}</sub>` : lab}</b>: m = ${m}, k = ${k}${d}; ${step}; ${state < 0 ? "c" : "N"} = ${fmt(N)} M`;
+}
+async function movTable(i) {
+  const top = RUN.top[i], t = fmt(RUN.series.t[i]);
+  let h = `<tr><th>grow to: most populated at ${t} s</th><th>m</th><th>k</th><th>N (M)</th><th></th></tr>` +
+    top.map(([x, lab, m, k, N]) => `<tr class="pick" data-mode="growth" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td></td></tr>`).join("");
+  try {
+    const d = await api(`/api/dissolving?run_id=${RUN.run_id}&i=${i}`);
+    h += `<tr><th>dissolving at ${t} s: most CdSe lost to smaller states</th><th>m</th><th>k</th><th>N (M)</th><th>CdSe lost / gained (M/s)</th></tr>` +
+      (d.states.length ? d.states.map(([x, lab, m, k, N, dn, up]) => `<tr class="pick" data-mode="dissolution" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td>${fmt(dn)} / ${fmt(up)}</td></tr>`).join("")
+        : `<tr><td colspan="5">no populated dot is shrinking at this time</td></tr>`);
+  } catch (e) { h += `<tr><td colspan="5">${e.message}</td></tr>`; }
+  $("movTable").innerHTML = h;
+  for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.addEventListener("click", () => buildMovie(i, +tr.dataset.s, tr.dataset.mode));
 }
 let MOV_FPS = 5;
 async function playMovie(record) {
@@ -895,7 +922,7 @@ async function playMovie(record) {
     await new Promise(res => { rec.onstop = res; rec.stop(); });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(parts, { type: "video/webm" }));
-    a.download = `growth_path_T${RUN.cond.T}_cP${RUN.cond.c_P0}_t${fmt(MOV.t)}s.webm`;
+    a.download = `${MOV.mode}_path_T${RUN.cond.T}_cP${RUN.cond.c_P0}_t${fmt(MOV.t)}s.webm`;
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 }
@@ -917,7 +944,7 @@ $("tbar").addEventListener("input", () => { PLAY = false; clearTimeout(tTimer); 
 $("playBtn").addEventListener("click", playRun);
 $("movPlay").addEventListener("click", () => playMovie(false));
 $("movRec").addEventListener("click", () => playMovie(true));
-$("movAt").addEventListener("click", () => { if (MOV) MOV.play = false; buildMovie(+$("tbar").value); });
+
 $("movBar").addEventListener("input", () => { if (MOV) { MOV.play = false; movFrame(+$("movBar").value); } });
 document.querySelectorAll("[data-fps]").forEach(b => b.addEventListener("click", () => {
   MOV_FPS = +b.dataset.fps; document.querySelectorAll("[data-fps]").forEach(x => x.classList.toggle("on", x === b));
