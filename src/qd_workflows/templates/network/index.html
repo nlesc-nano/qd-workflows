@@ -111,6 +111,9 @@ button:disabled { opacity: .55; cursor: progress; }
   background: var(--surface-0); border: 1px solid var(--border); }
 #viewer .empty, #movie .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
 .what { font-size: 13px; margin: 8px 0; min-height: 1.4em; }
+.atoms { display: inline-flex; gap: 10px; margin-right: 6px; }
+.atoms span { display: inline-flex; align-items: center; gap: 4px; }
+.atoms i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); margin: 2px 4px 6px; }
 .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
 @media (max-width: 1250px) { main { grid-template-columns: 250px minmax(0, 1fr); } .col3 { grid-column: 1 / -1; } .sticky { position: static; }
@@ -251,7 +254,9 @@ button:disabled { opacity: .55; cursor: progress; }
       <h2>5 · Structure</h2>
       <table class="ptable" id="topTable"></table>
       <div class="what" id="what"></div>
+      <div class="pickrow"><span class="atoms"><span><i style="background:#f0a030"></i>Cd</span><span><i style="background:#2f6fdf"></i>Se</span><span><i style="background:#9fd39f"></i>Cl</span><span><i style="background:#f2a6a6"></i>O</span><span><i style="background:#a8a8a8"></i>C</span><span><i style="background:#ececec"></i>H</span></span> ligands <button data-lig="sticks" class="on">thin</button><button data-lig="spheres">spheres</button><button data-lig="off">hidden</button></div>
       <div id="viewer"><div class="empty">Run the growth, then pick a state, or click a cell of the map.</div></div>
+      <div class="pickrow">download .xyz <button id="dlTop" disabled>most populated at the bar's time</button><button id="dlShown" disabled>the one shown</button></div>
     </section>
     <section class="card">
       <h2>6 · Growth movie <small id="movWhen"></small></h2>
@@ -260,7 +265,9 @@ button:disabled { opacity: .55; cursor: progress; }
         <button id="movRec" disabled>save as video (.webm)</button></div>
       <table class="ptable" id="movTable"></table>
       <div class="what" id="movWhat"></div>
+      <div class="pickrow"><span class="atoms"><span><i style="background:#f0a030"></i>Cd</span><span><i style="background:#2f6fdf"></i>Se</span><span><i style="background:#9fd39f"></i>Cl</span><span><i style="background:#f2a6a6"></i>O</span><span><i style="background:#a8a8a8"></i>C</span><span><i style="background:#ececec"></i>H</span></span> ligands <button data-lig="sticks" class="on">thin</button><button data-lig="spheres">spheres</button><button data-lig="off">hidden</button></div>
       <div id="movie"><div class="empty">Run the growth to follow its path here.</div></div>
+      <div class="pickrow">download .xyz <button id="dlFrame" disabled>this frame</button></div>
       <div class="cap"><b>Over time</b>: the most populated dot at each output, with the time bar, and the dots' shares at
         the seed, on the way and at the network's edge; dense outputs resolve the nucleation burst. In the acetate
         network the dots wait at the seed and cross to the edge faster than the outputs (under 3 % ever sit in between),
@@ -635,7 +642,7 @@ async function showGrid(m, k) {
     if (tok !== structTok) return;
     GSEL = { m, k, s }; SEL = null;
     gridWhat();
-    drawMol(s.xyz);
+    drawMol(s.xyz, `grid_m${m}_k${k}_${s.formula}`, `grid cluster m = ${m}, k = ${k}, ${s.formula}`);
     Plotly.relayout("cHeat", { shapes: gselShape() });
     $("viewer").scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (e) { if (tok === structTok) noMol(e.message); }
@@ -646,17 +653,39 @@ function molViewer(el) {
   el.innerHTML = "";
   return $3Dmol.createViewer(el, { backgroundColor: css("--surface-0"), preserveDrawingBuffer: true });
 }
-function drawMol(xyz) {
+// space filling: Cd and Se as Bondi vdW spheres in two clearly different colours; the ligand atoms pale, as thin sticks
+// (default), spheres or hidden
+const CORE = { Cd: "#f0a030", Se: "#2f6fdf" }, LIGC = { Cl: "#9fd39f", O: "#f2a6a6", C: "#a8a8a8", H: "#ececec" };
+const VDW = { Cd: 1.58, Se: 1.90, Cl: 1.75, O: 1.52, C: 1.70, H: 1.20 };
+let LIG = "sticks", SHOWN = null;                              // SHOWN: [xyz, file name, comment] of the Structure card
+function molStyle(v) {
+  v.setStyle({}, { sphere: { scale: 0.9 } });
+  for (const [e, c] of Object.entries(CORE)) v.setStyle({ elem: e }, { sphere: { radius: VDW[e], color: c } });
+  for (const [e, c] of Object.entries(LIGC))
+    v.setStyle({ elem: e }, LIG === "spheres" ? { sphere: { radius: VDW[e], color: c } } : LIG === "sticks" ? { stick: { radius: 0.12, color: c } } : {});
+}
+function drawMol(xyz, name = null, note = "") {
   if (!VIEW) VIEW = molViewer($("viewer"));
   VIEW.removeAllModels();
   VIEW.addModel(xyz, "xyz");
-  VIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
+  molStyle(VIEW);
   VIEW.zoomTo(); VIEW.render();
+  SHOWN = name ? [xyz, name, note] : null; $("dlShown").disabled = !SHOWN;
 }
 function noMol(msg) {
   if (VIEW) { VIEW.removeAllModels(); VIEW.render(); }
+  SHOWN = null; $("dlShown").disabled = true;
   $("what").textContent = msg;
 }
+function saveXyz(xyz, name, note) {
+  const L = xyz.trim().split("\n");
+  if (note) L[1] = note;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([L.join("\n") + "\n"], { type: "chemical/x-xyz" }));
+  a.download = name.replace(/[^A-Za-z0-9.+-]+/g, "_").replace(/^_+|_+$/g, "") + ".xyz";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const runTag = () => RUN ? `T ${RUN.cond.T} K, c_P0 ${RUN.cond.c_P0} M` : "";
 
 function drawMap(m, when) {
   LASTMAP = [m, when];
@@ -779,6 +808,7 @@ async function setTime(i) {
     base({ xaxis: { title: { text: "d (nm)", standoff: 4 } }, yaxis: { title: { text: "share", standoff: 4 } }, bargap: 0.05 }), CFG);
   barrierTable(s.barriers[i]);
   topTable(RUN.top[i]);
+  $("dlTop").disabled = !RUN.top[i].length;
   if (!PLAY) movTable(i);
   if (MOV && MOV.mode === "time" && !MOV.play) movFrame(Math.max(0, MOV.idx.findLastIndex(j => j <= i)));
   try { drawMap(await api("/api/map", { run_id: RUN.run_id, i }), `t = ${fmt(t)} s of the run`); } catch (e) { $("mapCap").textContent = e.message; }
@@ -825,7 +855,7 @@ async function show(state) {
     const s = await structure(state);
     if (tok !== structTok) return;
     $("what").innerHTML = `<b>${s.label}</b>: m = ${s.m}, k = ${s.k}, ${s.source === "grid" ? "nucleation grid node" : "registry id " + s.registry_id}`;
-    drawMol(s.xyz);
+    drawMol(s.xyz, `${s.label}_m${s.m}_k${s.k}`, `${s.label}, m = ${s.m}, k = ${s.k}, ${s.source === "grid" ? "grid node" : "registry id " + s.registry_id}`);
   } catch (e) { if (tok === structTok) noMol(e.message); }
 }
 const STRUCT = new Map();                                      // state -> /api/structure reply
@@ -891,13 +921,13 @@ async function timeMovie() {
   } catch (e) { $("movWhat").textContent = e.message; }
 }
 async function loadMovie(fr, mode, when, idx) {
-  $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = true;
+  $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = $("dlFrame").disabled = true;
   $("movWhat").textContent = `Loading ${new Set(fr.map(f => f[0])).size} structures…`;
   const got = await Promise.all(fr.map(frameXyz));
   const xyz = new Map(got.map(([k, s]) => [k, centred(s.xyz)]));
   if (!MVIEW) MVIEW = molViewer($("movie"));
   const big = got.reduce((a, b) => parseInt(b[1].xyz, 10) > parseInt(a[1].xyz, 10) ? b : a);
-  MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big[0]), "xyz"); MVIEW.zoomTo();
+  MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big[0]), "xyz"); molStyle(MVIEW); MVIEW.zoomTo();
   MOV = { fr, keys: got.map(g => g[0]), xyz, i: 0, play: false, mode, idx };
   $("movBar").max = fr.length - 1; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = false;
   $("movWhen").textContent = when;
@@ -911,8 +941,9 @@ function movFrame(i) {
   const v = MVIEW.getView();
   MVIEW.removeAllModels();
   MVIEW.addModel(MOV.xyz.get(MOV.keys[i]), "xyz");
-  MVIEW.setStyle({}, { sphere: { scale: 0.32 }, stick: { radius: 0.14 } });
+  molStyle(MVIEW);
   MVIEW.setView(v); MVIEW.render();
+  $("dlFrame").disabled = false;
   const d = m >= 13 ? `, d ≈ ${(Math.cbrt(6 * m * 59.667 / Math.PI) / 10).toFixed(2)} nm` : "";
   if (MOV.mode === "time") {
     const j = MOV.idx[i], s = RUN.series;
@@ -987,6 +1018,25 @@ for (const [id, ty] of [["axLog", "log"], ["axLin", "linear"]]) $(id).addEventLi
 $("movPlay").addEventListener("click", () => playMovie(false));
 $("movRec").addEventListener("click", () => playMovie(true));
 
+document.querySelectorAll("[data-lig]").forEach(b => b.addEventListener("click", () => {
+  LIG = b.dataset.lig; document.querySelectorAll("[data-lig]").forEach(x => x.classList.toggle("on", x.dataset.lig === LIG));
+  for (const v of [VIEW, MVIEW]) if (v) { molStyle(v); v.render(); }
+}));
+$("dlShown").addEventListener("click", () => SHOWN && saveXyz(SHOWN[0], SHOWN[1], SHOWN[2]));
+$("dlTop").addEventListener("click", async () => {
+  const [x, lab, m, k, N] = RUN.top[IDX][0], t = RUN.series.t[IDX];
+  try {
+    const s = await structure(x);
+    saveXyz(s.xyz, `${lab}_m${m}_k${k}_t${fmt(t)}s`, `${lab}, m = ${m}, k = ${k}: the most populated at t = ${fmt(t)} s, N = ${fmt(N)} M (${runTag()})`);
+  } catch (e) { $("what").textContent = e.message; }
+});
+$("dlFrame").addEventListener("click", () => {
+  if (!MOV) return;
+  const [state, lab, m, k, f, how, N] = MOV.fr[MOV.i], name = state < 0 ? `pool_k${k}` : lab;
+  const when = MOV.mode === "time" ? `t = ${fmt(f)} s` : `frame ${MOV.i + 1} of ${MOV.fr.length}`;
+  saveXyz(MOV.xyz.get(MOV.keys[MOV.i]), `${MOV.mode}_${MOV.mode === "time" ? "t" + fmt(f) + "s" : MOV.i + 1}_${name}_m${m}_k${k}`,
+    `${name}, m = ${m}, k = ${k}: ${MOV.mode} movie, ${when} (${runTag()})`);
+});
 $("movBar").addEventListener("input", () => { if (MOV) { MOV.play = false; movFrame(+$("movBar").value); } });
 document.querySelectorAll("[data-fps]").forEach(b => b.addEventListener("click", () => {
   MOV_FPS = +b.dataset.fps; document.querySelectorAll("[data-fps]").forEach(x => x.classList.toggle("on", x === b));
