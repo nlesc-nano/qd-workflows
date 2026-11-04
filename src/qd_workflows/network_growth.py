@@ -76,8 +76,9 @@ DEFAULTS = {
     "eta_mPas": 0.5,                         # solvent viscosity (1-octadecene near 500 K), Stokes-Einstein
     "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
-    "prune_eV": 2.0,                         # leave out dots this far above the best of their size (0: exact);
-                                             # 2 eV: 5-11x faster, CdSe beyond m = 13 within 1 % of the exact run
+    "prune_eV": 0.0,                         # leave out dots this far above the best of their size (0: exact);
+                                             # 2 eV: 5-11x faster on the CdCl2 network, but it cuts the acetate
+                                             # network's growth paths (<m> 68 vs 150 at 30 s): check against exact
     "max_wall_s": 1800.0,                    # a run stops here (and reports why) with the outputs it has
     "dense_out": True,                       # also an output at a step that moves ln C_M, ln(dots) or <m> (OUT_CH)
     "frontier_stop": 0.5,                    # stop once this fraction of the dots sits on states without a growth

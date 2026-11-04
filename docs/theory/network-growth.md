@@ -78,13 +78,16 @@ $$
 together: Newton on $\ln C_M, \ln C_X$, with the exact Jacobian (the rates' derivatives by differences of the assembly,
 the population's through the same LU). Cd, Se and Cl are conserved to the Newton tolerance.
 
-**Fast mode** (`prune_eV`, default 2 eV). Within one size $\mu_\mathrm{CdSe}$ cancels, so which states of a size lie
+**Fast mode** (`prune_eV`, default 0: off). Within one size $\mu_\mathrm{CdSe}$ cancels, so which states of a size lie
 high depends only on $\mu_\mathrm{CdCl_2}$, and that only moves between the CdCl$_2$ of the start and what is left at full
 conversion. A run keeps every grid node, the seed, and each dot that comes within `prune_eV` of the lowest state of its
 size somewhere in that range (checked at both ends and the middle); the populations are returned on the whole network.
 At 2 eV the network keeps 3,200–4,300 of 12,474 states and runs 5–11× faster; against the exact runs (default, 4×
 precursor, 560 K) the pool and the dots agree to $10^{-5}$ and the CdSe beyond $m = 13$ to within 1 %. `prune_eV = 0` is
-the exact model.
+the exact model. On the acetate P2 network (15,248 states, m to 223) the prune cuts the growth paths: at 2 eV it keeps
+1,732 states, and 291 of its 1,597 dots that grow on the whole network have no growth step left (469 even at 10 eV);
+at the defaults to 30 s the pruned run reaches $\langle m \rangle$ 68 against 150 exact (and stops at 13.6 s on
+`frontier_stop`). So the default is off; a pruned run needs checking against an exact one on its network.
 
 ## Use
 
