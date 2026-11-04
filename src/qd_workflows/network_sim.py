@@ -14,6 +14,7 @@ Run it in an environment with FastAPI, uvicorn and scipy.
 from __future__ import annotations
 
 import argparse
+import heapq
 import math
 import threading
 import uuid
@@ -28,6 +29,9 @@ from .grid_thermo import converted, k_conv_at
 PAGE = Path(__file__).parent / "templates" / "network" / "index.html"
 VOLUME_A3 = 59.667                       # zinc-blende CdSe volume per CdSe unit (a = 6.203 A): d = (6 m V / pi)^(1/3)
 MAX_RUNS = 6
+PATH_MAX = 500                           # states on a run's path (the growth movie)
+KIND_NAME = {v: k for k, v in ng.KIND.items()}
+DISSOLVE_MIN_N = 1e-4                    # dissolving dots: N >= this share of the most populated dot's
 
 
 def diameter_nm(m):
@@ -50,6 +54,7 @@ class NetSim:
         self.jobs: dict = {}
         g = np.load(net.folder / "geometry.npz")
         self.geo = (g["symbols"], g["positions"], g["offsets"])
+        self.elements = net.meta.get("elements", ("Cd", "Se", "Cl"))   # exports before the carboxylate networks: no list
         self.comp = {}                                           # (m, k) -> states
         for i, (m, k) in enumerate(zip(net.m.tolist(), net.k.tolist())):
             self.comp.setdefault((m, k), []).append(i)
@@ -81,16 +86,21 @@ class NetSim:
         """Run in a thread (a run takes minutes on the full network); poll with job()."""
         c = self._cond(body.get("conditions"))
         jid = uuid.uuid4().hex[:10]
-        job = {"state": "running", "log": "", "result": None, "error": None}
+        job = {"state": "running", "log": "", "result": None, "error": None, "stop": False}
         self.jobs[jid] = job
 
         def work():
             try:
-                job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s))
+                job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s), stop=lambda: job["stop"])
                 job["state"] = "done"
             except Exception as exc:                            # reported to the page
                 job["state"], job["error"] = "error", str(exc)
         threading.Thread(target=work, daemon=True).start()
+        return {"job": jid}
+
+    def stop(self, jid):
+        """Ask a running job to end at its next step; it returns the outputs it has."""
+        self.jobs[jid]["stop"] = True
         return {"job": jid}
 
     def job(self, jid):
@@ -101,8 +111,8 @@ class NetSim:
             self.jobs.pop(jid, None)
         return out
 
-    def run(self, c, log=None):
-        r = ng.simulate(self.net, c, log=log)
+    def run(self, c, log=None, stop=None):
+        r = ng.simulate(self.net, c, log=log, stop=stop)
         rid = uuid.uuid4().hex[:10]
         self.runs[rid] = r
         while len(self.runs) > MAX_RUNS:
@@ -112,18 +122,22 @@ class NetSim:
         ms = np.arange(ng.M_DOT, int(net.m.max()) + 1)
         psd = []
         top = []
+        dot_top = []                                             # the most populated dot per output (the movie in time)
         for N in r["N"]:
             h = np.bincount(net.m[dot] - ng.M_DOT, weights=N[dot], minlength=len(ms))
             psd.append(h.tolist())
             order = np.argsort(-N)[:8]
             top.append([[int(i), net.label[i], int(net.m[i]), int(net.k[i]), float(N[i])] for i in order if N[i] > 0])
+            j = int(np.argmax(np.where(dot, N, -1.0)))
+            dot_top.append([j, net.label[j], int(net.m[j]), int(net.k[j]), float(N[j])] if N[j] > 0 else None)
         series = {k: r[k] for k in ("t", "alpha", "c_MA", "c_X_left", "c_MX_free", "mu_MA", "mu_MX", "n_dots",
                                     "n_clusters", "m_mean", "m_std", "nucleation", "frontier", "layer_flux",
                                     "cdse_flux", "attach_flux", "barriers")}
         series["d_mean_nm"] = diameter_nm(r["m_mean"]).tolist()
         return {"run_id": rid, "cond": c, "series": series, "psd": {"m": ms.tolist(), "d_nm": diameter_nm(ms).tolist(),
-                                                                    "N": psd}, "top": top, "omega_run": self._omega_run(r),
-                "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"]}}
+                                                                    "N": psd}, "top": top, "dot_top": dot_top,
+                "path_i": len(r["t"]) - 1, "omega_run": self._omega_run(r),
+                "stats": {"steps": r["steps"], "lu": r["lu"], "wall_s": r["wall_s"], "stopped": r["stopped"]}}
 
     # ---------------- step 1: the nucleation simulator's grid Omega
     @staticmethod
@@ -273,6 +287,153 @@ class NetSim:
         return {"t": t, "alpha": float(pl["c_MA"] / c["c_P0"]) if N is None else None, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
                 "seed": net.label[net.seed], "cells": cells, "routes": routes, "barriers": r["table"]}
 
+    def _transfer(self, run_id):
+        """Net transfer of every step and nucleus source up to each output (M; the fluxes at the outputs integrated
+        by the trapezoid rule)."""
+        r = self.runs[run_id]
+        if "_transfer" not in r:
+            J = [self.net.fluxes(self._rates_at(run_id, i), r["N"][i]) for i in range(len(r["t"]))]
+            t = np.asarray(r["t"])
+            acc, out = [np.zeros_like(J[0][0]), np.zeros_like(J[0][1])], []
+            for i in range(len(t)):
+                if i:
+                    for q in range(2):
+                        acc[q] = acc[q] + 0.5 * (J[i][q] + J[i - 1][q]) * (t[i] - t[i - 1])
+                out.append((acc[0].copy(), acc[1].copy()))
+            r["_transfer"] = out
+        return r["_transfer"]
+
+    def _rates_at(self, run_id, i):
+        c, pl, _N, _t = self._pool_at({"run_id": run_id, "i": i})
+        nu, nu_src = self.net.prefactors(c["T"], c["eta_mPas"], c["s_nu"], c["a_site_A2"])
+        return self.net.rates(c["T"], c["eps"], pl, nu, nu_src, c["islands"])
+
+    def _edges(self):
+        """Per state, its steps as (step, other state, sign): up (to the larger state, sign +1) and down (sign -1);
+        isomerisations both ways, in both lists."""
+        if not hasattr(self, "_up"):
+            net = self.net
+            up, down = [[] for _ in range(net.n)], [[] for _ in range(net.n)]
+            for e, (a, b) in enumerate(zip(net.a.tolist(), net.b.tolist())):
+                up[a].append((e, b, 1.0)); down[b].append((e, a, -1.0))
+                if net.dm[e] == 0 and net.dk[e] == 0:
+                    up[b].append((e, a, -1.0)); down[a].append((e, b, 1.0))
+            self._up, self._down = up, down
+        return self._up, self._down
+
+    @staticmethod
+    def _widest(start, edges, F):
+        """Max-bottleneck paths from start {state: width} over edges (a step's width: sign * F[step], when > 0):
+        the width and the parent (previous state, step) of every state reached."""
+        width = {}
+        par = {}
+        heap = [(-w, x) for x, w in start.items()]
+        heapq.heapify(heap)
+        best = dict(start)
+        while heap:
+            w, x = heapq.heappop(heap)
+            if x in width:
+                continue
+            width[x] = -w
+            for e, y, sign in edges[x]:
+                f = min(-w, sign * F[e])
+                if f > 0 and y not in width and f > best.get(y, 0.0):
+                    best[y], par[y] = f, (x, e, sign * F[e])
+                    heapq.heappush(heap, (-f, y))
+        return width, par
+
+    def path(self, run_id, i, state=None, mode="growth"):
+        """A path of the run at output i, frames: state, label, m, k, the step into it (its net transfer in M, or its
+        net flux in M/s), the step's kind, N (M) at output i.
+        growth: from the pool to state (default the most populated dot, or state before there are dots), the chain
+        of steps along which the most material has moved so far, i.e. whose narrowest step has the largest net
+        transfer (the flux integrated over the run; steps to the larger state, isomerisations either way, the
+        nucleus sources first).
+        dissolution: from state (default the dot losing the most to smaller states) down the steps carrying net flux
+        to the smaller state at output i, the chain with the largest narrowest flux, to the pool when the flux reaches
+        it (a nucleus going back to the pool's complexes), else to the smallest state it reaches."""
+        net = self.net
+        i = int(i)
+        r = self.runs[run_id]
+        N = np.asarray(r["N"][i], float)
+        t = float(r["t"][i])
+        up, down = self._edges()
+        frame = lambda x, f, how: [x, net.label[x], int(net.m[x]), int(net.k[x]), float(f), how, float(N[x])]  # noqa: E731
+        if mode == "dissolution":
+            J, js = net.fluxes(self._rates_at(run_id, i), N)
+            if state is None:
+                lst = self.dissolving(run_id, i)["states"]
+                if not lst:
+                    return {"t": t, "i": i, "mode": mode, "frames": []}
+                state = lst[0][0]
+            state = int(state)
+            width, par = self._widest({state: np.inf}, down, J)
+            out = {}                                                     # nuclei with net flux back to the pool
+            for q, (_n1, _n2, j) in enumerate(net.src.tolist()):
+                if j in width and js[q] < 0:
+                    out[j] = out.get(j, 0.0) - js[q]
+            if out:
+                end = max(out, key=lambda j: min(width[j], out[j]))
+            else:
+                end = min(width, key=lambda x: (net.m[x], -width[x] if x != state else 0.0))
+            frames = []
+            cur = end
+            while cur != state and len(frames) < PATH_MAX:
+                prev, e, f = par[cur]
+                frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])]))
+                cur = prev
+            frames.append(frame(state, 0.0, "start"))
+            frames = frames[::-1]
+            if out:
+                frames.append([-1, "the pool", 1, int(net.src[net.src[:, 2] == end][0][1]), float(out[end]), "to the pool",
+                               float(r["c_MA"][i])])
+            return {"t": t, "i": i, "mode": mode, "frames": frames}
+        if N.max() <= 0:
+            return {"t": t, "i": i, "mode": mode, "frames": []}
+        X, xs = self._transfer(run_id)[i]
+        start = {}
+        for q, (_n1, _n2, j) in enumerate(net.src.tolist()):                # the pool's nuclei
+            if xs[q] > start.get(j, 0.0):
+                start[j] = float(xs[q])
+        width, par = self._widest(start, up, X)
+        if state is None:
+            reach = np.zeros(net.n, bool); reach[list(width)] = True
+            dot = net.m >= ng.M_DOT
+            cand = dot & reach if (dot & reach & (N > 0)).any() else reach
+            if not cand.any():
+                return {"t": t, "i": i, "mode": mode, "frames": []}
+            state = int(np.argmax(np.where(cand, N, -1.0)))
+        state = int(state)
+        if state not in width:
+            raise ValueError(f"nothing has moved from the pool to {net.label[state]} by t = {t:.3g} s")
+        frames, cur = [], state
+        while cur in par and len(frames) < PATH_MAX:
+            prev, e, f = par[cur]
+            frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])]))
+            cur = prev
+        frames.append(frame(cur, start[cur], "nucleus"))
+        return {"t": t, "i": i, "mode": mode, "frames": frames[::-1]}
+
+    def dissolving(self, run_id, i, n=8):
+        """The dots shrinking most at output i: the CdSe they lose per second to smaller states (steps that add CdSe,
+        run backwards), among the dots holding >= DISSOLVE_MIN_N of the most populated dot's N whose loss exceeds
+        their growth; with the CdSe they gain from steps up for comparison (M/s of CdSe)."""
+        net = self.net
+        i = int(i)
+        N = np.asarray(self.runs[run_id]["N"][i], float)
+        J, _js = net.fluxes(self._rates_at(run_id, i), N)
+        g = net.dm > 0
+        w = J[g] * net.dm[g]
+        dn = np.bincount(net.b[g], weights=np.maximum(-w, 0.0), minlength=net.n)
+        upf = np.bincount(net.a[g], weights=np.maximum(w, 0.0), minlength=net.n)
+        dot = net.m >= ng.M_DOT
+        big = N >= DISSOLVE_MIN_N * (N[dot].max() if dot.any() else 0.0)
+        score = np.where(dot & big & (dn > upf), dn, 0.0)
+        order = [int(x) for x in np.argsort(-score)[:n] if score[x] > 0]
+        return {"t": float(self.runs[run_id]["t"][i]), "i": i,
+                "states": [[x, net.label[x], int(net.m[x]), int(net.k[x]), float(N[x]), float(dn[x]), float(upf[x])]
+                           for x in order]}
+
     def composition(self, m, k, run_id=None, i=None):
         """The states of one composition (lowest G first) with their populations at a run's output."""
         net = self.net
@@ -301,7 +462,7 @@ class NetSim:
         sym, pos, off = self.geo
         z, x = sym[off[row]:off[row + 1]], pos[off[row]:off[row + 1]]
         lines = [str(len(z)), f"{net.label[state]} registry id {int(net.reg_id[state])}"]
-        lines += [f"{('Cd', 'Se', 'Cl')[int(a)]} {p[0]:.4f} {p[1]:.4f} {p[2]:.4f}" for a, p in zip(z, x)]
+        lines += [f"{self.elements[int(a)]} {p[0]:.4f} {p[1]:.4f} {p[2]:.4f}" for a, p in zip(z, x)]
         return {"state": state, "label": net.label[state], "m": int(net.m[state]), "k": int(net.k[state]),
                 "source": "network", "registry_id": int(net.reg_id[state]), "xyz": "\n".join(lines) + "\n"}
 
@@ -334,6 +495,10 @@ def make_app(sim: NetSim):
     def run(body: dict = Body(...)):
         return guard(sim.start, body)
 
+    @app.post("/api/stop")
+    def stop(id: str):
+        return guard(sim.stop, id)
+
     @app.get("/api/job")
     def job(id: str):
         return guard(sim.job, id)
@@ -353,6 +518,14 @@ def make_app(sim: NetSim):
     @app.get("/api/grid_structure")
     def grid_structure(m: int, k: int):
         return guard(sim.grid_structure, m, k)
+
+    @app.get("/api/path")
+    def path(run_id: str, i: int, state: int | None = None, mode: str = "growth"):
+        return guard(sim.path, run_id, i, state, mode)
+
+    @app.get("/api/dissolving")
+    def dissolving(run_id: str, i: int):
+        return guard(sim.dissolving, run_id, i)
 
     @app.get("/api/composition")
     def composition(m: int, k: int, run_id: str | None = None, i: int | None = None):
