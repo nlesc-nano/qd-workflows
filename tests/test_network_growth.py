@@ -134,3 +134,21 @@ def test_dense_outputs_keep_the_log_grid(tmp_path):
     for t_log, c in zip(log_only["t"], log_only["c_MA"]):        # the log-spaced outputs are still there, unchanged
         j = int(np.argmin(np.abs(t - t_log)))
         assert abs(t[j] - t_log) < 1e-9 * t_log and abs(dense["c_MA"][j] - c) < 1e-9 * c
+
+
+def test_conversion_takes_the_salt_left_in_solution(tmp_path):
+    """dx/dt = k_conv (c_P0 - x) C_X with C_X the salt not held by the states: slower than the open-loop closed form
+    once the states hold salt, and the salt in solution never runs negative."""
+    from qd_workflows.grid_thermo import converted
+    cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.01, "c_MX0": 0.0105, "k_conv_500K": 10.0, "t_start": 1e-3,
+            "t_end": 50.0, "n_out": 12}
+    net = _network(tmp_path)
+    r = ng.simulate(net, cond)
+    t, x, c_x = np.array(r["t"]), np.array(r["alpha"]) * cond["c_P0"], np.array(r["c_X_left"])
+    held_k = np.array([net.k @ n for n in r["N"]])
+    assert r["stopped"] is None and np.all(c_x > 0)
+    assert np.allclose(c_x + held_k, cond["c_MX0"] - x, rtol=1e-6, atol=1e-12)
+    assert x[-1] < 0.9 * converted(t[-1], 10.0, cond["c_P0"], cond["c_MX0"])
+    q = 10.0 * (cond["c_P0"] - x) * c_x                        # the rate on the outputs, by trapezoids
+    dx, qt = np.diff(x), 0.5 * (q[1:] + q[:-1]) * np.diff(t)
+    assert np.median(np.abs(dx / qt - 1)) < 0.02

@@ -19,12 +19,15 @@ pool with the shell free at each added CdSe; it is zero for every other step. nu
 c0 = 1 M in series with diffusion (Stokes-Einstein), times the one kinetic scale s_nu.
 Detailed balance holds by construction: at a fixed pool the network relaxes to N_i = c0 exp(-Omega_i / kT).
 
-The flask: x(t) CdSe converted from the precursor (grid_thermo.converted, k_conv at T), and the pool takes what the
-dots do not hold,
+The flask: x(t) CdSe converted from the precursor, dx/dt = Q = k_conv (c_P0 - x) C_X (k_conv at T) with C_X the
+salt left in solution, and the pool takes what the dots do not hold,
 
     C_M = x - sum_i m_i N_i,    C_X = c_MX0 - x - sum_i k_i N_i,
 
 solved together with the population at every implicit (backward Euler) step: sparse LU for N, Newton on (C_M, C_X).
+Over a step the salt held in the states is taken at the step's end, so x(t + dt) is grid_thermo.converted over dt
+from (c_P0 - x, C_X(t + dt) + x(t + dt) - x): the closed form while the states hold no salt, and no conversion
+once the shells have taken it all.
 Nothing is taken from growth.py (no k_f, island beta, facet gamma, coverage isotherms or NEB rates).
 
     python -m qd_workflows.network_growth run --network DIR --thermo thermo_merged.json --params cdse_zb.yaml [--T ..]
@@ -41,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 import scipy.sparse as sp
+from scipy.optimize import brentq
 from scipy.sparse.linalg import splu
 
 from . import grid_solvation as gs
@@ -499,7 +503,15 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     nu, nu_src = net.prefactors(T, float(c["eta_mPas"]), float(c["s_nu"]), float(c["a_site_A2"]))
     _g, th, _pa = net.G(T, eps)
     isl = bool(c["islands"])
-    xs = lambda t: converted(t, k_conv, c_p0, c_mx0)                     # noqa: E731
+
+    def conv(x_, c_x1, dt):
+        """x at the step's end: the conversion over dt with the salt the states hold fixed at its end value,
+        x1 - x = converted(dt, P = c_P0 - x, MX = C_X1 + (x1 - x)); monotone in x1 - x on [0, c_P0 - x]."""
+        p = c_p0 - x_
+        if p <= 0.0:
+            return x_
+        g = lambda d: d - converted(dt, k_conv, p, c_x1 + d)            # noqa: E731
+        return x_ + (p if g(p) <= 0.0 else brentq(g, 0.0, p, xtol=1e-18, rtol=1e-15))
     mvec, kvec = net.m.astype(float), net.k.astype(float)
     # the CdSe and X each step and nucleus source moves from the pool (b - a; the fast isomerisations move none)
     d_mk = np.array([mvec[net.b] - mvec[net.a], kvec[net.b] - kvec[net.a]])
@@ -507,7 +519,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     mk_src = np.array([mvec[js], kvec[js]])
     N = np.zeros(net.n)
     t = t0
-    x = xs(t)
+    x = converted(t, k_conv, c_p0, c_mx0)                 # nothing held before t_start
     u = np.array([math.log(x), math.log(c_mx0 - x)])
     out = {"cond": c, "t": [], "alpha": [], "c_MA": [], "c_X_left": [], "c_MX_free": [], "mu_MA": [], "mu_MX": [],
            "n_dots": [], "n_clusters": [], "m_mean": [], "m_std": [], "nucleation": [], "frontier": [],
@@ -531,19 +543,22 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         J, j_s = net.fluxes(r, N1)
         return d_mk @ J + mk_src @ j_s
 
-    def solve(u_, dt, x1):
-        """The step's N for a pool guess and the pool residual F (relative to the totals)."""
+    def solve(u_, dt):
+        """The step's N and conversion x1 for a pool guess, and the pool residual F (relative to the totals)."""
         pl, r, M, s = assemble(u_)
         A = net.system(M, dt)
         N1 = solver.solve(A, N + dt * s)
+        x1 = conv(x, math.exp(u_[1]), dt)
         sc = np.array([x1, c_mx0 - x1])
         F = (np.exp(u_) + np.array([mvec @ N, kvec @ N]) + dt * moved(r, N1) - sc) / sc
-        return {"F": F, "N": N1, "pl": pl, "r": r, "A": A, "M": M, "s": s, "sc": sc, "dt": dt}
+        return {"F": F, "N": N1, "pl": pl, "r": r, "A": A, "M": M, "s": s, "sc": sc, "dt": dt, "x1": x1}
 
     def jacobian(st, u_, dt):
         """Exact Jacobian of F in ln C_M, ln C_X: the rates' derivatives by differences of the assembly, the
-        population's through the same matrix."""
+        population's through the same matrix, and the conversion's through C_X."""
         J = np.diag(np.exp(u_) / st["sc"])
+        dx1 = (conv(x, math.exp(u_[1] + 1e-6), dt) - st["x1"]) / 1e-6
+        J[:, 1] -= (st["F"] + 1.0) / st["sc"] * np.array([1.0, -1.0]) * dx1
         r, N1 = st["r"], st["N"]
         for q in range(2):
             h = np.zeros(2); h[q] = 1e-6
@@ -556,7 +571,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
 
     def record(t_, N_, pl, r):
         nd = float(N_[dot].sum())
-        out["t"].append(t_); out["alpha"].append(xs(t_) / c_p0)
+        out["t"].append(t_); out["alpha"].append(x / c_p0)
         out["c_MA"].append(pl["c_MA"]); out["c_X_left"].append(pl["c_X_left"]); out["c_MX_free"].append(pl["c_MX_free"])
         out["mu_MA"].append(pl["mu_MA"]); out["mu_MX"].append(pl["mu_MX"])
         out["n_dots"].append(nd); out["n_clusters"].append(float(N_[~dot].sum()))
@@ -612,13 +627,13 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             break
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
-        x1 = xs(t1)
         if dudt is None:                                 # predictor: the pool's last rate of change, else the supply
+            x1 = conv(x, math.exp(u[1]), dt)
             v = np.array([math.log(max(math.exp(u[0]) + (x1 - x), x1 * 1e-12)), u[1] - (x1 - x) / max(c_mx0 - x, 1e-30)])
         else:
             v = u + dudt * dt
         ok = False
-        st = solve(v, dt, x1)
+        st = solve(v, dt)
         for _it in range(25):
             if np.abs(st["F"]).max() < TOL:
                 ok = True
@@ -631,7 +646,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             d *= min(1.0, NEWTON_MAX / max(np.abs(d).max(), 1e-30))   # the clusters hold ~exp(m ln C_M)
             lam, better = 1.0, False
             for _ls in range(8):
-                st2 = solve(v + lam * d, dt, x1)
+                st2 = solve(v + lam * d, dt)
                 if np.abs(st2["F"]).max() < np.abs(st["F"]).max() * (1 - 0.2 * lam) or np.abs(st2["F"]).max() < TOL:
                     better = True
                     break
@@ -640,7 +655,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             if not better:
                 break
             v, st = v + lam * d, st2
-        F, N1, pl, r = st["F"], np.maximum(st["N"], 0.0), st["pl"], st["r"]
+        F, N1, pl, r, x1 = st["F"], np.maximum(st["N"], 0.0), st["pl"], st["r"], st["x1"]
         if not ok:
             diag["failed"] += 1
             dt *= 0.25
