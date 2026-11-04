@@ -38,6 +38,19 @@ flowchart TD
   GROW --> PAGE["network_sim dashboard"]
 ```
 
+## The structures in 3D
+
+Every structure in the figures of this section can be opened and rotated:
+
+- **[3D viewer](viewer.html)**: space-filling spheres (Cd orange, Se blue, ligands), preset views down each facet
+  normal and from the side, the atoms a step adds in full colour over a faded reference, removed atoms in red, and the
+  reference side by side.
+- **Files**: `docs/protocols/cdse/structures/<set>/*.xyz`, one folder per figure, with a `README.md`. Each folder has a
+  VMD script `<set>.tcl` that loads the whole set as VDW spheres with the same colours, outlines the added atoms and
+  sets the camera along the facet of interest. In VMD (VMD 2 runs natively on Apple Silicon), open
+  Extensions → Tk Console and run `cd <folder>` then `source <set>.tcl`; show one structure at a time with the D
+  column of the molecule list. Any .xyz also opens in VESTA, Avogadro or OVITO.
+
 ## The pages
 
 | page | what it covers |

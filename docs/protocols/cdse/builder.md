@@ -40,6 +40,8 @@ The k of a plain build is $k_0=N_\mathrm{Cd}-N_\mathrm{Se}=N_\mathrm{Cl}/2$.
 
 ![Builder stages](img/builder_stages.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#builder_stages) · files: `structures/builder_stages/`
+
 *The seed Cd16Se13Cl6 through the builder stages, seen along a 3-fold axis. Panel 4 colours each atom by its builder
 site role: facet, edge, vertex or interior.*
 
@@ -65,6 +67,8 @@ The network uses shells only in the m 20–50 fill, at $k_0\pm1$ and $k_0\pm2$
 
 ![Cd shells](img/cd_shells.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#cd_shells) · files: `structures/cd_shells/`
+
 *A fill dot (registry 33, Cd25Se22Cl6) and its four shell variants, superposed on the k0 build. Outlined: CdCl2 units
 added on free Se sites. Dashed red: units displaced.*
 
@@ -83,6 +87,8 @@ The acetate network does not rerun the builder. Ivan (2026-11-01): "you dont hav
 postprocess simply the structures of the CdCl2 and apply the postprocess of the builder to add acetate."
 
 ![Acetate dressing](img/acetate_dressing.png)
+
+[Rotate these structures in the 3D viewer](viewer.html#acetate_dressing) · files: `structures/acetate_dressing/`
 
 *Two CdCl2 builder dots, the same dots dressed with acetate by the builder's X-type exchange, and after relaxation
 with MACE-MH-1 + D3(BJ) (superposed on the dressed start). The acetates start monodentate on the old Cl sites and

@@ -30,6 +30,8 @@ have to trust me. m = 13, k = 3 is the first wulff constructed from the builder"
 
 ![Start dot and seeds](img/grid_seeds.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#grid_seeds) · files: `structures/grid_seeds/`
+
 *The builder's start dot (13, 15) and X-type seed (13, 3), and the lowest relaxed state of the same two grid nodes
 (CdCl2 grid `cdse_full2`). Cd orange, Se blue, Cl green.*
 
@@ -70,10 +72,14 @@ $k_\mathrm{min}$ = 0 in every row.
 
 ![The m = 13 row](img/grid_row13.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#grid_row13) · files: `structures/grid_row13/`
+
 *The m = 13 row of the CdCl2 grid: the lowest relaxed state of each node with k = 0 … 15. "grid" marks a state from
 the lattice search; "anneal" marks one that the row anneal (§3) found lower.*
 
 ![Down the grid at k ≈ 3](img/grid_descent.png)
+
+[Rotate these structures in the 3D viewer](viewer.html#grid_descent) · files: `structures/grid_descent/`
 
 *Removing CdSe units: the lowest state of the node nearest to k = 3 in rows m = 13 … 1 (same scale).*
 

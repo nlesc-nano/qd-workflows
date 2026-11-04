@@ -39,6 +39,8 @@ single-plane moves**:
 
 ![Parent and child](img/parent_child.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#layer_states) · files: `structures/layer_states/`
+
 *The lineage edge seed → Cd38Se28Cl20. Right: the child with the atoms it shares with its parent faded; the outlined
 atoms are the seven layers added.*
 
@@ -57,6 +59,8 @@ lattice cut defined by its plane levels:
 5. **Connect**: two classes whose level vectors differ by +1 layer in one plane are joined by a step.
 
 ![A path through the intermediates](img/layer_path.png)
+
+[Rotate these structures in the 3D viewer](viewer.html#layer_path) · files: `structures/layer_path/`
 
 *One path from the seed to the child through 7 of the 28 intermediates, one plane per step. In each panel the atoms
 added by that step are outlined and the rest is faded.*

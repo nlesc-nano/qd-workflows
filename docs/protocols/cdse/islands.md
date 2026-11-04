@@ -24,16 +24,22 @@ ladders (§3). The rule that chose these 32 was not found.
 
 ![Islands on {111}B](img/islands_111B.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#islands_111B) · files: `structures/islands_111B/`
+
 *Islands on a {111}B facet of the dot Cd54Se43Cl22 (registry 1817, m = 43), from 3 to 12 new Cd (the full layer has
 14). Top row: looking down the facet normal. Bottom row: from the side, facet up. The outlined atoms are the island;
 the parent is faded. Each island arrives with its Se and Cl, so it is a charge-balanced piece of the next layer.*
 
 ![Islands on {111}A](img/islands_111A.png)
 
+[Rotate these structures in the 3D viewer](viewer.html#islands_111A) · files: `structures/islands_111A/`
+
 *Islands on {111}A of Cd99Se84Cl30 (registry 6281, m = 84), from 1 to 6 new Cd (full layer 6). On {111}A the first Cd
 atoms go in with Cl, and one Se of the old surface is swapped (Δ Se = −1 for 1–3 Cd).*
 
 ![Islands on {100}](img/islands_100.png)
+
+[Rotate these structures in the 3D viewer](viewer.html#islands_100) · files: `structures/islands_100/`
 
 *Islands on {100} of Cd42Se26Cl32 (registry 3592): 5 and 6 new Cd on one {100} facet (full layer 9).*
 
