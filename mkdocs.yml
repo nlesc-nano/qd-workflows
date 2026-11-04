@@ -41,6 +41,7 @@ nav:
       - Reactions and equilibria: theory/equilibria.md
       - Desorption ladder: theory/desorption.md
       - Network growth model: theory/network-growth.md
+      - Learned vibrational free energy: theory/fvib-model.md
       - IR and Raman: theory/spectra.md
   - CdSe nucleation and growth:
       - Overview: protocols/cdse/index.md
