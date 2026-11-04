@@ -42,6 +42,8 @@ nav:
       - Desorption ladder: theory/desorption.md
       - Network growth model: theory/network-growth.md
       - IR and Raman: theory/spectra.md
+  - Protocols:
+      - CdSe nucleation and growth: protocols/cdse-nucleation-growth.md
   - Reaction free energies (qdw reaction): reactions.md
   - Reference:
       - Command line: reference/cli.md
