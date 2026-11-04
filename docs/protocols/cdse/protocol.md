@@ -69,9 +69,8 @@ module, so every stage runs from one tagged version.
 - **Gaps in the map**: wave 4 (11,311 dots, m 79–405) built but not relaxed for acetate; no islands on parents above
   m 150; the registry stops at m 405.
 - **Model gaps**:
-  - the conversion $x(t)$ ignores the salt taken by the dots' shells. With the default amounts the salt in solution
-    runs out at about 200 s while $x(t)$ keeps making CdSe, which causes the second burst and the solver stall at
-    t ≈ 356 s;
+  - (fixed 2026-11-04, commit 5af3e3f) the conversion now runs on the salt left in solution; the open-loop form had
+    produced a spurious second burst and a stall at t ≈ 356 s in the acetate default case;
   - layer steps that also change k carry only CdSe in their rate;
   - the acetate complexes have no COSMO of their own (they take the CdSe monomer radius).
 - **Hand-over**: the network's relaxed (13, 3) is 0.32 eV above the grid's annealed node, and network dots with m ≤ 13

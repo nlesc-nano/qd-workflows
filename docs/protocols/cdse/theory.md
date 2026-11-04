@@ -148,16 +148,19 @@ MPI ranks, with the SCF in 100-cycle pieces restarted from the wavefunction.
 
 ## 5. Precursor conversion
 
-The Se precursor P reacts with the cadmium salt to give the CdSe supply, one salt per CdSe, second order:
+The Se precursor P reacts with the cadmium salt to give the CdSe supply, one salt per CdSe, second order in the
+precursor left and the salt left **in solution**:
 
 $$
 \mathrm{P}+\mathrm{MX}_q\longrightarrow\mathrm{MA}+\ldots,\qquad
-Q=-\frac{dc_\mathrm{MX}}{dt}=k_\mathrm{conv}(T)\,c_\mathrm{MX}\,c_\mathrm P,\qquad
+\frac{dx}{dt}=k_\mathrm{conv}(T)\,(c_\mathrm{P,0}-x)\,C_X,\qquad C_X=c_\mathrm{MX,0}-x-\sum_ik_iN_i,\qquad
 k_\mathrm{conv}(T)=k_\mathrm{conv}(500\,\mathrm K)\,e^{-\frac{E_a}{k_B}\left(\frac1T-\frac1{500\,\mathrm K}\right)}
 $$
 
-With $a=c_\mathrm{MX,0}$ and $b=c_\mathrm{P,0}$, the converted amount $x(t)$ is closed form, and $\alpha=x/c_\mathrm{P,0}$
-is the fraction of precursor converted:
+$x$ is the CdSe made so far and $\alpha=x/c_\mathrm{P,0}$ the fraction of precursor converted. $C_X$ is the salt in
+solution: what the conversion has not used and the dots' shells ($k_i$ salt units in state $i$) do not hold. The growth
+model solves $x$ inside each implicit time step together with the populations. While no state holds salt, the
+equation has the closed form below, with $a=c_\mathrm{MX,0}$ and $b=c_\mathrm{P,0}$:
 
 $$
 x(t)=ab\,\frac{1-e^{-|a-b|k_\mathrm{conv}t}}{\max(a,b)-\min(a,b)\,e^{-|a-b|k_\mathrm{conv}t}}\quad(a\ne b),\qquad
@@ -166,9 +169,11 @@ $$
 
 - Defaults: T = 500 K, $c_\mathrm{P,0}$ = 0.025 M, $c_\mathrm{MX,0}$ = 0.03 M, $k_\mathrm{conv}$ = 1 M⁻¹ s⁻¹, $E_a$ = 0.
   $k_\mathrm{conv}$ is set by hand, not computed (Ivan: "I should be able to set this as I wish").
-- $x(t)$ uses $c_\mathrm{MX,0}-x$: it does not see the salt that the dots take into their shells. With the defaults
-  the conversion leaves 0.005 M of salt, less than the dots' shells need, so late in a run the salt in solution is
-  used up while $x(t)$ still produces CdSe (see [Results](results.md)).
+- Until commit 5af3e3f (2026-11-04) the model used the closed form on $c_\mathrm{MX,0}-x$ throughout. That ignored
+  the salt held by the shells: in the acetate default case the salt in solution ran out at about 200 s while CdSe was
+  still being made, which gave a spurious second burst and a solver stall at 356 s. With the salt-limited rate the
+  conversion slows as the shells take the salt (α = 0.89 at 600 s instead of 0.97), and neither happens
+  ([Results](results.md)).
 
 ## 6. The pool: complexes and chemical potentials
 

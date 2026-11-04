@@ -17,7 +17,7 @@ g, th, _ = net.G(T, eps)
 kt = KB_EV * T
 m, k = net.m.astype(int), net.k.astype(int)
 seed = int(np.where((m == 13) & (k == 3))[0][0])
-snaps = [(5.0, "t = 5 s, before the burst"), (14.0, "t = 14 s, the burst"), (100.0, "t = 100 s, growth phase"), (250.0, "t = 250 s, pool used up")]
+snaps = [(5.0, "t = 5 s, before the burst"), (14.0, "t = 14 s, the burst"), (100.0, "t = 100 s, growth phase"), (600.0, "t = 600 s, end of the run")]
 fig, axs = plt.subplots(2, 4, figsize=(16, 8.4), gridspec_kw={"height_ratios": [1.25, 1], "hspace": 0.38})
 prof = []
 for j, (ts, lab) in enumerate(snaps):
@@ -58,6 +58,9 @@ ax = axs[1, 2]
 tt = np.array(run["t"]); okp = tt > 0.05
 ax.plot(tt[okp], np.array(run["mu_MA"])[okp] - run["mu_MA"][0], c="#2f6fdf", label="μ_MA (CdSe)")
 ax.plot(tt[okp], np.array(run["mu_MX"])[okp] - run["mu_MX"][0], c="#3aa655", label="μ_MX (Cd(OAc)2)")
+old = json.load(open(f"{S}/open_run_acetate.json")); to = np.array(old["t"]); oko = to > 0.05
+ax.plot(to[oko], np.array(old["mu_MA"])[oko] - old["mu_MA"][0], c="#2f6fdf", ls="--", lw=.8, alpha=.6, label="μ_MA, open-loop conversion (old)")
+ax.plot(to[oko], np.array(old["mu_MX"])[oko] - old["mu_MX"][0], c="#3aa655", ls="--", lw=.8, alpha=.6, label="μ_MX, open loop (old)")
 for ts, _ in snaps:
     ax.axvline(ts, c="#bbb", lw=.8)
 ax.set_xscale("log"); ax.set_xlabel("t (s)"); ax.set_ylabel("μ − μ(t = 1 ms) (eV)")

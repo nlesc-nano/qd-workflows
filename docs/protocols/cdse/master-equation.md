@@ -10,7 +10,7 @@ The model follows, in time, how many of each structure exist in solution:
 - $N_i(t)$ (mol/L): the population of every state $i$, meaning every grid node with $m\ge2$ and every relaxed network
   state;
 - $C_M(t)$, $C_X(t)$: the CdSe and the salt in solution (the pool, [theory](theory.md) §6);
-- $x(t)$: the CdSe made so far by the precursor ([theory](theory.md) §5), a known function of time.
+- $x(t)$: the CdSe made so far by the precursor ([theory](theory.md) §5), converting on the salt left in solution.
 
 ```mermaid
 flowchart TD
@@ -181,14 +181,15 @@ $$
 
 | term | represents |
 |---|---|
-| $x(t)$ | CdSe made by the precursor so far; it also removes one salt per CdSe |
+| $x(t)$ | CdSe made by the precursor so far, $dx/dt=k_\mathrm{conv}(c_\mathrm{P,0}-x)\,C_X$; it also removes one salt per CdSe |
 | $\sum_im_iN_i$ | CdSe held in clusters and dots |
 | $\sum_ik_iN_i$ | salt held in their shells |
 
 $C_M$ and $C_X$ fix $\mu_\mathrm{MA}$, $\mu_\mathrm{MX}$ and the package shares $x_n$ ([theory](theory.md) §6). These in
 turn fix every Ω and every rate, so the pool couples all states.
 
-In the code the held amounts are carried forward with the step fluxes, held(t + Δt) = held(t) + Δt Σ (Δm, Δk) J, not
+$x$ is solved inside each implicit step with the populations, the held salt taken at the step's end (closed form while
+nothing holds salt). In the code the held amounts are carried forward with the step fluxes, held(t + Δt) = held(t) + Δt Σ (Δm, Δk) J, not
 recomputed as Σ m N. The isomerisations' ~1e13 s⁻¹ terms otherwise left round-off above the tolerance.
 
 ## 7. Solving it
@@ -244,14 +245,14 @@ Both happen at once in a run, on different parts of the map.
 ![Omega maps](img/omega_maps.png)
 
 *Top: Ω of the lowest state of each composition (m, k), relative to the seed (13, 3), at the pool of the acetate
-default run at 5, 14, 100 and 250 s. Blue lies downhill of the seed, red uphill. Bottom: the number of relaxed states
-per m (where the map exists); Ω(m) summed over k and isomers; the pool's chemical potentials along the run (solid) and
-the CdSe and salt left in solution (dotted).*
+default run at 5, 14, 100 and 600 s. Blue lies downhill of the seed, red uphill. Bottom: the number of relaxed states
+per m (where the map exists); Ω(m) summed over k and isomers; the pool's chemical potentials along the run (solid; the
+old open-loop run dashed) and the CdSe and salt left in solution (dotted).*
 
 ![Run phases](img/run_phases.png)
 
-*The same run against time (solid), with CdCl2 (dotted). Phases: I pool builds, II burst, III nucleation-limited
-growth, IV ripening, V second burst.*
+*The same run against time (solid), with CdCl2 (dotted) and the old open-loop acetate run (grey dashed). Phases: I pool
+builds, II burst, III nucleation-limited growth to the end of the run.*
 
 **I. Before the burst (0–13 s).**
 
@@ -270,31 +271,22 @@ growth, IV ripening, V second burst.*
   where the relaxed states thin out (bottom-left panel).
 - Within 3 s the dots reach ⟨m⟩ ≈ 150 ± 35.
 
-**III. Nucleation-limited growth (16–200 s).**
+**III. Nucleation-limited growth (16–600 s).**
 
-- The map stays tilted towards large m, so every dot sits near the bottom of the landscape, at the map's edge.
+- The map stays tilted towards large m (the 100 s and 600 s maps are almost the same), so every dot sits near the
+  bottom of the landscape, at the map's edge.
 - About 18 % of the dots are on states with no growth step out. The edge share stays below 0.5, so the frontier stop
   does not fire.
 - The pool falls as new nuclei form and slide to the edge, so the number of dots rises from 1e-5 to 1.5e-4 M while
-  ⟨m⟩ stays at 150.
+  ⟨m⟩ stays at 150 ± 35. At 600 s, α = 0.89, $C_M$ = 1e-4 M and $C_X$ = 5e-4 M.
 - **Growth of existing dots is limited by the map running out of states, not by kinetics.**
+- The chemical potentials barely move after the burst: $\mu_\mathrm{MA}$ stays within −5.90 … −5.93 eV, because the
+  dots, not the pool, set it.
 
-**IV. Ripening (200–330 s).**
-
-- About 200 s in, the salt in solution runs out ($C_X$ ≈ 1e-16 M; the shells of the dots hold it). $\mu_\mathrm{MX}$
-  drops by about 2 eV and $\mu_\mathrm{MA}$ rises by about 1 eV, because the packages lose their salt.
-- The map at 250 s tilts along k: shell-poor states (low k) become strongly downhill and shell-rich ones uphill.
-- The dots redistribute between facets. The {100} layers keep growing while {111}B gives material back (negative
-  {111}B flux), and ⟨m⟩ rises to 159 as the spread narrows: dissolution and growth on different facets of the same
-  dots.
-
-**V. Second burst (about 356 s).**
-
-- $x(t)$ assumes the salt is still there and keeps producing CdSe. The bare CdSe has a high $\mu_\mathrm{MA}$, so a new
-  burst of small dots forms (⟨m⟩ falls to 136, spread 59).
-- The solver stalls (Δt 2e-8 s) at t = 356 s.
-- This phase depends on the conversion ignoring salt depletion ([theory](theory.md) §5), so it is a limitation of the
-  model, not a prediction.
+**The old open-loop run.** Before the conversion was made salt-limited (commit 5af3e3f), $x(t)$ kept making CdSe after
+the dots' shells had taken the salt. At about 200 s the salt in solution fell to 1e-16 M, $\mu_\mathrm{MX}$ dropped by
+about 2 eV and $\mu_\mathrm{MA}$ rose by about 1 eV. That produced a second burst of small dots at about 356 s and a
+solver stall (dashed lines in the figures). This was an artefact of the conversion, not a prediction.
 
 ### 8.3 Following material on the dashboard
 

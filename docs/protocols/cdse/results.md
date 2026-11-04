@@ -8,28 +8,31 @@ only, and Ivan asked four times never to push it to grow ([decisions](decisions.
 
 ## 2. Acetate default case
 
-P1 + P2 network, 2026-11-04, NHR job 9644764, 500 K, $c_\mathrm{P,0}$ 0.025 M, $c_\mathrm{MX,0}$ 0.03 M.
+P1 + P2 network, salt-limited conversion (commit 5af3e3f), NHR job 9646722, 500 K, $c_\mathrm{P,0}$ 0.025 M,
+$c_\mathrm{MX,0}$ 0.03 M. 600 s in 447 s of wall time.
 
-| t (s) | α | $C_M$ (M) | $C_X$ (M) | dots (M) | ⟨m⟩ ± σ | phase |
-|---|---|---|---|---|---|---|
-| 5 | 0.14 | 3.5e-3 | 2.7e-2 | ≈ 0 | – | I |
-| 14 | 0.30 | 7.2e-3 | 2.2e-2 | 2.5e-6 | 146 | II |
-| 32 | 0.51 | 4.5e-3 | 1.4e-2 | 5.3e-5 | 150 ± 35 | III |
-| 99 | 0.79 | 1.0e-3 | 3.5e-3 | 1.2e-4 | 150 ± 35 | III |
-| 180 | 0.90 | 1.2e-5 | 1.0e-4 | 1.5e-4 | 151 | III |
-| 254 | 0.94 | 2.4e-12 | 2e-16 | 1.5e-4 | 157 | IV |
-| 300 | 0.95 | 1.9e-11 | 5e-16 | 1.5e-4 | 159 ± 28 | IV |
-| 356 | 0.97 | 1.6e-8 | 9e-15 | 1.8e-4 | 136 ± 59 | V, solver stall |
+| t (s) | α | $C_M$ (M) | $C_X$ (M) | dots (M) | ⟨m⟩ ± σ | edge share | phase |
+|---|---|---|---|---|---|---|---|
+| 5 | 0.14 | 3.5e-3 | 2.7e-2 | ≈ 0 | – | – | I |
+| 14 | 0.30 | 7.2e-3 | 2.2e-2 | 2.5e-6 | 146 ± 38 | 0.15 | II |
+| 32 | 0.50 | 4.7e-3 | 1.5e-2 | 5.0e-5 | 150 ± 35 | 0.18 | III |
+| 99 | 0.73 | 1.7e-3 | 5.8e-3 | 1.0e-4 | 150 ± 35 | 0.18 | III |
+| 194 | 0.81 | 7.7e-4 | 2.7e-3 | 1.3e-4 | 150 ± 35 | 0.18 | III |
+| 305 | 0.85 | 4.5e-4 | 1.7e-3 | 1.4e-4 | 149 ± 36 | 0.18 | III |
+| 600 | 0.89 | 9.8e-5 | 4.7e-4 | 1.5e-4 | 150 ± 35 | 0.18 | III |
 
 The phases are explained with the maps in [the master equation](master-equation.md) §8:
 
 - **I**: the pool builds.
 - **II**: a burst carries new nuclei straight to m ≈ 150, where the map thins.
-- **III**: nucleation-limited; the dots do not grow further.
-- **IV**: the salt in solution is used up and the dots ripen between facets.
-- **V**: a second burst, an artefact of the conversion ignoring salt depletion.
+- **III**: nucleation-limited to the end; the dots do not grow further, the remaining CdSe goes into new dots.
 
-The run is fast up to the end of the pool (78 s in under 4 min).
+**CdCl2 with the salt-limited conversion**: α 0.979 at 600 s (0.991 before), dots up to 20 % more late in the run,
+still at m = 13; 600 s in 123 s.
+
+**The old open-loop run** (NHR job 9644764) agreed to 1e-4 up to 13 s. After about 200 s it ran out of salt in
+solution and stalled at 356 s after a spurious second burst ([master equation](master-equation.md) §8.2). Its files
+are kept next to the new ones in `network_growth_data/default_salt_vs_open/`.
 
 ## 3. Comparison with experiments
 
