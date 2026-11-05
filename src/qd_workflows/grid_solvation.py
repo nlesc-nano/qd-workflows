@@ -49,22 +49,29 @@ def surface(symbols, positions, scale: float = SOLVATION["vdw_scale"], density: 
     """Solvent-exposed area (A^2) of the union of the scaled vdW spheres (points on each sphere outside all others).
     Each atom's points are tested only against the atoms within r_a + r_max (KD-tree): the same number as testing all
     atoms, in seconds for thousands of atoms."""
+    return float(surface_atoms(symbols, positions, scale, density).sum())
+
+
+def surface_atoms(symbols, positions, scale: float = SOLVATION["vdw_scale"], density: float = 4.0,
+                  which=None) -> np.ndarray:
+    """The exposed area of each atom (A^2) of surface(), for the atoms `which` (default: all)."""
     from scipy.spatial import cKDTree
     from .reaction.solvation import VDW, _sphere_points
     x = np.asarray(positions, float)
     r = np.array([VDW.get(s, 2.0) for s in symbols]) * scale
     tree, rmax = cKDTree(x), r.max()
     pts = {}
-    total = 0.0
-    for a in range(len(x)):
+    which = range(len(x)) if which is None else which
+    out = np.zeros(len(which))
+    for q, a in enumerate(which):
         n = max(12, int(4 * math.pi * r[a] ** 2 * density))
         if n not in pts:
             pts[n] = _sphere_points(n)
         p = x[a] + r[a] * pts[n]
         nb = [j for j in tree.query_ball_point(x[a], r[a] + rmax) if j != a]
         free = n if not nb else int((np.linalg.norm(p[:, None, :] - x[nb][None], axis=2) > r[nb][None, :]).all(axis=1).sum())
-        total += free * 4 * math.pi * r[a] ** 2 / n
-    return float(total)
+        out[q] = free * 4 * math.pi * r[a] ** 2 / n
+    return out
 
 
 def per_area(eps: float, P: dict = SOLVATION) -> float:

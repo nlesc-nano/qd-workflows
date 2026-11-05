@@ -16,7 +16,9 @@ w_s puts the arriving unit (the CdSe carrier, a given complex, or free CdCl2) at
 proportional to its concentration and the backward one is not. B_ab is the 2D-island barrier of a layer step, from the
 relaxed islands of the step's parent and facet (or the median curve of its facet and size bin), recomputed at every
 pool with the shell free at each added CdSe; it is zero for every other step. nu_ab is the collision rate at
-c0 = 1 M in series with diffusion (Stokes-Einstein), times the one kinetic scale s_nu.
+c0 = 1 M in series with diffusion (Stokes-Einstein), times the one kinetic scale s_nu. The collision area comes from
+the structures: the dot's vdW surface S for attachments and shell steps, the export's area_A2 for a layer step (the
+part of the parent's surface its sheet covers, on the built models), and the first complex's S for a nucleus.
 Detailed balance holds by construction: at a fixed pool the network relaxes to N_i = c0 exp(-Omega_i / kT).
 
 The flask: x(t) CdSe converted from the precursor, dx/dt = Q = k_conv (c_P0 - x) C_X (k_conv at T) with C_X the
@@ -74,7 +76,6 @@ DEFAULTS = {
     "t_start": 1e-3, "t_end": 600.0, "n_out": 60,
     "s_nu": 1.0,                             # the one kinetic scale: collision prefactor x s_nu
     "eta_mPas": 0.5,                         # solvent viscosity (1-octadecene near 500 K), Stokes-Einstein
-    "a_site_A2": 15.0,                       # area of one surface site (the collision cross-section of a site)
     "islands": True,                         # False: no island barriers (attachment-limited layers)
     "prune_eV": 0.0,                         # leave out dots this far above the best of their size (0: exact);
                                              # 2 eV: 5-11x faster on the CdCl2 network, but it cuts the acetate
@@ -86,7 +87,7 @@ DEFAULTS = {
 }
 LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0": (1e-4, 1.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
-          "eta_mPas": (0.05, 20.0), "a_site_A2": (1.0, 100.0), "n_out": (5, 200), "prune_eV": (0.0, 20.0),
+          "eta_mPas": (0.05, 20.0), "n_out": (5, 200), "prune_eV": (0.0, 20.0),
           "max_wall_s": (1.0, 86400.0), "frontier_stop": (0.01, 1.0)}
 
 
@@ -157,11 +158,15 @@ class Network:
         self.mono_k = mono_k
         # ---- steps: the network's (re-pointed onto grid nodes), then the grid's Becker-Doering steps, then the
         # nuclei formed from two pool complexes
-        A, B, DM, DK, KD, FAM, SITES, SPC, PAR = [], [], [], [], [], [], [], [], []
+        A, B, DM, DK, KD, FAM, SITES, SPC, PAR, AREA = [], [], [], [], [], [], [], [], [], []
 
-        def add(a, b, dm, dk, kind, fam=-1, sites=0, spc=SP_NONE, par=-1):
+        def add(a, b, dm, dk, kind, fam=-1, sites=0, spc=SP_NONE, par=-1, area=0.0):
             A.append(a); B.append(b); DM.append(dm); DK.append(dk); KD.append(KIND[kind]); FAM.append(fam)
-            SITES.append(sites); SPC.append(spc); PAR.append(par)
+            SITES.append(sites); SPC.append(spc); PAR.append(par); AREA.append(area)
+
+        if any(e["kind"] == "layer" and "area_A2" not in e for e in meta["steps"]):
+            raise ValueError(f"{folder}: layer steps without area_A2 (an export before the built-model areas): run "
+                             "python -m qd_workflows.network_export areas on it")
 
         seen = set()
         for e in meta["steps"]:
@@ -173,7 +178,8 @@ class Network:
             if e["dm"] == 0 and e["dk"] < 0:                     # cannot happen (b is the larger), kept explicit
                 a, b = b, a
             fam = FAMILIES.index(e["facet"]) if e["facet"] in FAMILIES else -1
-            add(a, b, e["dm"], e["dk"], e["kind"], fam, e["sheet"], spc, e["a"] if e["kind"] == "layer" else -1)
+            add(a, b, e["dm"], e["dk"], e["kind"], fam, e["sheet"], spc, e["a"] if e["kind"] == "layer" else -1,
+                e.get("area_A2", 0.0))
         for (m, k), i in gidx.items():
             for n in mono_k:                                     # + CdSe(CdCl2)_n
                 j = gidx.get((m + 1, k + n))
@@ -193,6 +199,8 @@ class Network:
         self.a, self.b = np.array(A), np.array(B)
         self.dm, self.dk, self.kind = np.array(DM), np.array(DK), np.array(KD)
         self.fam, self.sites, self.spc, self.par = np.array(FAM), np.array(SITES), np.array(SPC), np.array(PAR)
+        self.area = np.array(AREA, float)
+        self.S_mono = {k: float(best[(1, k)].get("S_vdW_A2", 0.0)) for k in mono_k}   # the pool complexes' surfaces
         self.grows = np.zeros(self.n, bool)
         self.grows[self.a[self.dm > 0]] = True                   # states with a step that adds CdSe
         # ---- islands: per (parent row, family) the rows of the island structures and their dm, dk
@@ -219,7 +227,7 @@ class Network:
         sub.seed = int(new[self.seed])
         st = keep[self.a] & keep[self.b]
         sub.a, sub.b = new[self.a[st]], new[self.b[st]]
-        for name in ("dm", "dk", "kind", "fam", "sites", "spc", "par"):
+        for name in ("dm", "dk", "kind", "fam", "sites", "spc", "par", "area"):
             setattr(sub, name, getattr(self, name)[st])
         sub.n_net_steps = int(st[:self.n_net_steps].sum())
         sub.grows = np.zeros(sub.n, bool)
@@ -359,22 +367,22 @@ class Network:
         return B, table
 
     # ---------------- prefactors
-    def prefactors(self, T, eta_mPas, s_nu, a_site_A2):
+    def prefactors(self, T, eta_mPas, s_nu):
         """nu of every step (1/s at c0 = 1 M) and of the nucleus sources: surface collisions in series with
-        diffusion to the dot; isomerisations at kT/h."""
+        diffusion to the dot; isomerisations at kT/h. Collision areas: S of the dot (attach, shell), area_A2 of the
+        layer step, S of the first complex (nucleus)."""
         R = np.sqrt(np.maximum(self.S, 1.0) / (4 * math.pi)) * 1e-10          # m
         eta = eta_mPas * 1e-3
         D = KB_J * T / (6 * math.pi * eta * R)
 
-        def nu(i_state, n_sites, mass, r_s):
+        def nu(i_state, area_A2, mass, r_s):
             r_s = r_s * 1e-10
             d_s = KB_J * T / (6 * math.pi * eta * r_s)
             k_d = 4 * math.pi * (D[i_state] + d_s) * (R[i_state] + r_s) * NA * 1e3
             v = math.sqrt(KB_J * T / (2 * math.pi * mass * AMU))
-            k_r = n_sites * a_site_A2 * 1e-20 * v * NA * 1e3
+            k_r = np.maximum(area_A2, 1e-3) * 1e-20 * v * NA * 1e3      # floor: no division by zero, ~no rate
             return s_nu / (1.0 / k_r + 1.0 / k_d)
 
-        sites_all = np.maximum(self.S / a_site_A2, 1.0)
         out = np.empty(len(self.a))
         carriers = {n: _complex(n, self.solv, self.m_x) for n in self.mono_k}
         ma = carriers.get(1, carriers[self.mono_k[0]])
@@ -385,9 +393,9 @@ class Network:
                 out[sel] = KB_EV * T / H_EV
                 continue
             mass, r_s = ma if spc == SP_MA else (mx if spc == SP_MX else carriers[spc - 3])
-            n_sites = np.where(self.kind[sel] == KIND["layer"], np.maximum(self.sites[sel], 1), sites_all[self.a[sel]])
-            out[sel] = nu(self.a[sel], n_sites, mass, r_s)
-        src = np.array([nu(np.array([j]), np.array([1.0]), *carriers[n2])[0] for _n1, n2, j in self.src])
+            area = np.where(self.kind[sel] == KIND["layer"], self.area[sel], self.S[self.a[sel]])
+            out[sel] = nu(self.a[sel], area, mass, r_s)
+        src = np.array([nu(np.array([j]), np.array([self.S_mono[n1]]), *carriers[n2])[0] for n1, n2, j in self.src])
         return out, src
 
     # ---------------- rates
@@ -561,7 +569,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     k_conv = k_conv_at(T, float(c["k_conv_500K"]), float(c["Ea_conv"]))
     t0, t_end = float(c["t_start"]), float(c["t_end"])
     t_out = list(np.geomspace(t0, t_end, int(c["n_out"])))
-    nu, nu_src = net.prefactors(T, float(c["eta_mPas"]), float(c["s_nu"]), float(c["a_site_A2"]))
+    nu, nu_src = net.prefactors(T, float(c["eta_mPas"]), float(c["s_nu"]))
     _g, th, _pa = net.G(T, eps)
     isl = bool(c["islands"])
 
@@ -767,7 +775,7 @@ def stationary_residual(net: Network, T, eps, pl, nu=None, nu_src=None) -> float
     """Largest |(M N_eq + s)_i| / (outflow_i N_eq_i) with N_eq = c0 exp(-Omega / kT), on the states whose N_eq is
     representable: 0 up to round-off when the rates obey detailed balance."""
     if nu is None:
-        nu, nu_src = net.prefactors(T, DEFAULTS["eta_mPas"], 1.0, DEFAULTS["a_site_A2"])
+        nu, nu_src = net.prefactors(T, DEFAULTS["eta_mPas"], 1.0)
     r = net.rates(T, eps, pl, nu, nu_src)
     kt = KB_EV * T
     z = -r["Omega"] / kt
@@ -804,6 +812,7 @@ def main(argv=None) -> int:
             if not isinstance(v, bool):
                 p.add_argument(f"--{key.replace('_', '-')}", dest=key, type=type(v), default=v)
         p.add_argument("--no-islands", action="store_true")
+        p.add_argument("--a-site-A2", type=float, help=argparse.SUPPRESS)   # gone: areas from the structures
         p.add_argument("--json", help="write the run here (without the populations)")
     a = ap.parse_args(argv)
     net = load(a.network, a.thermo, a.params)

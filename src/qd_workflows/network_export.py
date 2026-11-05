@@ -4,13 +4,23 @@ Export of the relaxed layer-path network (the tree registry) for the network gro
 Reads the tree registry and its products and writes one self-contained folder:
 
     network.json   states (registry id, formula, m = N_Se, k = N_Cd - N_Se, framework, imaginary modes), the steps
-                   between them (a -> b with b the larger: dm >= 0, and dk > 0 when dm = 0; kind, facet, sheet size),
-                   and the island table (per parent and facet family: added dm, dk and the row of the structure)
+                   between them (a -> b with b the larger: dm >= 0, and dk > 0 when dm = 0; kind, facet, sheet size;
+                   a layer step's collision area area_A2), and the island table (per parent and facet family: added dm,
+                   dk and the row of the structure)
     arrays.npz     per structure (the states, then the islands and ladder rungs): G_gas on the grid's temperatures
                    (ideal gas at 1 M, no solvation; the rotational symmetry number included) and the vdW surface S
                    (A^2), so that G(T, eps) = interp(T, G_gas) + per_area(eps) S, as for the grid's clusters
     geometry.npz   symbols (codes into network.json's elements) and positions of every state (the structure panel)
+    layer_overlap.json   per parent: the summed areas of its layer steps on each facet (normal) and family against
+                   the area all of them together cover (alternative sheets on one facet overlap)
 
+The collision area of a layer step a -> b is computed on the built models (the registry keys: lattice sites): the
+vdW surface (the template's vdw_scale, as S) of a's core sites that b's sheet covers,
+
+    area_A2 = sum_{i in core(a)} [s_i(a) - s_i(b)]       (s_i: atom i's exposed area; 0 in b for a site b lacks)
+
+with the sites in A by the lattice scale fitted to the relaxed structures (their core nearest-neighbour distance).
+No facet or lattice constant enters; X sites (the ligand's) are left out.
 Inputs (formats of the tree scripts): registry.json (dots: key -> id, framework "se"; lineage "0": the seed dot),
 results_by_key.json (key -> symbols, positions, E_eV, frequencies_cm1, n_imaginary; a state relaxed without a
 Hessian has F_vib_model_eV instead, the learned F_vib (fvib_model) on the thermo temperatures), g_cache.json
@@ -21,6 +31,8 @@ dCd, dCl, dir, sheet, same_slab_next), ladders.json ("parent|family" -> rungs b,
     python -m qd_workflows.network_export --registry registry.json --results results_by_key.json --g-cache g_cache.json \
         --steps layer_steps.json --ladders ladders.json --islands states_index.json --island-states batch*/states.json \
         --thermo thermo_merged.json --params templates/growth/cdse_zb.yaml --out DIR [--nproc 5]
+    python -m qd_workflows.network_export areas --network DIR --registry registry.json --steps layer_steps.json \
+        --params templates/growth/cdse_zb.yaml [--nproc 5]       (add area_A2 to an export made without it)
 """
 from __future__ import annotations
 
@@ -42,6 +54,8 @@ FACETS = ("100", "111A", "111B", "110")
 KEY_ELEMENTS = ("Cd", "Se", "Cl")                    # the registry key's sites (Cl: the X site, whatever the ligand)
 ELEMENTS = ("Cd", "Se", "Cl", "C", "O", "H")         # geometry.npz symbol codes (C, O, H: carboxylate ligands)
 _ATOM = re.compile(r"'(Cd|Se|Cl)'")
+_SITE = re.compile(r"'([A-Z][a-z]?)'\)?, (-?\d+), (-?\d+), (-?\d+)\)")
+X_SITE = "Cl"                                        # the key's ligand (X) site: not part of the core
 
 
 def counts(key: str) -> dict:
@@ -74,6 +88,102 @@ def _thermal(job):
     if fvib is not None:
         g += np.asarray(fvib, float)
     return g, gs.surface(list(symbols), pos, scale), int(sigma)
+
+
+def sites(key: str) -> dict:
+    """The built model of a registry key: {(element, i, j, k): ...} of its core (non-X) lattice sites, in order."""
+    return {(e, int(i), int(j), int(k)): None for e, i, j, k in _SITE.findall(key) if e != X_SITE}
+
+
+def _nn(x) -> np.ndarray:
+    from scipy.spatial import cKDTree
+    return cKDTree(x).query(x, k=2)[0][:, 1]
+
+
+def lattice_scale(keys, structures) -> float:
+    """A per lattice unit of the registry keys: the median core nearest-neighbour distance of the relaxed structures
+    (symbols, positions) over that of their built models."""
+    ratio = []
+    for key, (sym, pos) in zip(keys, structures):
+        core = {e for e, *_r in sites(key)}
+        x = np.asarray(pos, float)[[s_ in core for s_ in sym]]
+        u = np.array([c[1:] for c in sites(key)], float)
+        if len(x) > 1 and len(u) > 1:
+            ratio.append(np.median(_nn(x)) / np.median(_nn(u)))
+    return float(np.median(ratio))
+
+
+def _footprint(sa, xa, s_a, sb_keys, scale, vdw):
+    """Area of a's core that the built model b covers: sum over a's sites of s_i(a) - s_i(b); only a's sites near
+    b's new sites change, a site b lacks counts s_i(a)."""
+    from scipy.spatial import cKDTree
+    from .reaction.solvation import VDW
+    idx_a = {c: q for q, c in enumerate(sa)}
+    sb = list(sb_keys)
+    new = [c for c in sb if c not in idx_a]
+    gone = [q for c, q in idx_a.items() if c not in sb_keys]
+    if not new:
+        return float(s_a[gone].sum())
+    xb = np.array([c[1:] for c in sb], float) * scale
+    rmax = 2 * max(VDW.get(c[0], 2.0) for c in sb) * vdw
+    near = cKDTree(xb[[q for q, c in enumerate(sb) if c not in idx_a]]).query_ball_point(xa, rmax)
+    cand_a = [q for q, nb in enumerate(near) if nb and sa[q] in sb_keys]
+    pos_b = {c: q for q, c in enumerate(sb)}
+    s_b = gs.surface_atoms([c[0] for c in sb], xb, vdw, which=[pos_b[sa[q]] for q in cand_a])
+    return float(s_a[cand_a].sum() - s_b.sum() + s_a[gone].sum())
+
+
+def _layer_job(job):
+    """One parent: the area of each of its layer steps, and per facet (normal) and family the summed areas against
+    the area all its sheets there cover together."""
+    key_a, children, scale, vdw = job
+    sa = list(sites(key_a))
+    xa = np.array([c[1:] for c in sa], float) * scale
+    s_a = gs.surface_atoms([c[0] for c in sa], xa, vdw)
+    out, groups = [], collections.defaultdict(lambda: [0, 0.0, set()])
+    for key_b, normal, fam in children:
+        sb = sites(key_b)
+        area = _footprint(sa, xa, s_a, sb, scale, vdw)
+        out.append(area)
+        for g in (("normal", fam, tuple(normal or ())), ("family", fam)):
+            groups[g][0] += 1; groups[g][1] += area; groups[g][2].update(sb)
+    stats = []
+    for g, (n, tot, union) in groups.items():
+        both = dict.fromkeys(sa); both.update(dict.fromkeys(union))
+        stats.append({"group": g[0], "family": g[1], "normal": list(g[2]) if len(g) > 2 else None, "n_steps": n,
+                      "sum_A2": tot, "union_A2": _footprint(sa, xa, s_a, both, scale, vdw)})
+    return out, stats, float(s_a.sum())
+
+
+def layer_areas(pairs, key_of, scale, vdw, nproc):
+    """pairs: [(a id, b id, normal, family)] of the layer steps. Returns ({(a, b): area_A2}, overlap rows)."""
+    by_a = collections.defaultdict(list)
+    for x, y, normal, fam in pairs:
+        by_a[x].append((y, normal, fam))
+    jobs = [(key_of[x], [(key_of[y], nm, f) for y, nm, f in ch], scale, vdw) for x, ch in by_a.items()]
+    areas, overlap = {}, []
+    pool = Pool(nproc) if nproc > 1 else None
+    for (x, ch), (ar, stats, s_core) in zip(by_a.items(), (pool.imap(_layer_job, jobs, chunksize=8) if pool else
+                                                          map(_layer_job, jobs))):
+        areas.update({(x, y): v for (y, _n, _f), v in zip(ch, ar)})
+        overlap += [{"parent": x, "S_core_A2": s_core, **st} for st in stats]
+    if pool:
+        pool.close()
+    n0 = sum(v <= 0 for v in areas.values())
+    v = np.array(list(areas.values()))
+    print(f"[export] layer areas of {len(v)} steps on {len(by_a)} parents (lattice unit {scale:.4f} A): median "
+          f"{np.median(v):.1f} A^2, 5-95% {np.percentile(v, 5):.1f}-{np.percentile(v, 95):.1f}"
+          + (f"; {n0} steps cover no area" if n0 else ""), flush=True)
+    return areas, overlap
+
+
+def _layer_pairs(steps_rows, kept):
+    """(a, b, normal, family) of the layer steps kept in the export, from their layer_steps.json records."""
+    rec = {}
+    for r in steps_rows:
+        rec.setdefault((r["a"], r["b"]), r)
+        rec.setdefault((r["b"], r["a"]), r)
+    return [(x, y, rec[(x, y)].get("normal"), rec[(x, y)].get("dir")) for x, y in kept]
 
 
 def export(a) -> dict:
@@ -144,7 +254,7 @@ def export(a) -> dict:
         (m1, k1), (m2, k2) = mk[x], mk[y]
         return (x, y) if (m2, k2) >= (m1, k1) else (y, x)
 
-    st_out, seen = [], set()
+    st_out, seen, layer_ids = [], set(), []
     for (x, y), r in steps.items():
         if x not in row or y not in row:
             continue
@@ -164,6 +274,8 @@ def export(a) -> dict:
             kind = "iso"
         st_out.append({"a": row[x], "b": row[y], "dm": dm, "dk": dk, "kind": kind, "facet": f,
                        "sheet": int(r.get("sheet") or 0)})
+        if kind == "layer":
+            layer_ids.append((x, y))
     for x, y in shell:
         if x not in row or y not in row:
             continue
@@ -174,6 +286,16 @@ def export(a) -> dict:
         dm, dk = mk[y][0] - mk[x][0], mk[y][1] - mk[x][1]
         st_out.append({"a": row[x], "b": row[y], "dm": dm, "dk": dk, "kind": "shell" if dk else "iso", "facet": None,
                        "sheet": 0})
+
+    # ---- collision areas of the layer steps, on the built models
+    sample = ids[::max(1, len(ids) // 50)]
+    scale = lattice_scale([key_of[i] for i in sample],
+                          [(res[key_of[i]]["symbols"], res[key_of[i]]["positions"]) for i in sample])
+    areas, overlap = layer_areas(_layer_pairs(rows, layer_ids), key_of, scale, float(P["vdw_scale"]), a.nproc)
+    for e in st_out:
+        if e["kind"] == "layer":
+            e["area_A2"] = areas[(ids[e["a"]], ids[e["b"]])]
+    (out / "layer_overlap.json").write_text(json.dumps({"lattice_unit_A": scale, "rows": overlap}))
 
     # ---- islands (the relaxed builder islands, as island_barriers.py selects them) and the ladders' one-sheet rungs
     istates = {}
@@ -262,7 +384,41 @@ def export(a) -> dict:
     return meta
 
 
+def add_areas(a) -> None:
+    """area_A2 on the layer steps of an existing export (network.json rewritten), and its layer_overlap.json."""
+    net = Path(a.network)
+    meta = json.loads((net / "network.json").read_text())
+    reg = json.loads(Path(a.registry).read_text())
+    key_of = {v["id"]: k for k, v in reg["dots"].items()}
+    ids = [s["id"] for s in meta["states"]]
+    g = np.load(net / "geometry.npz")
+    off, els = g["offsets"], meta["elements"]
+    sample = list(range(0, len(ids), max(1, len(ids) // 50)))
+    scale = lattice_scale([key_of[ids[r]] for r in sample],
+                          [([els[int(c)] for c in g["symbols"][off[r]:off[r + 1]]], g["positions"][off[r]:off[r + 1]])
+                           for r in sample])
+    vdw = float(yaml.safe_load(Path(a.params).read_text())["solvation"]["vdw_scale"])
+    lay = [e for e in meta["steps"] if e["kind"] == "layer"]
+    rows = json.loads(Path(a.steps).read_text())
+    areas, overlap = layer_areas(_layer_pairs(rows, [(ids[e["a"]], ids[e["b"]]) for e in lay]), key_of, scale, vdw,
+                                 a.nproc)
+    for e in lay:
+        e["area_A2"] = areas[(ids[e["a"]], ids[e["b"]])]
+    (net / "network.json").write_text(json.dumps(meta, separators=(",", ":")))
+    (net / "layer_overlap.json").write_text(json.dumps({"lattice_unit_A": scale, "rows": overlap}))
+
+
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["areas"]:
+        ap = argparse.ArgumentParser(prog="python -m qd_workflows.network_export areas")
+        ap.add_argument("--network", required=True, help="the export folder")
+        ap.add_argument("--registry", required=True)
+        ap.add_argument("--steps", required=True, help="layer_steps.json (the steps' normals and families)")
+        ap.add_argument("--params", required=True, help="growth template with the solvation block (vdw_scale)")
+        ap.add_argument("--nproc", type=int, default=5)
+        add_areas(ap.parse_args(argv[1:]))
+        return 0
     ap = argparse.ArgumentParser(prog="python -m qd_workflows.network_export")
     ap.add_argument("--registry", required=True)
     ap.add_argument("--results", required=True)
