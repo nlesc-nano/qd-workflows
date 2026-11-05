@@ -52,3 +52,17 @@ def test_sheet_areas_and_their_overlap():
     assert up["n_steps"] == 2 and up["union_A2"] < 0.9 * up["sum_A2"]
     assert fam["n_steps"] == 3 and abs(fam["sum_A2"] - up["sum_A2"] - areas[(0, 3)]) < 1e-9
     assert up["union_A2"] + areas[(0, 3)] - fam["union_A2"] < 1e-6 * fam["union_A2"]   # opposite facets: no overlap
+
+
+def test_child_in_its_own_frame():
+    """The registry keeps each dot in its own frame: a child rotated and shifted gives the same area."""
+    a = _cube(3)
+    b = a | _sheet(3 * U, (0, 24), (0, 48))
+    g = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])                        # 90 degrees about z, then a shift
+    moved = {(e, *map(int, g @ np.array(c) + np.array([16, -32, 8]))) for e, *c in b}
+    keys = {0: _key(a), 1: _key(b), 2: _key(moved)}
+    areas, _ov = nx.layer_areas([(0, 1, [0, 0, 1], "100"), (0, 2, [0, 0, 1], "100")], keys, 0.38, 1.4, 1)
+    assert areas[(0, 1)] > 0 and abs(areas[(0, 2)] / areas[(0, 1)] - 1) < 0.02     # a symmetric equivalent placement:
+    back = nx.align(nx.sites(_key(a)), nx.sites(_key(moved)), [0, 0, 1])            # the same up to point sampling
+    new = np.array([c[1:] for c in back if c not in nx.sites(_key(a))])
+    assert len(back) == len(b) and len(new) == len(b - a) and new[:, 2].min() >= 3 * U

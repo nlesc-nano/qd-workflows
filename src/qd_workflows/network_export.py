@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import itertools
 import json
 import re
 import sys
@@ -95,6 +96,48 @@ def sites(key: str) -> dict:
     return {(e, int(i), int(j), int(k)): None for e, i, j, k in _SITE.findall(key) if e != X_SITE}
 
 
+_OPS = np.array([np.diag(sg) @ np.eye(3, dtype=int)[list(pm)] for pm in itertools.permutations(range(3))
+                 for sg in itertools.product((1, -1), repeat=3)])
+
+
+def _code(e: int, x: np.ndarray) -> np.ndarray:
+    return ((e * 4096 + x[..., 0] + 2048) * 4096 + x[..., 1] + 2048) * 4096 + x[..., 2] + 2048
+
+
+def align(sa: dict, sb: dict, normal=None, n_probe: int = 12, n_top: int = 24) -> dict:
+    """b's built model in a's frame: the registry keeps each dot in its own canonical frame, so b is mapped by the
+    operation of the keys' integer lattice (a signed permutation of the axes) and the translation that puts most of
+    a's sites on b's: per operation the n_top translations most voted by n_probe of a's sites (against b's sites of
+    the same element), each scored by the full overlap. Ties (a symmetric parent) go to the mapping that puts b's
+    new sites furthest along the step's normal (a's frame), else to the first one."""
+    els = sorted({c[0] for c in sa} | {c[0] for c in sb})
+    xa = {e: np.array([c[1:] for c in sa if c[0] == e]).reshape(-1, 3) for e in els}
+    xb = {e: np.array([c[1:] for c in sb if c[0] == e]).reshape(-1, 3) for e in els}
+    code_a = np.concatenate([_code(q, xa[e]) for q, e in enumerate(els)])
+    best, ties = -1, []
+    for g in _OPS:
+        gb = {e: xb[e] @ g.T for e in els}
+        d = np.concatenate([(xa[e][:: max(1, len(xa[e]) // n_probe)][:, None, :] - gb[e][None]).reshape(-1, 3)
+                            for e in els if len(xa[e]) and len(gb[e])])
+        t_all, cnt = np.unique(d, axis=0, return_counts=True)
+        for t in t_all[np.argsort(-cnt)[:n_top]]:
+            n = int(np.isin(np.concatenate([_code(q, gb[e] + t) for q, e in enumerate(els)]), code_a).sum())
+            if n > best:
+                best, ties = n, []
+            if n == best:
+                ties.append((g, t))
+    maps = [{(c[0], *map(int, np.array(c[1:]) @ g.T + t)): None for c in sb} for g, t in ties]
+    if normal is None or len(maps) == 1:
+        return maps[0]
+    ca = np.array([c[1:] for c in sa], float).mean(axis=0)
+    nv = np.asarray(normal, float)
+
+    def along(m):
+        new = np.array([c[1:] for c in m if c not in sa], float).reshape(-1, 3)
+        return float((new.mean(axis=0) - ca) @ nv) if len(new) else -np.inf
+    return max(maps, key=along)
+
+
 def _nn(x) -> np.ndarray:
     from scipy.spatial import cKDTree
     return cKDTree(x).query(x, k=2)[0][:, 1]
@@ -142,7 +185,7 @@ def _layer_job(job):
     s_a = gs.surface_atoms([c[0] for c in sa], xa, vdw)
     out, groups = [], collections.defaultdict(lambda: [0, 0.0, set()])
     for key_b, normal, fam in children:
-        sb = sites(key_b)
+        sb = align(sa, sites(key_b), normal)
         area = _footprint(sa, xa, s_a, sb, scale, vdw)
         out.append(area)
         for g in (("normal", fam, tuple(normal or ())), ("family", fam)):
