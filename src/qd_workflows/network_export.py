@@ -177,13 +177,16 @@ def layer_areas(pairs, key_of, scale, vdw, nproc):
     return areas, overlap
 
 
-def _layer_pairs(steps_rows, kept):
-    """(a, b, normal, family) of the layer steps kept in the export, from their layer_steps.json records."""
+def _layer_pairs(steps_rows, kept, families=None):
+    """(a, b, normal, family) of the layer steps kept in the export, from their layer_steps.json records (a step
+    without one: no normal, the family given)."""
     rec = {}
     for r in steps_rows:
         rec.setdefault((r["a"], r["b"]), r)
         rec.setdefault((r["b"], r["a"]), r)
-    return [(x, y, rec[(x, y)].get("normal"), rec[(x, y)].get("dir")) for x, y in kept]
+    families = families or [None] * len(kept)
+    return [(x, y, rec.get((x, y), {}).get("normal"), rec.get((x, y), {}).get("dir", f))
+            for (x, y), f in zip(kept, families)]
 
 
 def export(a) -> dict:
@@ -400,8 +403,10 @@ def add_areas(a) -> None:
     vdw = float(yaml.safe_load(Path(a.params).read_text())["solvation"]["vdw_scale"])
     lay = [e for e in meta["steps"] if e["kind"] == "layer"]
     rows = json.loads(Path(a.steps).read_text())
-    areas, overlap = layer_areas(_layer_pairs(rows, [(ids[e["a"]], ids[e["b"]]) for e in lay]), key_of, scale, vdw,
-                                 a.nproc)
+    pairs = _layer_pairs(rows, [(ids[e["a"]], ids[e["b"]]) for e in lay], [e["facet"] for e in lay])
+    print(f"[export] {sum(p[2] is None for p in pairs)} of {len(pairs)} layer steps without a normal in {a.steps}",
+          flush=True)
+    areas, overlap = layer_areas(pairs, key_of, scale, vdw, a.nproc)
     for e in lay:
         e["area_A2"] = areas[(ids[e["a"]], ids[e["b"]])]
     (net / "network.json").write_text(json.dumps(meta, separators=(",", ":")))
