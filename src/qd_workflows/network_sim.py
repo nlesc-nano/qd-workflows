@@ -1,8 +1,8 @@
 """
 Network growth simulator: a local web page on top of the network growth model (network_growth.py).
 
-The page sets the conditions (T, solvent, precursor and CdCl2 concentrations, conversion rate, the kinetic scale s_nu,
-viscosity), shows step 1 as the nucleation simulator has it (the grid's Omega(m) up to the seed's m = 13 from the
+The page sets the conditions (T, the solvent, which sets the dielectric constant and the viscosity at T, the precursor
+and salt concentrations, the conversion rate), shows step 1 as the nucleation simulator has it (the grid's Omega(m) up to the seed's m = 13 from the
 precursor alone, simulator.Simulator.omega_live) and the grand-potential map of the network live at a time, runs the
 model, and plots the pool, the dots, the size distribution, the growth of each facet family, the island barriers and
 the most populated structures at any time.
@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from . import network_growth as ng
-from .grid_thermo import converted, k_conv_at
+from . import solvents
 
 PAGE = Path(__file__).parent / "templates" / "network" / "index.html"
 VOLUME_A3 = 59.667                       # zinc-blende CdSe volume per CdSe unit (a = 6.203 A): d = (6 m V / pi)^(1/3)
@@ -72,15 +72,16 @@ class NetSim:
                             "kinds": kinds, "island_curves": len(net.isl), "m_max": int(net.m.max()),
                             "d_max_nm": float(diameter_nm(net.m.max())), "seed": net.label[net.seed],
                             "compositions": len(self.comp_keys)},
+                "species": net.species, "solvents": solvents.table(),
                 "nucleation": self.nuc is not None,
                 "no_thermo": sorted([m, k] for m, k in self.nuc.no_thermo) if self.nuc else []}
 
     def _cond(self, body):
-        c = {**ng.DEFAULTS}
+        c = {}
         for k, v in (body or {}).items():
             if k in ng.DEFAULTS:
                 c[k] = type(ng.DEFAULTS[k])(v) if not isinstance(ng.DEFAULTS[k], bool) else bool(v)
-        return c
+        return ng.conditions(c)
 
     def start(self, body):
         """Run in a thread (a run takes minutes on the full network); poll with job()."""
@@ -132,7 +133,7 @@ class NetSim:
             dot_top.append([j, net.label[j], int(net.m[j]), int(net.k[j]), float(N[j])] if N[j] > 0 else None)
         series = {k: r[k] for k in ("t", "alpha", "c_MA", "c_X_left", "c_MX_free", "mu_MA", "mu_MX", "n_dots",
                                     "n_clusters", "m_mean", "m_std", "nucleation", "frontier", "layer_flux",
-                                    "cdse_flux", "attach_flux", "barriers")}
+                                    "cdse_flux", "attach_flux", "barriers", "V_mL")}
         series["d_mean_nm"] = diameter_nm(r["m_mean"]).tolist()
         return {"run_id": rid, "cond": c, "series": series, "psd": {"m": ms.tolist(), "d_nm": diameter_nm(ms).tolist(),
                                                                     "N": psd}, "top": top, "dot_top": dot_top,
@@ -142,7 +143,11 @@ class NetSim:
     # ---------------- step 1: the nucleation simulator's grid Omega
     @staticmethod
     def _nuc_cond(c):
-        return {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps")}
+        out = {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps")}
+        if c["inject"]:                                          # the nucleation simulator's syringe: the same flask
+            out.update({k: c[k] for k in ("c_syringe_M", "rate_mL_h", "V0_mL", "inj_duration_s")},
+                       inject=True, c_P0_flask=c["c_P0"])
+        return out
 
     def nucleation(self, body):
         """Omega(m) of the grid up to m = 13 at time t from the precursor alone, and the barrier along the time
@@ -193,9 +198,9 @@ class NetSim:
         else:
             c = self._cond(body.get("conditions"))
             t = float(body.get("t", 10.0))
-            x = converted(t, k_conv_at(c["T"], c["k_conv_500K"], c["Ea_conv"]), c["c_P0"], c["c_MX0"])
+            cm, cx, _a = ng.precursor_only(c, t)
             _g, th, _pa = net.G(c["T"], c["eps"])
-            pl, N = ng._pool(th, x, c["c_MX0"] - x), None
+            pl, N = ng._pool(th, cm, cx), None
         kt = ng.KB_EV * c["T"]
         g = _g
         om = g - net.m * pl["mu_MA"] - net.k * pl["mu_MX"]
@@ -239,14 +244,17 @@ class NetSim:
         c = self._cond(body.get("conditions"))
         if body.get("t") is not None:
             t = float(body["t"])
-            x = converted(t, k_conv_at(c["T"], c["k_conv_500K"], c["Ea_conv"]), c["c_P0"], c["c_MX0"])
-        else:
-            t = None
-            x = float(body.get("alpha", 0.2)) * c["c_P0"]
-        if not 0 < x < c["c_P0"]:
+            cm, cx, alpha = ng.precursor_only(c, t)
+        else:                                                    # at a conversion, the flask as it starts
+            t, alpha = None, float(body.get("alpha", 0.2))
+            cm = alpha * ng.Feed(c).total                        # all the precursor, at the start volume
+            cx = c["c_MX0"] - cm
+        if not 0 < alpha < 1 or cm <= 0:
             raise ValueError("the conversion must be in (0, 1)")
         _g, th, _pa = self.net.G(c["T"], c["eps"])
-        return c, ng._pool(th, x, c["c_MX0"] - x), None, t
+        pl = ng._pool(th, cm, cx)
+        pl["alpha"] = alpha
+        return c, pl, None, t
 
     def map(self, body):
         """Omega per composition (the lowest state; eV, from the seed's), the population per composition, and the
@@ -284,7 +292,7 @@ class NetSim:
             om1 = th["G"][(1, n)] - pl["mu_MA"] - n * pl["mu_MX"]
             cells.append([1, n, float(om1 - ref), float(pl["c_MA"] * pl["speciation"].get(n, 0.0)) if N is not None
                           else 0.0, 1])
-        return {"t": t, "alpha": float(pl["c_MA"] / c["c_P0"]) if N is None else None, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
+        return {"t": t, "alpha": pl.get("alpha") if N is None else None, "mu_MA": pl["mu_MA"], "mu_MX": pl["mu_MX"], "c_MA": pl["c_MA"], "c_MX_free": pl["c_MX_free"],
                 "seed": net.label[net.seed], "cells": cells, "routes": routes, "barriers": r["table"]}
 
     def _transfer(self, run_id):

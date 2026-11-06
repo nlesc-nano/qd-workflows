@@ -41,6 +41,7 @@ import copy
 import json
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -51,6 +52,7 @@ from scipy.optimize import brentq
 from scipy.sparse.linalg import splu
 
 from . import grid_solvation as gs
+from . import solvents
 from .grid_thermo import KB_EV, converted, k_conv_at, pool, thermo_at
 
 NA = 6.02214076e23
@@ -72,23 +74,28 @@ SP_NONE, SP_MA, SP_MX = 0, 1, 2              # arriving species of a step; 3 + n
 KIND = {"iso": 0, "shell": 1, "attach": 2, "layer": 3, "grid": 4, "nucleus": 5}
 
 DEFAULTS = {
-    "T": 500.0, "eps": 2.0, "c_P0": 0.025, "c_MX0": 0.03, "k_conv_500K": 1.0, "Ea_conv": 0.0,
+    "T": 500.0, "solvent": "1-octadecene",   # sets eps and eta_mPas (at T) from solvents.SOLVENTS; "custom": as given
+    "eps": 2.0, "c_P0": 0.025, "c_MX0": 0.03, "k_conv_500K": 1.0, "Ea_conv": 0.0,
     "t_start": 1e-3, "t_end": 600.0, "n_out": 60,
     "s_nu": 1.0,                             # the one kinetic scale: collision prefactor x s_nu
-    "eta_mPas": 0.5,                         # solvent viscosity (1-octadecene near 500 K), Stokes-Einstein
+    "eta_mPas": 0.5,                         # solvent viscosity (mPa s), Stokes-Einstein
     "islands": True,                         # False: no island barriers (attachment-limited layers)
     "prune_eV": 0.0,                         # leave out dots this far above the best of their size (0: exact);
                                              # 2 eV: 5-11x faster on the CdCl2 network, but it cuts the acetate
                                              # network's growth paths (<m> 68 vs 150 at 30 s): check against exact
     "max_wall_s": 1800.0,                    # a run stops here (and reports why) with the outputs it has
     "dense_out": True,                       # also an output at a step that moves ln C_M, ln(dots) or <m> (OUT_CH)
+    "inject": False,                         # syringe: the precursor at c_syringe_M, rate_mL_h for inj_duration_s into
+    "c_syringe_M": 0.03, "rate_mL_h": 0.6,   # the flask of V0_mL (which holds c_P0 of it from the start, 0 allowed),
+    "V0_mL": 10.0, "inj_duration_s": 3600.0,  # diluting it as it fills
     "frontier_stop": 0.5,                    # stop once this fraction of the dots sits on states without a growth
                                              # step (the network's edge), the dots holding >= 1% of the CdSe; 1: never
 }
-LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (1e-4, 0.5), "c_MX0": (1e-4, 1.0),
+LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (0.0, 0.5), "c_MX0": (1e-4, 1.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
           "eta_mPas": (0.05, 20.0), "n_out": (5, 200), "prune_eV": (0.0, 20.0),
-          "max_wall_s": (1.0, 86400.0), "frontier_stop": (0.01, 1.0)}
+          "max_wall_s": (1.0, 86400.0), "frontier_stop": (0.01, 1.0), "c_syringe_M": (1e-3, 1.0),
+          "rate_mL_h": (0.01, 1000.0), "V0_mL": (1.0, 1000.0), "inj_duration_s": (1.0, 36000.0)}
 
 
 def _complex(n: int, solv: dict, m_x: float = MASS["Cl"]) -> tuple[float, float]:
@@ -117,17 +124,54 @@ def _x_mass(folder: Path, meta: dict) -> float:
     return (mass - st["m"] * (MASS["Cd"] + MASS["Se"]) - st["k"] * MASS["Cd"]) / (2 * st["k"])
 
 
+X_NAMES = {"C2H3O2": "OAc", "C18H33O2": "OA", "C12H23O2": "laurate", "C14H27O2": "myristate"}  # short names
+
+
+def _formula(f: str) -> dict:
+    out = {}
+    for el, n in re.findall(r"([A-Z][a-z]?)(\d*)", f):
+        out[el] = out.get(el, 0) + (int(n) if n else 1)
+    return out
+
+
+def _hill(c: dict) -> str:
+    els = (["C", "H"] if "C" in c else []) + sorted(e for e in c if "C" not in c or e not in ("C", "H"))
+    return "".join(f"{e}{c[e] if c[e] > 1 else ''}" for e in els)
+
+
+def species(meta: dict, given: dict | None = None) -> dict:
+    """Names of the units the page and the logs show: M and A (the material MA, CdSe), X (one ligand of the salt
+    MX = M X2: Cl, or the carboxylate) and MX. X from the seed's formula, (formula - (m + k) M - m A) / 2k, with a
+    short name for the common carboxylates; `given` (the template's species block) overrides any of them."""
+    sp = {"M": "Cd", "A": "Se", "X": "Cl"}
+    st = meta["states"][meta["seed"]]
+    if st.get("formula") and st["k"] > 0:
+        c = _formula(st["formula"])
+        c[sp["M"]] = c.get(sp["M"], 0) - st["m"] - st["k"]
+        c[sp["A"]] = c.get(sp["A"], 0) - st["m"]
+        if all(v % (2 * st["k"]) == 0 and v >= 0 for v in c.values()):
+            x = {e: v // (2 * st["k"]) for e, v in c.items() if v}
+            if x:
+                sp["X"] = X_NAMES.get(_hill(x), _hill(x))
+    sp.update({k: v for k, v in (given or {}).items() if k in ("M", "A", "X", "MA", "MX")})
+    sp.setdefault("MA", sp["M"] + sp["A"])
+    x = sp["X"]
+    sp.setdefault("MX", f"{sp['M']}{x}2" if re.fullmatch(r"[A-Z][a-z]?", x) else f"{sp['M']}({x})2")
+    return sp
+
+
 class Network:
     """The states and steps: the grid's nodes with m >= 2 (m = 1 is the pool), then the network's relaxed states
     (those with m <= 13 whose (m, k) the grid has are that grid node), and the steps between them."""
 
-    def __init__(self, folder, thermo: dict, solvation: dict, thermo_dir=None):
+    def __init__(self, folder, thermo: dict, solvation: dict, thermo_dir=None, species_names: dict | None = None):
         folder = Path(folder)
         self.folder, self.thermo, self.solv, self.thermo_dir = folder, thermo, dict(solvation), thermo_dir
         meta = json.loads((folder / "network.json").read_text())
         arr = np.load(folder / "arrays.npz")
         self.meta, self.G_gas, self.S_row = meta, arr["G_gas"], arr["S"]
         self.m_x = _x_mass(folder, meta)                        # X of the MX unit (Cl, or the carboxylate)
+        self.species = species(meta, species_names)              # names only: M, A, X, MA, MX
         self.temps = np.asarray(meta["temperatures"], float)
         if not np.allclose(self.temps, thermo["temperatures"]):
             raise ValueError("the network and the grid thermo have different temperature grids")
@@ -536,6 +580,60 @@ def _pool(th, c_m, c_x):
     return pl
 
 
+class Feed:
+    """The flask: V0 and, with inject, the syringe delivering the precursor at c_syringe_M and rate_mL_h for
+    inj_duration_s. Amounts are mol per litre of the starting flask (mol / V0); concentrations are amounts x phi,
+    phi = V0 / V(t)."""
+
+    def __init__(self, c):
+        self.on = bool(c["inject"])
+        self.V0 = float(c["V0_mL"]) * 1e-3
+        self.q = float(c["rate_mL_h"]) * 1e-3 / 3600.0 if self.on else 0.0      # L/s
+        self.t_in = float(c["inj_duration_s"]) if self.on else 0.0
+        self.c_syr, self.c_p0 = float(c["c_syringe_M"]), float(c["c_P0"])
+        self.total = self.precursor(math.inf)
+
+    def phi(self, t):
+        return self.V0 / (self.V0 + self.q * min(t, self.t_in))
+
+    def precursor(self, t):
+        """Precursor delivered by t (the flask's and the syringe's), mol / V0."""
+        return self.c_p0 + self.c_syr * self.q * min(t, self.t_in) / self.V0
+
+
+def precursor_only(c: dict, t: float) -> tuple[float, float, float]:
+    """The pool with no clusters or dots at time t: (CdSe in solution, salt left; M, at the flask's volume then;
+    the share converted of the precursor delivered by then). dx/dt = k_conv (P - x) C_X in amounts per V0, with C_X = phi (c_MX0 - x)
+    the salt's concentration: the closed form without a syringe."""
+    c = {**DEFAULTS, **c}
+    f = Feed(c)
+    k = k_conv_at(float(c["T"]), float(c["k_conv_500K"]), float(c["Ea_conv"]))
+    c_mx0 = float(c["c_MX0"])
+    if not f.on:
+        x = converted(t, k, f.c_p0, c_mx0)
+    else:
+        from scipy.integrate import solve_ivp
+        rhs = lambda tt, y: [k * max(f.precursor(tt) - y[0], 0.0) * f.phi(tt) * max(c_mx0 - y[0], 0.0)]  # noqa: E731
+        x, t_ = 0.0, 0.0
+        for t_b in sorted({min(t, f.t_in), t}):
+            if t_b > t_:
+                x = float(solve_ivp(rhs, (t_, t_b), [x], method="LSODA", rtol=1e-10, atol=1e-16).y[0, -1])
+                t_ = t_b
+    return f.phi(t) * x, f.phi(t) * (c_mx0 - x), x / f.precursor(t)
+
+
+def conditions(cond: dict | None = None) -> dict:
+    """DEFAULTS with cond on top. The solvent sets eps and eta_mPas (its viscosity at T); a cond that gives eps or
+    eta_mPas without a solvent, or solvent "custom", keeps them as given."""
+    cond = dict(cond or {})
+    if "solvent" not in cond and ("eps" in cond or "eta_mPas" in cond):
+        cond["solvent"] = "custom"
+    c = {**DEFAULTS, **cond}
+    if c["solvent"] != "custom":
+        c["eps"], c["eta_mPas"] = solvents.properties(c["solvent"], float(c["T"]))
+    return c
+
+
 def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dict:
     """Backward Euler over [t_start, t_end] with the pool solved at every step; outputs on n_out log-spaced times,
     and with dense_out also at every step that moves ln C_M, ln(number of dots) or <m> by OUT_CH since the last
@@ -547,13 +645,16 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     the network's edge, C_M collapses and the run says nothing about growth.
     prune_eV > 0: on the subset of Network.prune (the CdCl2 left from c_MX0 down to c_MX0 - c_P0, at least 1e-6 M),
     populations returned on the whole network."""
-    c = {**DEFAULTS, **(cond or {})}
+    c = conditions(cond)
     for key, (lo, hi) in LIMITS.items():
         if key in c and not lo <= float(c[key]) <= hi:
             raise ValueError(f"{key} = {c[key]} is outside [{lo}, {hi}]")
+    feed = Feed(c)
+    if feed.total <= 0:
+        raise ValueError("no precursor: c_P0 = 0 without a syringe")
     if float(c["prune_eV"]) > 0:
         keep = net.prune(float(c["T"]), float(c["eps"]), float(c["c_MX0"]),
-                         max(float(c["c_MX0"]) - float(c["c_P0"]), 1e-6), float(c["prune_eV"]))
+                         max(float(c["c_MX0"]) - feed.total, 1e-6), float(c["prune_eV"]))
         sub = net.subset(keep)
         r = simulate(sub, {**c, "prune_eV": 0.0}, log, stop)
         r["cond"] = c
@@ -565,35 +666,40 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         r["N"], r["states"] = full, sub.n
         return r
     T, eps = float(c["T"]), float(c["eps"])
-    c_p0, c_mx0 = float(c["c_P0"]), float(c["c_MX0"])
+    c_mx0 = float(c["c_MX0"])
     k_conv = k_conv_at(T, float(c["k_conv_500K"]), float(c["Ea_conv"]))
     t0, t_end = float(c["t_start"]), float(c["t_end"])
     t_out = list(np.geomspace(t0, t_end, int(c["n_out"])))
+    if feed.on and t0 < feed.t_in < t_end:                   # an output where the syringe stops (the steps land on it)
+        t_out = sorted(set(t_out) | {feed.t_in})
     nu, nu_src = net.prefactors(T, float(c["eta_mPas"]), float(c["s_nu"]))
     _g, th, _pa = net.G(T, eps)
     isl = bool(c["islands"])
 
-    def conv(x_, c_x1, dt):
-        """x at the step's end: the conversion over dt with the salt the states hold fixed at its end value,
-        x1 - x = converted(dt, P = c_P0 - x, MX = C_X1 + (x1 - x)); monotone in x1 - x on [0, c_P0 - x]."""
-        p = c_p0 - x_
+    def conv(x_, c_x1, dt, t1):
+        """x at the step's end t1 (mol / V0): the conversion over dt with the salt the states hold fixed at its end
+        value and the flask at its end volume, phi1 (x1 - x) = converted(dt, P = phi1 (P(t1) - x),
+        MX = C_X1 + phi1 (x1 - x)); monotone in x1 - x on [0, P(t1) - x]. Without a syringe phi = 1."""
+        f1 = feed.phi(t1)
+        p = f1 * (feed.precursor(t1) - x_)
         if p <= 0.0:
             return x_
         g = lambda d: d - converted(dt, k_conv, p, c_x1 + d)            # noqa: E731
-        return x_ + (p if g(p) <= 0.0 else brentq(g, 0.0, p, xtol=1e-18, rtol=1e-15))
+        return x_ + (p if g(p) <= 0.0 else brentq(g, 0.0, p, xtol=1e-18, rtol=1e-15)) / f1
     mvec, kvec = net.m.astype(float), net.k.astype(float)
     # the CdSe and X each step and nucleus source moves from the pool (b - a; the fast isomerisations move none)
     d_mk = np.array([mvec[net.b] - mvec[net.a], kvec[net.b] - kvec[net.a]])
     js = net.src[:, 2]
     mk_src = np.array([mvec[js], kvec[js]])
-    N = np.zeros(net.n)
+    N = np.zeros(net.n)                                   # mol / V0 (the populations are N phi)
     t = t0
-    x = converted(t, k_conv, c_p0, c_mx0)                 # nothing held before t_start
-    u = np.array([math.log(x), math.log(c_mx0 - x)])
+    cm0, cx0, _a0 = precursor_only(c, t)                  # nothing held before t_start
+    x = cm0 / feed.phi(t)
+    u = np.array([math.log(cm0), math.log(cx0)])
     out = {"cond": c, "t": [], "alpha": [], "c_MA": [], "c_X_left": [], "c_MX_free": [], "mu_MA": [], "mu_MX": [],
            "n_dots": [], "n_clusters": [], "m_mean": [], "m_std": [], "nucleation": [], "frontier": [],
            "layer_flux": {f: [] for f in FAMILIES}, "cdse_flux": {f: [] for f in FAMILIES}, "attach_flux": [],
-           "barriers": [], "N": [], "steps": 0, "lu": 0, "wall_s": 0.0, "stopped": None}
+           "barriers": [], "N": [], "V_mL": [], "steps": 0, "lu": 0, "wall_s": 0.0, "stopped": None}
     w0 = time.time()
     solver = _Solver(net.n)
     dudt = None
@@ -616,31 +722,35 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         """The step's N and conversion x1 for a pool guess, and the pool residual F (relative to the totals)."""
         pl, r, M, s = assemble(u_)
         A = net.system(M, dt)
-        N1 = solver.solve(A, N + dt * s)
-        x1 = conv(x, math.exp(u_[1]), dt)
+        f1 = feed.phi(t + dt)                             # amounts: the sources (mol/L/s) / phi, the pool's exp(u) / phi
+        N1 = solver.solve(A, N + dt * s / f1)
+        x1 = conv(x, math.exp(u_[1]), dt, t + dt)
         sc = np.array([x1, c_mx0 - x1])
-        F = (np.exp(u_) + np.array([mvec @ N, kvec @ N]) + dt * moved(r, N1) - sc) / sc
-        return {"F": F, "N": N1, "pl": pl, "r": r, "A": A, "M": M, "s": s, "sc": sc, "dt": dt, "x1": x1}
+        F = (np.exp(u_) / f1 + np.array([mvec @ N, kvec @ N]) + dt * moved({**r, "s_f": r["s_f"] / f1}, N1) - sc) / sc
+        return {"F": F, "N": N1, "pl": pl, "r": r, "A": A, "M": M, "s": s, "sc": sc, "dt": dt, "x1": x1, "phi": f1}
 
     def jacobian(st, u_, dt):
         """Exact Jacobian of F in ln C_M, ln C_X: the rates' derivatives by differences of the assembly, the
         population's through the same matrix, and the conversion's through C_X."""
-        J = np.diag(np.exp(u_) / st["sc"])
-        dx1 = (conv(x, math.exp(u_[1] + 1e-6), dt) - st["x1"]) / 1e-6
+        f1 = st["phi"]
+        J = np.diag(np.exp(u_) / f1 / st["sc"])
+        dx1 = (conv(x, math.exp(u_[1] + 1e-6), dt, t + dt) - st["x1"]) / 1e-6
         J[:, 1] -= (st["F"] + 1.0) / st["sc"] * np.array([1.0, -1.0]) * dx1
         r, N1 = st["r"], st["N"]
         for q in range(2):
             h = np.zeros(2); h[q] = 1e-6
             _p, rh, Mh, sh = assemble(u_ + h)
-            dN = solver.solve(st["A"], dt * (((Mh - st["M"]) @ N1) + (sh - st["s"])) / 1e-6)
+            dN = solver.solve(st["A"], dt * (((Mh - st["M"]) @ N1) + (sh - st["s"]) / f1) / 1e-6)
             dr = {key: (rh[key] - r[key]) / 1e-6 for key in ("kf", "kr", "s_f", "s_r")}
+            dr["s_f"] = dr["s_f"] / f1
             d_flux = moved(dr, N1) + moved({**r, "s_f": np.zeros_like(r["s_f"])}, dN)  # rates' and N1's change
             J[:, q] += dt * d_flux / st["sc"]
         return J
 
     def record(t_, N_, pl, r):
+        N_ = N_ * feed.phi(t_)                            # populations (mol/L at the flask's volume then)
         nd = float(N_[dot].sum())
-        out["t"].append(t_); out["alpha"].append(x / c_p0)
+        out["t"].append(t_); out["alpha"].append(x / feed.precursor(t_)); out["V_mL"].append(1e3 * feed.V0 / feed.phi(t_))
         out["c_MA"].append(pl["c_MA"]); out["c_X_left"].append(pl["c_X_left"]); out["c_MX_free"].append(pl["c_MX_free"])
         out["mu_MA"].append(pl["mu_MA"]); out["mu_MX"].append(pl["mu_MX"])
         out["n_dots"].append(nd); out["n_clusters"].append(float(N_[~dot].sum()))
@@ -672,8 +782,9 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         """The step moved ln C_M, ln(number of dots) or <m> by OUT_CH since the last output."""
         if abs(math.log(pl["c_MA"] / out["c_MA"][-1])) >= OUT_CH[0]:
             return True
+        N_ = N_ * feed.phi(t)
         nd = N_[dot].sum()
-        if nd <= 0 or mvec[dot] @ N_[dot] < DOT_SEEN * x:
+        if nd <= 0 or mvec[dot] @ N_[dot] < DOT_SEEN * x * feed.phi(t):
             return False
         nd0 = out["n_dots"][-1]
         return (nd0 <= 0 or abs(math.log(nd / nd0)) >= OUT_CH[1]
@@ -697,8 +808,10 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
         if dudt is None:                                 # predictor: the pool's last rate of change, else the supply
-            x1 = conv(x, math.exp(u[1]), dt)
-            v = np.array([math.log(max(math.exp(u[0]) + (x1 - x), x1 * 1e-12)), u[1] - (x1 - x) / max(c_mx0 - x, 1e-30)])
+            x1 = conv(x, math.exp(u[1]), dt, t1)
+            f0, f1 = feed.phi(t), feed.phi(t1)
+            v = np.array([math.log(max(math.exp(u[0]) * f1 / f0 + f1 * (x1 - x), f1 * x1 * 1e-12)),
+                          u[1] + math.log(f1 / f0) - (x1 - x) / max(c_mx0 - x, 1e-30)])
         else:
             v = u + dudt * dt
         ok = False
@@ -796,8 +909,8 @@ def stationary_residual(net: Network, T, eps, pl, nu=None, nu_src=None) -> float
 def load(network, thermo_path, params_path) -> Network:
     import yaml
     thermo = json.loads(Path(thermo_path).read_text())
-    solv = yaml.safe_load(Path(params_path).read_text())["solvation"]
-    return Network(network, thermo, solv, Path(thermo_path).resolve().parent)
+    params = yaml.safe_load(Path(params_path).read_text())
+    return Network(network, thermo, params["solvation"], Path(thermo_path).resolve().parent, params.get("species"))
 
 
 def main(argv=None) -> int:
@@ -818,15 +931,15 @@ def main(argv=None) -> int:
     net = load(a.network, a.thermo, a.params)
     print(f"{net.n} states ({net.n_grid} grid nodes), {len(net.a)} steps, {len(net.src)} nucleus sources, "
           f"{len(net.isl)} island curves", flush=True)
-    cond = {key: getattr(a, key) for key in DEFAULTS if hasattr(a, key)}
+    cond = conditions({key: getattr(a, key) for key in DEFAULTS if hasattr(a, key) and getattr(a, key) != DEFAULTS[key]})
     cond["islands"] = not a.no_islands
     if a.cmd == "check":
-        _g, th, _pa = net.G(a.T, a.eps)
+        _g, th, _pa = net.G(a.T, cond["eps"])
         for alpha in (0.05, 0.2, 0.5):
             x = alpha * a.c_P0
             pl = _pool(th, x, a.c_MX0 - x)
             print(f"alpha {alpha}: mu_MA {pl['mu_MA']:.3f}, mu_MX {pl['mu_MX']:.3f} eV; stationary residual "
-                  f"{stationary_residual(net, a.T, a.eps, pl):.2e}")
+                  f"{stationary_residual(net, a.T, cond['eps'], pl):.2e}")
         return 0
     res = simulate(net, cond, log=lambda s: print(s, flush=True))
     print(f"{res['steps']} steps, {res['lu']} LU solves, {res['wall_s']:.1f} s"

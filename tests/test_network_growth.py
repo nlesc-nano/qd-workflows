@@ -1,5 +1,6 @@
 """Network growth model (network_growth) on a synthetic network: detailed balance, conservation, island barriers."""
 import json
+import math
 
 import numpy as np
 
@@ -189,3 +190,52 @@ def test_collision_areas_come_from_the_structures(tmp_path):
         assert "area_A2" in str(e)
     else:
         raise AssertionError("a layer step without area_A2 was accepted")
+
+
+def test_species_names_from_the_seed():
+    """X from the seed's formula (Cl, or the carboxylate with its short name); the template's block overrides."""
+    cl = {"seed": 0, "states": [{"formula": "Cd16Se13Cl6", "m": 13, "k": 3}]}
+    ac = {"seed": 0, "states": [{"formula": "Cd19Se16C12O12H18", "m": 16, "k": 3}]}
+    assert ng.species(cl) == {"M": "Cd", "A": "Se", "X": "Cl", "MA": "CdSe", "MX": "CdCl2"}
+    assert ng.species(ac)["X"] == "OAc" and ng.species(ac)["MX"] == "Cd(OAc)2"
+    assert ng.species(ac, {"X": "acetate", "MX": "Cd(OAc)2"})["X"] == "acetate"
+
+
+def test_solvent_sets_eps_and_viscosity():
+    from qd_workflows import solvents
+    hot, cool = ng.conditions({"T": 550.0}), ng.conditions({"T": 420.0})
+    assert hot["solvent"] == "1-octadecene" and hot["eps"] == solvents.properties("1-octadecene", 550.0)[0]
+    assert hot["eta_mPas"] < cool["eta_mPas"]                   # thinner when hotter
+    assert ng.conditions({"eps": 1.0})["eps"] == 1.0 and ng.conditions({"eps": 1.0})["solvent"] == "custom"
+    for row in solvents.table():                                  # every entry: through its points, thinner when hotter
+        assert 1.0 < row["eps"] < 50 and row["basis"] in ("measured", "correlation", "estimate")
+        for T, eta in row["eta"]:
+            assert abs(solvents.viscosity(row["name"], T) / eta - 1) < 1e-9
+        etas = [solvents.viscosity(row["name"], T) for T in (350.0, 450.0, 550.0, 650.0)]
+        assert all(a > b > 0 for a, b in zip(etas, etas[1:]))
+
+
+def test_syringe_injection_conserves_amounts(tmp_path):
+    """The syringe adds precursor and volume: CdSe and salt balance in amounts per litre of the starting flask
+    (concentration / phi), the flask ends at V0 + rate x time, and the pool without clusters matches the closed form
+    once the syringe has nothing to add (c_syringe_M -> its own amount in the flask)."""
+    cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.0, "c_MX0": 0.05, "k_conv_500K": 10.0, "t_start": 1e-3,
+            "t_end": 50.0, "n_out": 10, "inject": True, "c_syringe_M": 0.2, "rate_mL_h": 360.0, "V0_mL": 10.0,
+            "inj_duration_s": 20.0}
+    net = _network(tmp_path)
+    r = ng.simulate(net, cond)
+    assert r["stopped"] is None and 20.0 in [round(t, 9) for t in r["t"]]
+    V = np.array(r["V_mL"]); phi = 10.0 / V
+    assert abs(V[-1] - 12.0) < 1e-9 and np.all(np.diff(V) >= 0)
+    total = 0.2 * 2.0 / 10.0                                     # mol per litre of the starting flask
+    feed = ng.Feed(ng.conditions(cond))
+    assert abs(feed.total - total) < 1e-15
+    x = np.array(r["alpha"]) * np.array([feed.precursor(t) for t in r["t"]])   # alpha: of the precursor delivered
+    held_m = np.array([net.m @ n for n in r["N"]]); held_k = np.array([net.k @ n for n in r["N"]])
+    assert np.allclose((np.array(r["c_MA"]) + held_m) / phi, x, rtol=1e-6, atol=1e-12)
+    assert np.allclose((np.array(r["c_X_left"]) + held_k) / phi, cond["c_MX0"] - x, rtol=1e-6, atol=1e-12)
+    cm, cx, a = ng.precursor_only(cond, 1e4)                    # long after: everything delivered and converted
+    assert abs(a - 1.0) < 1e-6 and abs(cm - total * 10.0 / 12.0) < 1e-9
+    flask = {**cond, "inject": False, "c_P0": 0.03}               # no syringe: the closed form
+    from qd_workflows.grid_thermo import converted
+    assert abs(ng.precursor_only(flask, 5.0)[0] - converted(5.0, 10.0, 0.03, 0.05)) < 1e-15

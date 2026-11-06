@@ -73,6 +73,8 @@ main { display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(0, 0.8f
   font-variant-numeric: tabular-nums; color: var(--text-primary); background: var(--surface-0);
   border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
 .num input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.ctl select { font: inherit; font-size: 13px; font-weight: 600; color: var(--text-primary); background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; max-width: 13em; }
 .num input.bad { border-color: var(--err-ink); color: var(--err-ink); }
 .ctl .hint, .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 .tog { display: flex; align-items: center; gap: 7px; cursor: pointer; color: var(--text-secondary); font-size: 13px; }
@@ -137,6 +139,8 @@ button:disabled { opacity: .55; cursor: progress; }
     <section class="card sticky">
       <h2>Conditions</h2>
       <div id="controls"></div>
+      <h3><label class="tog"><input type="checkbox" id="inject"> <span id="injLab">Inject the Se precursor with a syringe</span></label></h3>
+      <div id="injCtl" hidden></div>
       <div class="ctl"><label class="tog"><input type="checkbox" id="islands" checked> Island barriers on layer steps</label>
         <div class="hint">Off: every layer attaches as soon as it is downhill (attachment-limited growth).</div></div>
       <button class="primary" id="runBtn">Run the growth</button> <button id="stopBtn" disabled>Stop</button>
@@ -144,7 +148,7 @@ button:disabled { opacity: .55; cursor: progress; }
       <h3>Look at Ω at</h3>
       <div class="ctl"><label>time from the start <span class="num"><input id="tnow" value="10" aria-label="time from the start"><i>s</i></span></label>
         <input type="range" id="tnowR" min="-3" max="4" step="0.01" value="1" aria-label="time from the start (log)">
-        <div class="hint">The pool from the precursor alone (no nuclei, no dots): the CdSe converted by then and the CdCl₂ left. Sets step 1 and the live map.</div></div>
+        <div class="hint">The pool from the precursor alone (no nuclei, no dots): the <span class="sMA">CdSe</span> converted by then and the <span class="sMX">CdCl₂</span> left. Sets step 1 and the live map.</div></div>
       <div class="status" id="liveStatus"></div>
       <h3>Network</h3>
       <div class="hint" id="netInfo"></div>
@@ -160,7 +164,7 @@ button:disabled { opacity: .55; cursor: progress; }
         <div class="chart tall" id="cOmega"></div>
         <div class="cap">Click a point to show the lowest cluster of that m (at its k*). Circle: where the clusters are. Below
           a barrier, the most populated size, c(m) = c° e<sup>−Ω(m)/kT</sup>, among the sizes below the top; without a
-          barrier, m = 13: the clusters reach the seed. Triangle: the barrier top m*. The badge is ln S = (μ<sub>CdSe</sub> − g<sub>bulk</sub>)/kT at this time.</div>
+          barrier, m = 13: the clusters reach the seed. Triangle: the barrier top m*. The badge is ln S = (μ<sub><span class="sMA">CdSe</span></sub> − g<sub>bulk</sub>)/kT at this time.</div>
       </div>
       <div>
         <div class="chart-title" id="kmapTitle">Cluster populations P(m, k), log scale</div>
@@ -170,7 +174,7 @@ button:disabled { opacity: .55; cursor: progress; }
         </div>
         <div class="chart tall" id="cHeat"></div>
         <div class="cap" id="kmapCap"></div>
-        <div class="cap">Click any cell to see that cluster [CdSe]<sub>m</sub>(CdCl₂)<sub>k</sub> in the Structure card. Grey: grid
+        <div class="cap">Click any cell to see that cluster [<span class="sMA">CdSe</span>]<sub>m</sub>(<span class="sMX">CdCl₂</span>)<sub>k</sub> in the Structure card. Grey: grid
           nodes without thermochemistry (not annealed, no Hessian): energy only, not in Ω.</div>
       </div>
     </div>
@@ -198,7 +202,7 @@ button:disabled { opacity: .55; cursor: progress; }
     <div class="lawpick" role="radiogroup" aria-label="Pool of the profile">
       <span>Pool:</span>
       <label><input type="radio" name="profsrc" value="pre" id="prof_pre" checked> precursor only (no nuclei)</label>
-      <label><input type="radio" name="profsrc" value="run" id="prof_run" disabled> network run (after the nuclei take their CdSe)</label>
+      <label><input type="radio" name="profsrc" value="run" id="prof_run" disabled> network run (after the nuclei take their <span class="sMA">CdSe</span>)</label>
       <span class="cap" id="profNote" style="margin:0"></span>
     </div>
     <div class="chart tall" id="cProfile"></div>
@@ -217,8 +221,8 @@ button:disabled { opacity: .55; cursor: progress; }
         <span class="cap" id="outNote" style="margin:0"></span></div>
       <div class="readouts" id="ro"></div>
       <div class="charts">
-        <div><div class="chart-title">Pool: CdSe in solution and free CdCl₂ (M)</div><div class="chart" id="cPool"></div></div>
-        <div><div class="chart-title">Conversion α and the dots' share of the CdSe</div><div class="chart" id="cAlpha"></div></div>
+        <div><div class="chart-title">Pool: <span class="sMA">CdSe</span> in solution and free <span class="sMX">CdCl₂</span> (M)</div><div class="chart" id="cPool"></div></div>
+        <div><div class="chart-title">Conversion α and the dots' share of the <span class="sMA">CdSe</span></div><div class="chart" id="cAlpha"></div></div>
         <div><div class="chart-title">Dots (M, m ≥ 13) and nucleation (M/s)</div><div class="chart" id="cDots"></div></div>
         <div><div class="chart-title">Mean diameter ± spread (nm)</div><div class="chart" id="cSize"></div></div>
       </div>
@@ -228,15 +232,15 @@ button:disabled { opacity: .55; cursor: progress; }
       <div class="chart" id="cPSDt"></div>
     </section>
     <section class="card">
-      <h2>3 · Facets <small>CdSe per facet family through the layer steps</small></h2>
+      <h2>3 · Facets <small><span class="sMA">CdSe</span> per facet family through the layer steps</small></h2>
       <div class="charts">
-        <div><div class="chart-title">CdSe added by layer steps (M/s)</div><div class="chart" id="cFacet"></div></div>
-        <div><div class="chart-title">Share of the CdSe added so far</div><div class="chart" id="cShare"></div></div>
+        <div><div class="chart-title"><span class="sMA">CdSe</span> added by layer steps (M/s)</div><div class="chart" id="cFacet"></div></div>
+        <div><div class="chart-title">Share of the <span class="sMA">CdSe</span> added so far</div><div class="chart" id="cShare"></div></div>
       </div>
       <div class="chart-title">Island barriers at the time of the bar (eV, the curve's top before it turns downhill)</div>
       <table class="ptable" id="barTable"></table>
       <div class="cap">Parents with their own relaxed islands use their own curve; every other layer step uses the median
-        curve of its facet and parent-size bin (m in CdSe units), then of its facet; {110} uses the median over all.</div>
+        curve of its facet and parent-size bin (m in <span class="sMA">CdSe</span> units), then of its facet; {110} uses the median over all.</div>
     </section>
   </div>
 
@@ -249,7 +253,7 @@ button:disabled { opacity: .55; cursor: progress; }
       <div class="chart map" id="cMap"></div>
       <div class="cap" id="mapCap">Each cell is one (m, k) composition (its lowest state); "smooth" averages the computed
         cells with a Gaussian of 1.5 lattice units and fills only within 2 units of one, the hover gives the cell's own Ω. Circles: where the dots are
-        at the bar's time; lines: the steps carrying the most net flux. m = 1 is the pool (the CdSe(CdCl₂)ₙ complexes),
+        at the bar's time; lines: the steps carrying the most net flux. m = 1 is the pool (the <span class="sMA">CdSe</span>(<span class="sMX">CdCl₂</span>)ₙ complexes),
         m 2–13 the nucleation grid's nodes, which the run passes through like any other state. Click a cell for its structures.</div>
     </section>
     <section class="card">
@@ -276,7 +280,7 @@ button:disabled { opacity: .55; cursor: progress; }
         so the burst is the shares moving and the growth of one dot is a growth path. <b>Growth</b> (pick one of the
         most populated at the time bar's time): from the pool to that state, the chain of steps along which the most
         material has moved so far, i.e. whose narrowest step carried the most (the net flux integrated over the run),
-        played forward step by step. <b>Dissolution</b> (the populated dots losing more CdSe to smaller states than they
+        played forward step by step. <b>Dissolution</b> (the populated dots losing more <span class="sMA">CdSe</span> to smaller states than they
         gain, right then): from that dot down the steps with net flux to the smaller state at that time, the chain with
         the largest narrowest flux, back to the pool when the flux reaches it. Every frame on the scale of the largest,
         centred; drag to turn it, the turn is kept from frame to frame.</div>
@@ -288,13 +292,16 @@ const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const FAM = ["100", "111A", "111B", "110"], FLAB = { "100": "{100}", "111A": "{111}A", "111B": "{111}B", "110": "{110}" };
 const CTRL = [
-  ["T", "T", "K"], ["eps", "solvent ε", ""], ["c_P0", "Se precursor c_P0", "M"], ["c_MX0", "CdCl₂ c_MX0", "M"],
+  ["T", "T", "K"], ["c_P0", "{A} precursor c_P0", "M"], ["c_MX0", "{MX} c_MX0", "M"],
   ["k_conv_500K", "k_conv (500 K)", "1/(M s)"], ["Ea_conv", "E_a of the conversion", "eV"], ["t_end", "time", "s"],
-  ["s_nu", "kinetic scale s_ν", "×"], ["eta_mPas", "viscosity η", "mPa s"],
   ["prune_eV", "fast: skip dots above their size's best by (0 = exact; can cut growth paths)", "eV"],
   ["max_wall_s", "stop the run after", "s wall"],
   ["frontier_stop", "stop at the network edge, dots on dead ends", "fraction"],
 ];
+// the network's units (M A, the salt M X2), from /api/defaults
+let MA = "CdSe", XL = "CdCl₂", AEL = "Se";
+const INJ = [["c_syringe_M", "{A} precursor in the syringe", "M"], ["rate_mL_h", "infusion rate", "mL/h"],
+  ["inj_duration_s", "injection time", "s"], ["V0_mL", "flask volume at the start", "mL"]];
 let D = null, RUN = null, JOB = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", MAPSMOOTH = true, VIEW = null, SEL = null, LASTMAP = null;
 
 async function api(path, body) {
@@ -319,19 +326,70 @@ function conditions() {
   const c = {};
   for (const [k] of CTRL) { const el = $("in_" + k); const v = parseFloat(el.value); const [lo, hi] = D.limits[k] || [-Infinity, Infinity];
     const ok = isFinite(v) && v >= lo && v <= hi; el.classList.toggle("bad", !ok); if (!ok) throw new Error(`${k} must be in [${lo}, ${hi}]`); c[k] = v; }
+  c.solvent = $("in_solvent").value;
+  c.inject = $("inject").checked;
+  if (c.inject) for (const [k] of INJ) { const el = $("in_" + k), v = parseFloat(el.value), [lo, hi] = D.limits[k];
+    const ok = isFinite(v) && v >= lo && v <= hi; el.classList.toggle("bad", !ok); if (!ok) throw new Error(`${k} must be in [${lo}, ${hi}]`); c[k] = v; }
+  if (!c.inject && !(c.c_P0 > 0)) { $("in_c_P0").classList.add("bad"); throw new Error("c_P0 must be > 0 without a syringe"); }
   c.islands = $("islands").checked;
   return c;
 }
 
 function buildControls() {
-  $("controls").innerHTML = CTRL.map(([k, lab, unit]) => `<div class="ctl"><label>${lab} <span class="num"><input id="in_${k}" value="${D.conditions[k]}" aria-label="${lab}"><i>${unit}</i></span></label></div>`).join("");
+  const sp = D.species, sub = (x) => x.replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[d]);
+  MA = sub(sp.MA); XL = sub(sp.MX); AEL = sp.A;
+  for (const el of document.querySelectorAll(".sMA")) el.textContent = MA;
+  for (const el of document.querySelectorAll(".sMX")) el.textContent = XL;
+  $("injLab").textContent = `Inject the ${AEL} precursor with a syringe`;
+  const lab = (x) => x.replace("{A}", AEL).replace("{MX}", XL);
+  const solv = `<div class="ctl"><label>solvent <select id="in_solvent" aria-label="solvent">` +
+    D.solvents.map((v) => `<option value="${v.name}"${v.name === D.conditions.solvent ? " selected" : ""}>${v.name}</option>`).join("") +
+    `</select></label><div class="hint" id="solvHint"></div></div>`;
+  $("controls").innerHTML = CTRL.slice(0, 1).concat([null], CTRL.slice(1)).map((r) => r === null ? solv :
+    `<div class="ctl"><label>${lab(r[1])} <span class="num"><input id="in_${r[0]}" value="${D.conditions[r[0]]}" aria-label="${lab(r[1])}"><i>${r[2]}</i></span></label>${r[0] === "c_P0" ? '<div class="hint" id="h_c_P0"></div>' : ""}</div>`).join("");
   for (const [k] of CTRL) $("in_" + k).addEventListener("change", onConds);
+  $("in_solvent").addEventListener("change", onConds);
+  $("injCtl").innerHTML = INJ.map(([k, l, unit]) => `<div class="ctl"><label>${lab(l)} <span class="num"><input id="in_${k}" value="${D.conditions[k]}" aria-label="${lab(l)}"><i>${unit}</i></span></label></div>`).join("") +
+    `<div class="hint" id="injHint"></div>`;
+  for (const [k] of INJ) $("in_" + k).addEventListener("change", onConds);
+  $("inject").addEventListener("change", () => { $("injCtl").hidden = !$("inject").checked; onConds(); });
+  solventHint();
   $("islands").addEventListener("change", onConds);
   const n = D.network;
   $("mmax").textContent = `m = ${n.m_max} (≈ ${n.d_max_nm.toFixed(1)} nm)`;
   $("netInfo").innerHTML = `${n.states.toLocaleString()} states (${n.grid_nodes} grid nodes, seed ${n.seed}) in ${n.compositions.toLocaleString()} compositions; ` +
     `${n.steps.toLocaleString()} steps: ${n.kinds.layer.toLocaleString()} layer, ${n.kinds.attach.toLocaleString()} attach, ${n.kinds.shell.toLocaleString()} shell, ` +
     `${n.kinds.iso.toLocaleString()} isomer, ${n.kinds.grid.toLocaleString()} grid; ${n.island_curves} island curves.`;
+}
+
+// the syringe's volume and precursor
+function injHint() {
+  if (!$("inject").checked) { $("h_c_P0").textContent = ""; return; }
+  const g = (k) => parseFloat($("in_" + k).value), V0 = g("V0_mL"), dV = g("rate_mL_h") * g("inj_duration_s") / 3600;
+  const n = g("c_syringe_M") * dV / V0 + (parseFloat($("in_c_P0").value) || 0) * 1;
+  $("h_c_P0").textContent = `${AEL} in the flask at the start (0: all of it from the syringe)`;
+  $("injHint").textContent = `The syringe adds ${dV.toPrecision(2)} mL (the flask ends at ${(V0 + dV).toPrecision(3)} mL), ` +
+    `${(n).toPrecision(2)} mol of ${AEL} precursor per litre of the starting flask in all; every concentration dilutes as it fills.`;
+}
+// the solvent's epsilon and its viscosity at T: ln eta linear in 1/T through the table's points, the end pair's
+// slope beyond them (solvents.viscosity)
+function viscosity(pts, T) {
+  const p = [...pts].sort((a, b) => b[0] - a[0]), x = p.map((q) => 1 / q[0]), y = p.map((q) => Math.log(q[1])), u = 1 / T;
+  const seg = (i) => y[i] + (u - x[i]) * (y[i + 1] - y[i]) / (x[i + 1] - x[i]);
+  if (u <= x[0]) return Math.exp(seg(0));
+  for (let i = 0; i < x.length - 1; i++) if (u <= x[i + 1]) return Math.exp(seg(i));
+  return Math.exp(seg(x.length - 2));
+}
+function solventHint() {
+  injHint();
+  const v = D.solvents.find((x) => x.name === $("in_solvent").value), T = parseFloat($("in_T").value);
+  if (!v || !isFinite(T)) return;
+  const tmax = Math.max(...v.eta.map((q) => q[0])), warn = [];
+  if (v.Tb_K && T > v.Tb_K) warn.push(`above its boiling point (${v.Tb_K.toFixed(0)} K): a sealed or pressurised vessel`);
+  if (T > tmax + 1) warn.push(`η extrapolated beyond its data (to ${tmax.toFixed(0)} K)`);
+  if (v.basis === "estimate") warn.push("η and ε estimated from analogues (no data found)");
+  $("solvHint").innerHTML = `<span title="${v.source.replace(/"/g, "&quot;")}">ε ${v.eps.toFixed(2)}, η ${viscosity(v.eta, T).toPrecision(2)} mPa s at ${T} K (${v.basis})</span>` +
+    (warn.length ? `; ${warn.join("; ")}` : "");
 }
 
 // ---------------- the time shown live (step 1 and the map, precursor alone)
@@ -346,7 +404,7 @@ function syncT(fromRange) {
   else $("tnowR").value = Math.log10(tNow());
   onConds();
 }
-function onConds() { requestNuc(); liveMap(); requestProfile(); }
+function onConds() { solventHint(); requestNuc(); liveMap(); requestProfile(); }
 
 // ---------------- the profile from the pool to the dots (precursor-only pool, or the run's at the time shown)
 let profTok = 0, profTimer = null;
@@ -392,13 +450,13 @@ function drawProfile(o) {
   }
   const L = layout("linear", { hovermode: "closest", showlegend: true,
     legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { size: 10 } }, margin: { l: 50, r: 8, t: 24, b: 34 } });
-  L.xaxis = { type: "log", gridcolor: css("--grid"), zeroline: false, title: { text: "m (CdSe units), log", standoff: 4 } };
+  L.xaxis = { type: "log", gridcolor: css("--grid"), zeroline: false, title: { text: `m (${MA} units), log`, standoff: 4 } };
   L.yaxis = { gridcolor: css("--grid"), zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
   L.shapes = [{ type: "line", xref: "x", yref: "paper", x0: mg + 0.5, x1: mg + 0.5, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } }];
   L.annotations = [{ x: Math.log10(mg + 0.5), y: 1, xref: "x", yref: "paper", yanchor: "top", xanchor: "left", xshift: 4, showarrow: false,
     text: "grid | dots", font: { size: 10, color: css("--text-muted") } },
     { xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
-      text: `${o.run ? "run's pool" : "precursor only"} at ${fmt(o.t)} s: CdSe in solution ${fmt(o.c_MA)} M, μ<sub>CdSe</sub> ${o.mu_MA.toFixed(3)} eV`,
+      text: `${o.run ? "run's pool" : "precursor only"} at ${fmt(o.t)} s: ${MA} in solution ${fmt(o.c_MA)} M, μ<sub>${MA}</sub> ${o.mu_MA.toFixed(3)} eV`,
       font: { size: 11, color: css("--text-primary") } }];
   Plotly.react("cProfile", traces, L, PCONF);
   onClick("cProfile", (ev) => {
@@ -414,14 +472,14 @@ function liveMap() {
     try {
       const m = await api("/api/map", { conditions: conditions(), t: tNow() });
       $("liveStatus").className = "status";
-      $("liveStatus").textContent = `α ${fmt(m.alpha)}; μ_CdSe ${m.mu_MA.toFixed(3)} eV, μ_CdCl₂ ${m.mu_MX.toFixed(3)} eV; free CdCl₂ ${fmt(m.c_MX_free)} M`;
+      $("liveStatus").textContent = `α ${fmt(m.alpha)}; μ_${MA} ${m.mu_MA.toFixed(3)} eV, μ_${XL} ${m.mu_MX.toFixed(3)} eV; free ${XL} ${fmt(m.c_MX_free)} M`;
       drawMap(m, `live, t = ${fmt(tNow())} s (α = ${fmt(m.alpha)}), no dots`);
     } catch (e) { $("liveStatus").className = "status err"; $("liveStatus").textContent = e.message; }
   }, 150);
 }
 
 // ---------------- 1. nucleation: the grid's Omega up to the seed (the nucleation simulator's step 1)
-const XL = "CdCl₂", KB = 8.617333e-5;
+const KB = 8.617333e-5;
 let L0 = null, GSEL = null, nucTok = 0, nucTimer = null;
 const PCONF = CFG;
 function layout(ytype, extra = {}) {
@@ -448,7 +506,7 @@ function concTraces(t, cm, cx, cf, dash, pre) {
   const cC = css("--series-2"), cX = css("--series-4");
   const tr = (y, name, color, d, w) => ln1(t, y.map((v) => (v > 0 ? v : null)), `${name}${pre ? ", run" : ""}`, color,
     { yaxis: "y3", line: { color, width: w, dash: d }, hovertemplate: `${pre}${name} %{y:.2e} M<extra></extra>` });
-  return [tr(cm, "CdSe monomer", cC, dash || "solid", 1.5), tr(cx, `${XL} left`, cX, dash || "solid", 1.5),
+  return [tr(cm, `${MA} monomer`, cC, dash || "solid", 1.5), tr(cx, `${XL} left`, cX, dash || "solid", 1.5),
           tr(cf, `free ${XL}`, cX, dash ? "dashdot" : "dot", 1.5)];
 }
 function onClick(id, fn) { $(id).removeAllListeners?.("plotly_click"); $(id).on("plotly_click", fn); }
@@ -482,8 +540,8 @@ function drawNucleation(o) {
   $("nucWhen").textContent = `at ${fmt(o.t)} s from the start, ${o.T_now.toFixed(0)} K, ${fmt(100 * o.alpha)} % converted`;
   $("nucRO").innerHTML = ro("barrier ΔΩ* (eV)", o.barrier == null ? "–" : o.barrier.toFixed(3)) + ro("critical m*", o.m_star)
     + ro(`k* at m = ${o.m0}`, o.k_star_m0)
-    + ro("CdSe supply (M)", fmt(o.C_M)) + ro(`${XL} left / free (M)`, `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
-    + ro(`μ CdSe / μ ${XL} (eV)`, `${o.mu_MA.toFixed(3)} / ${o.mu_MX.toFixed(3)}`) + ro(`⟨n⟩ in CdSe(${XL})ₙ`, o.mean_n.toFixed(2));
+    + ro(`${MA} supply (M)`, fmt(o.C_M)) + ro(`${XL} left / free (M)`, `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
+    + ro(`μ ${MA} / μ ${XL} (eV)`, `${o.mu_MA.toFixed(3)} / ${o.mu_MX.toFixed(3)}`) + ro(`⟨n⟩ in ${MA}(${XL})ₙ`, o.mean_n.toFixed(2));
   // Delta Omega(m) = Omega(m) - Omega(1) on the grid, m = 1..13: its maximum is the barrier of the time curve and the map
   const rows = o.per_m.filter((r) => r.m <= o.m0), om1 = rows[0].Omega_m;
   const tr = { x: rows.map((r) => r.m), y: rows.map((r) => r.Omega_m - om1), type: "scatter", mode: "lines+markers", name: "ΔΩ(m)",
@@ -505,7 +563,7 @@ function drawNucleation(o) {
       ? `most populated: m = ${pop.m}, c(m) = ${sciLog(-pop.Omega_m / kt / Math.LN10)} M`
       : `no barrier: the clusters reach the seed (m = ${o.m0})`) + "<extra></extra>" };
   const L = layout("linear", { hovermode: "closest" });
-  L.xaxis = { dtick: 1, gridcolor: grid, zeroline: false, title: { text: "m (CdSe units)", standoff: 4 }, range: [0.5, o.m0 + 0.5] };
+  L.xaxis = { dtick: 1, gridcolor: grid, zeroline: false, title: { text: `m (${MA} units)`, standoff: 4 }, range: [0.5, o.m0 + 0.5] };
   L.yaxis = { gridcolor: grid, zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
   L.annotations = o.barrier > 0 ? [{ x: o.m_star, y: o.barrier, text: `ΔΩ* = ${o.barrier.toFixed(2)} eV`, showarrow: false,
     yshift: 16, font: { size: 11, color: css("--text-primary") } }] : [];
@@ -586,14 +644,14 @@ function drawNucleation(o) {
   B.xaxis.anchor = "y4";
   const run = runOmega();
   const barTraces = [ln1(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*", c1,
-    { customdata: o.curve.map((r) => [r.m_star, r.C_M, 100 * r.alpha]), hovertemplate: "ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M, %{customdata[2]:.1f} % converted<extra></extra>" }),
+    { customdata: o.curve.map((r) => [r.m_star, r.C_M, 100 * r.alpha]), hovertemplate: `ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, ${MA} %{customdata[1]:.2e} M, %{customdata[2]:.1f} % converted<extra></extra>` }),
     ln1(o.curve.map((r) => r.t), o.curve.map((r) => Math.log(r.S)), "ln S", cS,
       { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "ln S = %{y:.2f}<extra></extra>" }),
     ...concTraces(o.curve.map((r) => r.t), o.curve.map((r) => r.C_M), o.curve.map((r) => r.C_X), o.curve.map((r) => r.c_X_free), "", "")];
   if (run) {
     barTraces.push(ln1(run.t, run.barrier, "ΔΩ*, run", c1,
       { line: { color: c1, width: 2, dash: "dash" }, customdata: run.t.map((_, i) => [run.m_star[i], run.C_M[i]]),
-        hovertemplate: "run: ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, CdSe %{customdata[1]:.2e} M<extra></extra>" }));
+        hovertemplate: `run: ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, ${MA} %{customdata[1]:.2e} M<extra></extra>` }));
     barTraces.push(ln1(run.t, run.S.map(Math.log), "ln S, run", cS,
       { yaxis: "y2", line: { color: cS, width: 1.5, dash: "dash" }, hovertemplate: "run: ln S = %{y:.2f}<extra></extra>" }));
     barTraces.push(...concTraces(run.t, run.C_M, run.C_X, run.c_X_free, "dash", "run: "));
@@ -634,7 +692,7 @@ const gselShape = () => GSEL ? [{ type: "rect", xref: "x", yref: "y", x0: GSEL.m
 function gridWhat() {
   const { m, k, s } = GSEL, o = L0, i = o ? o.ms.indexOf(m) : -1, j = o ? o.ks.indexOf(k) : -1;
   const om = i >= 0 && j >= 0 ? o.Omega[i][j] : null, pk = om != null ? o.P_k[i][j] : null;
-  $("what").innerHTML = `<b>Grid cluster [CdSe]<sub>${m}</sub>(${XL})<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s), ${parseInt(s.xyz, 10)} atoms`
+  $("what").innerHTML = `<b>Grid cluster [${MA}]<sub>${m}</sub>(${XL})<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s), ${parseInt(s.xyz, 10)} atoms`
     + (s.thermo === false ? `; <b>no thermochemistry</b> (energy only, not in Ω)` : `; at ${fmt(o.t)} s Ω = ${om == null ? "–" : om.toFixed(3)} eV, P(k | m) = ${pk == null ? "–" : fmt(pk)}`);
 }
 async function showGrid(m, k) {
@@ -753,8 +811,8 @@ function drawMap(m, when) {
   }
   const zoom = MAPRANGE === "grid", kz = m.cells.filter(c => c[0] <= 30).map(c => c[1]);
   Plotly.react("cMap", traces, base({ margin: { l: 44, r: 10, t: 6, b: 36 },
-    xaxis: { title: { text: "m (CdSe units)", standoff: 4 }, ...(zoom ? { range: [0.4, 30.6], dtick: 2 } : {}) },
-    yaxis: { title: { text: "k (CdCl₂ units)", standoff: 4 }, ...(zoom ? { range: [-0.6, Math.max(...kz) + 0.6] } : {}) } }), CFG);
+    xaxis: { title: { text: `m (${MA} units)`, standoff: 4 }, ...(zoom ? { range: [0.4, 30.6], dtick: 2 } : {}) },
+    yaxis: { title: { text: `k (${XL} units)`, standoff: 4 }, ...(zoom ? { range: [-0.6, Math.max(...kz) + 0.6] } : {}) } }), CFG);
   $("cMap").removeAllListeners?.("plotly_click");
   $("cMap").on("plotly_click", ev => { const p = ev.points[0]; if (p && p.curveNumber === 0 && p.customdata > 0) pickComposition(p.x, p.y); });
   if (m.barriers && !RUN) barrierTable(m.barriers);
@@ -780,7 +838,8 @@ async function run() {
     const s = RUN.stats;
     $("runStatus").textContent = `${s.steps} implicit steps, ${s.lu} sparse solves, ${s.wall_s.toFixed(1)} s on the server (${((performance.now() - t0) / 1000).toFixed(1)} s in all)`;
     if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
-    $("runWhen").textContent = `T ${c.T} K, c_P0 ${c.c_P0} M, CdCl₂ ${c.c_MX0} M, s_ν ${c.s_nu}${c.islands ? "" : ", no island barriers"}`;
+    $("runWhen").textContent = `T ${c.T} K, ${c.solvent}, c_P0 ${c.c_P0} M, ${XL} ${c.c_MX0} M` +
+      (c.inject ? `, syringe ${c.c_syringe_M} M at ${c.rate_mL_h} mL/h for ${c.inj_duration_s} s into ${c.V0_mL} mL` : "") + (c.islands ? "" : ", no island barriers");
     $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
     $("playBtn").disabled = false;
     $("outNote").textContent = `${RUN.series.t.length} outputs: ${RUN.cond.n_out} log-spaced, the others where C_M, the number of dots or ⟨m⟩ move fast`;
@@ -801,7 +860,7 @@ function drawRun() {
   const s = RUN.series, t = s.t, c = RUN.cond;
   const pos = (a, floor = 0) => a.map(v => v > floor ? v : null);
   const seen = i => s.n_dots[i] > 1e-15;               // a size only once there are dots
-  Plotly.react("cPool", [line(t, s.c_MA, css("--series-1"), "CdSe"), line(t, s.c_MX_free, css("--series-2"), "free CdCl₂")],
+  Plotly.react("cPool", [line(t, s.c_MA, css("--series-1"), `${MA}`), line(t, s.c_MX_free, css("--series-2"), `free ${XL}`)],
     base({ xaxis: tAxis, yaxis: { type: "log" }, showlegend: true, legend: { orientation: "h", y: 1.12, font: { size: 11 } } }), CFG);
   const share = t.map((_, i) => s.alpha[i] > 0 ? 1 - s.c_MA[i] / (s.alpha[i] * c.c_P0) : 0);
   Plotly.react("cAlpha", [line(t, s.alpha, css("--series-1"), "α"), line(t, share, css("--series-3"), "in dots and clusters", "dash")],
@@ -835,9 +894,10 @@ async function setTime(i) {
   const s = RUN.series, t = s.t[i];
   $("tval").textContent = `${fmt(t)} s`;
   for (const id of ["cPool", "cAlpha", "cDots", "cSize", "cPSD", "cFacet", "cShare"]) Plotly.relayout(id, marker(i));
-  $("ro").innerHTML = [["α", fmt(s.alpha[i])], ["CdSe in solution", fmt(s.c_MA[i]) + " M"], ["dots", fmt(s.n_dots[i]) + " M"],
+  $("ro").innerHTML = [["α", fmt(s.alpha[i])], [`${MA} in solution`, fmt(s.c_MA[i]) + " M"], ["dots", fmt(s.n_dots[i]) + " M"],
     ["mean d", s.n_dots[i] > 0 ? s.d_mean_nm[i].toFixed(2) + " nm" : "–"], ["⟨m⟩ ± σ", s.n_dots[i] > 0 ? `${s.m_mean[i].toFixed(0)} ± ${s.m_std[i].toFixed(0)}` : "–"],
-    ["on the network's edge", (100 * s.frontier[i]).toFixed(0) + " %"]].map(([a, b]) => `<div class="ro"><span>${a}</span><b>${b}</b></div>`).join("");
+    ["on the network's edge", (100 * s.frontier[i]).toFixed(0) + " %"],
+    ...(RUN.cond.inject ? [["flask volume", s.V_mL[i].toPrecision(3) + " mL"]] : [])].map(([a, b]) => `<div class="ro"><span>${a}</span><b>${b}</b></div>`).join("");
   const h = RUN.psd.N[i], totN = h.reduce((a, b) => a + b, 0) || 1;
   Plotly.react("cPSDt", [{ type: "bar", x: RUN.psd.d_nm, y: h.map(v => v / totN), marker: { color: css("--series-1") }, hovertemplate: "d %{x:.2f} nm: %{y:.3f}<extra></extra>" }],
     base({ xaxis: { title: { text: "d (nm)", standoff: 4 } }, yaxis: { title: { text: "share", standoff: 4 } }, bargap: 0.05 }), CFG);
@@ -934,7 +994,7 @@ async function buildMovie(i, state = null, mode = "growth") {
   $("movWhat").textContent = `Following the ${mode} path at t = ${fmt(RUN.series.t[i])} s…`;
   try {
     const p = await api(`/api/path?run_id=${RUN.run_id}&i=${i}&mode=${mode}` + (state === null ? "" : `&state=${state}`)), fr = p.frames;
-    if (!fr.length) { $("movWhat").textContent = mode === "growth" ? `nothing formed by t = ${fmt(p.t)} s` : `no dot loses CdSe at t = ${fmt(p.t)} s`; return; }
+    if (!fr.length) { $("movWhat").textContent = mode === "growth" ? `nothing formed by t = ${fmt(p.t)} s` : `no dot loses ${MA} at t = ${fmt(p.t)} s`; return; }
     await loadMovie(fr, mode, `${mode} at t = ${fmt(p.t)} s, ${fr.length} frames, m ${fr[0][2]} → ${fr.at(-1)[2]}`, null);
     const pick = state ?? (mode === "growth" ? fr.at(-1)[0] : fr[0][0]);
     for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === mode && +tr.dataset.s === pick);
@@ -991,7 +1051,7 @@ function movFrame(i) {
   let step;
   if (MOV.mode === "growth") step = how === "nucleus" ? `the nucleus, from the pool (${fmt(f)} M formed so far)` : `by a ${how} step, ${fmt(f)} M moved along it so far`;
   else step = how === "start" ? "the dissolving dot" : how === "to the pool" ? `back to the pool, net ${fmt(f)} M/s` : `down a ${how} step, net ${fmt(f)} M/s`;
-  $("movWhat").innerHTML = `<b>${state < 0 ? `the pool's CdSe(${XL})<sub>${k}</sub>` : lab}</b>: m = ${m}, k = ${k}${d}; ${step}; ${state < 0 ? "c" : "N"} = ${fmt(N)} M`;
+  $("movWhat").innerHTML = `<b>${state < 0 ? `the pool's ${MA}(${XL})<sub>${k}</sub>` : lab}</b>: m = ${m}, k = ${k}${d}; ${step}; ${state < 0 ? "c" : "N"} = ${fmt(N)} M`;
 }
 async function movTable(i) {
   const top = RUN.top[i], t = fmt(RUN.series.t[i]);
@@ -1000,7 +1060,7 @@ async function movTable(i) {
     top.map(([x, lab, m, k, N]) => `<tr class="pick" data-mode="growth" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td></td></tr>`).join("");
   try {
     const d = await api(`/api/dissolving?run_id=${RUN.run_id}&i=${i}`);
-    h += `<tr><th>dissolving at ${t} s: most CdSe lost to smaller states</th><th>m</th><th>k</th><th>N (M)</th><th>CdSe lost / gained (M/s)</th></tr>` +
+    h += `<tr><th>dissolving at ${t} s: most ${MA} lost to smaller states</th><th>m</th><th>k</th><th>N (M)</th><th>${MA} lost / gained (M/s)</th></tr>` +
       (d.states.length ? d.states.map(([x, lab, m, k, N, dn, up]) => `<tr class="pick" data-mode="dissolution" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td>${fmt(dn)} / ${fmt(up)}</td></tr>`).join("")
         : `<tr><td colspan="5">no populated dot is shrinking at this time</td></tr>`);
   } catch (e) { h += `<tr><td colspan="5">${e.message}</td></tr>`; }
