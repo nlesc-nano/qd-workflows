@@ -78,6 +78,17 @@ $$
 together: Newton on $\ln C_M, \ln C_X$, with the exact Jacobian (the rates' derivatives by differences of the assembly,
 the population's through the same LU). Cd, Se and Cl are conserved to the Newton tolerance.
 
+**Fast mode** (`prune_eV`, default 0: off). Within one size $\mu_\mathrm{CdSe}$ cancels, so which states of a size lie
+high depends only on $\mu_\mathrm{CdCl_2}$, and that only moves between the CdCl$_2$ of the start and what is left at full
+conversion. A run keeps every grid node, the seed, and each dot that comes within `prune_eV` of the lowest state of its
+size somewhere in that range (checked at both ends and the middle); the populations are returned on the whole network.
+At 2 eV the network keeps 3,200–4,300 of 12,474 states and runs 5–11× faster; against the exact runs (default, 4×
+precursor, 560 K) the pool and the dots agree to $10^{-5}$ and the CdSe beyond $m = 13$ to within 1 %. `prune_eV = 0` is
+the exact model. On the acetate P2 network (15,248 states, m to 223) the prune cuts the growth paths: at 2 eV it keeps
+1,732 states, and 291 of its 1,597 dots that grow on the whole network have no growth step left (469 even at 10 eV);
+at the defaults to 30 s the pruned run reaches $\langle m \rangle$ 68 against 150 exact (and stops at 13.6 s on
+`frontier_stop`). So the default is off; a pruned run needs checking against an exact one on its network.
+
 ## Use
 
 ```bash
@@ -117,6 +128,27 @@ from 14 to 71 lies 0.5–2 eV above the seed (none below it before $m \approx 72
 about 1.1 eV more than the lowest states alone would need: the low states of different lineage edges are not one
 layer apart. The window is also thin in shells: 1,530 of the 1,953 Se frameworks at $m$ 20–50 have one CdCl$_2$
 count only.
+
+## Why it stops at $m = 13$ (diagnostics on the m 20–50 fill, 15,160 states)
+
+Filling $m$ 20–50 with 2,757 builder layers and shells (relaxed on LUMI) leaves the result as it was: $\langle m \rangle$
+ends at 13.03 and the CdSe beyond $m = 13$ rises from $4\times10^{-8}$ to $1.4\times10^{-7}$ M (of 0.025 M). At the pool
+the run leaves at 99 s ($C_M = 3.4\times10^{-4}$ M, $C_X = 8\times10^{-3}$ M, $\mu_\mathrm{CdSe} = -5.484$ eV) the
+best route to $m \ge 50$ still climbs 1.94 eV (its top an attach step $(43,5) \to (47,3)$).
+
+- **Not the rates.** All prefactors $\times 1000$ give $\langle m \rangle = 13.13$; no island barriers, 13.01. The
+  populations of $m$ 14–30 already sit at $c^\circ e^{-\Omega/k_BT}$ of the pool to 1 meV.
+- **Thermodynamics, per CdSe.** The best state of every size from 14 to 70 holds its CdSe 0.03–0.10 eV worse than the
+  pool, $f(m) = (G_\mathrm{best} - k\,\mu_\mathrm{CdCl_2})/m$ = −5.38 to −5.46 eV against $\mu_\mathrm{CdSe} = -5.484$
+  eV; times $m$ that is the 0.5–1.9 eV plateau. From $m \approx 75$ on, $f(m) < \mu_\mathrm{CdSe}$ (downhill).
+- **CdCl$_2$ is a balance, not a too-strong bond.** Against the (12,1) cluster the dots gain 0.4–3.7 eV per CdSe in
+  energy from their extra CdCl$_2$, and the CdCl$_2$ taken from solution costs almost exactly that back; thermal and
+  dot-solvation terms are below 0.1 and 0.03 eV per CdSe. $\mu_\mathrm{CdCl_2}$ + 0.15 eV at fixed $\mu_\mathrm{CdSe}$
+  drops the climb to 1.16 eV (CdCl$_2$-rich dots, $k$ 26–50 at $m$ 40–100), + 0.3 eV to 0.41 eV; − 0.15 eV raises it
+  to 2.6 eV. A run with $c_{\mathrm{MX},0} = 0.1$ M still ends at 13.00.
+- **The solvent of the free species decides it.** $\varepsilon = 1$ at the same concentrations: every size below the
+  complexes, climb 0.85 eV ($\mu_\mathrm{CdSe}$ +0.10 eV); $\varepsilon = 5$: climb 2.35 eV. The wall is 0.03–0.10
+  eV per CdSe, the size of the solvation shift of the free complexes between these solvents.
 
 ## Limits
 

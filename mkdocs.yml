@@ -41,7 +41,22 @@ nav:
       - Reactions and equilibria: theory/equilibria.md
       - Desorption ladder: theory/desorption.md
       - Network growth model: theory/network-growth.md
+      - Learned vibrational free energy: theory/fvib-model.md
       - IR and Raman: theory/spectra.md
+  - CdSe nucleation and growth:
+      - Overview: protocols/cdse/index.md
+      - Theory, free energies and the pool: protocols/cdse/theory.md
+      - A · Nucleation grid: protocols/cdse/grid.md
+      - B · QD_builder structures: protocols/cdse/builder.md
+      - C · Layer-path network: protocols/cdse/network.md
+      - C′ · Islands: protocols/cdse/islands.md
+      - D–E · Acetate network and export: protocols/cdse/acetate-export.md
+      - F · Master equation: protocols/cdse/master-equation.md
+      - Dashboard: protocols/cdse/dashboard.md
+      - Results and experiments: protocols/cdse/results.md
+      - Decisions: protocols/cdse/decisions.md
+      - Generalised protocol and gaps: protocols/cdse/protocol.md
+      - Sources: protocols/cdse/sources.md
   - Reaction free energies (qdw reaction): reactions.md
   - Reference:
       - Command line: reference/cli.md

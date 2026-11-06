@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CdSe Structure Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
+<style>
+/* Layout: set and structure lists on the left, the 3D view in the middle, controls above it, details below. */
+:root {
+  --bg: #f4f6f5; --panel: #ffffff; --fg: #1b2220; --muted: #5d6a64; --rule: #d6ddd9; --accent: #2a6b8a;
+  --chip: #e9eeeb; --sel: #dcebf3; --view: #ffffff;
+  --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111514; --panel: #181e1c; --fg: #e3e8e5; --muted: #98a59f; --rule: #2b3431; --accent: #6db8d8;
+  --chip: #222a27; --sel: #1d3340; --view: #1a1f1e; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111514; --panel: #181e1c; --fg: #e3e8e5; --muted: #98a59f; --rule: #2b3431; --accent: #6db8d8;
+  --chip: #222a27; --sel: #1d3340; --view: #1a1f1e; color-scheme: dark }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--body); }
+.app { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; min-height: 100%; box-sizing: border-box;
+  padding-block: 14px; padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
+aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; position: sticky; top: 14px; align-self: start; max-height: calc(100vh - 28px); }
+h1 { font-size: 17px; margin: 0; }
+.sub { color: var(--muted); font-size: 12.5px; margin: 0; }
+.box { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 8px; min-height: 0; }
+.list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.list button { text-align: left; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px;
+  padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+.list button:hover { background: var(--chip); }
+.list button[aria-current="true"] { background: var(--sel); font-weight: 500; }
+.list .meta { color: var(--muted); font-size: 11.5px; }
+#sets { max-height: 38%; }
+#items { flex: 1; }
+main { display: grid; grid-template-rows: auto auto auto; gap: 10px; min-width: 0; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bar button, .bar select { font: inherit; font-size: 12.5px; border: 1px solid var(--rule); background: var(--panel);
+  color: var(--fg); border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+.bar button:hover { border-color: var(--accent); }
+.bar button[aria-pressed="true"] { background: var(--sel); border-color: var(--accent); }
+.bar label { display: inline-flex; gap: 5px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.sep { width: 1px; height: 20px; background: var(--rule); margin: 0 4px; }
+.views { display: grid; grid-template-columns: 1fr; gap: 10px; min-height: 0; }
+.views.two { grid-template-columns: 1fr 1fr; }
+.vw { position: relative; background: var(--view); border: 1px solid var(--rule); border-radius: 8px; height: clamp(340px, 68vh, 820px); overflow: hidden; }
+.vw .cap { position: absolute; left: 10px; top: 8px; z-index: 2; font-size: 12px; color: var(--muted); pointer-events: none;
+  background: color-mix(in srgb, var(--view) 80%, transparent); padding: 2px 6px; border-radius: 4px; }
+.vw > div.v { position: absolute; inset: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); align-items: center; }
+.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #0003; vertical-align: -1px; margin-right: 4px; }
+.info { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.info p { margin: 2px 0; }
+.info .k { color: var(--muted); }
+code { font-family: var(--mono); font-size: 12px; background: var(--chip); padding: 1px 4px; border-radius: 3px; }
+@media (max-width: 820px) {
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  #sets, #items { max-height: 180px; }
+  .views.two { grid-template-columns: 1fr; }
+  .vw { height: 420px; }
+  aside { position: static; max-height: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div>
+      <h1>CdSe structure viewer</h1>
+      <p class="sub">The structures of the protocol docs. Drag to rotate, scroll to zoom, right-drag to pan.</p>
+    </div>
+    <div class="box list" id="sets" aria-label="Structure sets"></div>
+    <div class="box list" id="items" aria-label="Structures in the set"></div>
+  </aside>
+  <main>
+    <div class="bar" id="bar">
+      <span id="viewbtns" class="bar"></span>
+      <span class="sep"></span>
+      <button id="hl" aria-pressed="true" title="Fade the atoms shared with the reference">Highlight added atoms</button>
+      <button id="gone" aria-pressed="true" title="Red translucent spheres where atoms were removed">Show removed</button>
+      <button id="cmp" aria-pressed="false" title="Show the reference next to this structure">Compare with reference</button>
+      <span class="sep"></span>
+      <label>Spheres <select id="scale"><option value="1">space filling</option><option value="0.6">smaller</option><option value="0.35">small</option></select></label>
+      <label>Ligands <select id="lig"><option value="full">spheres</option><option value="pale">pale</option><option value="hide">hidden</option></select></label>
+      <span class="sep"></span>
+      <button id="prev" title="Previous structure (←)">◀</button><button id="next" title="Next structure (→)">▶</button>
+    </div>
+    <div class="views" id="views">
+      <div class="vw" id="wrapA"><span class="cap" id="capA"></span><div class="v" id="vA"></div></div>
+      <div class="vw" id="wrapB" hidden><span class="cap" id="capB"></span><div class="v" id="vB"></div></div>
+    </div>
+    <div class="box info">
+      <div>
+        <p id="title" style="font-weight:600"></p>
+        <p id="desc" class="k"></p>
+        <p id="stats"></p>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div style="display:grid; gap:6px; justify-items:end">
+        <code id="file"></code>
+        <div class="bar"><button id="copy">Copy .xyz</button><a id="dl" target="_blank" rel="noopener">open .xyz</a></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+(function () {
+  const COL = { Cd: "#f0a030", Se: "#2f6fdf", Cl: "#3aa655", O: "#d9443a", C: "#6b6b6b", H: "#e8e8e8" };
+  const VDW = { Cd: 1.58, Se: 1.90, Cl: 1.75, O: 1.52, C: 1.70, H: 1.20 };
+  const CORE = new Set(["Cd", "Se"]);
+  const $ = id => document.getElementById(id);
+  const S = { sets: [], set: 0, item: 0, view: 0, hl: true, gone: true, cmp: false };
+  const store = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const mix = (hex, w) => { const n = parseInt(hex.slice(1), 16); const c = [n >> 16, (n >> 8) & 255, n & 255].map(x => Math.round(x + (255 - x) * w)); return "#" + c.map(x => x.toString(16).padStart(2, "0")).join(""); };
+  const bg = () => getComputedStyle(document.documentElement).getPropertyValue("--view").trim() || "#ffffff";
+  let VA, VB;
+
+  function refIndex(set, i) {
+    const n = set.ref_note;
+    if (i === 0 || n === "no reference") return null;
+    if (n === "previous step" || n === "previous stage") return i - 1;
+    return 0;
+  }
+  function transform(set, pos) {
+    const R = set.views[S.view].R, c = set.center;
+    return pos.map(p => { const d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]]; return [0, 1, 2].map(r => R[r][0] * d[0] + R[r][1] * d[1] + R[r][2] * d[2]); });
+  }
+  function draw(viewer, set, it, highlightOn) {
+    viewer.removeAllModels(); viewer.removeAllShapes();
+    viewer.setBackgroundColor(bg());
+    const scale = parseFloat($("scale").value), lig = $("lig").value;
+    const P = transform(set, it.pos);
+    const isNew = new Set(it.new);
+    const hl = highlightOn && it.new.length > 0;
+    const groups = {};
+    it.sym.forEach((s, i) => {
+      const ligand = !CORE.has(s);
+      if (ligand && lig === "hide") return;
+      const faded = hl && !isNew.has(i);
+      let col = COL[s] || "#999999", op = 1;
+      if (ligand && lig === "pale") col = mix(col, 0.55);
+      if (faded) { col = mix(col, 0.45); op = 0.65; }
+      const key = col + "|" + op + "|" + s;
+      (groups[key] = groups[key] || { s, col, op, idx: [] }).idx.push(i);
+    });
+    Object.values(groups).forEach(g => {
+      const m = viewer.addModel();
+      m.addAtoms(g.idx.map(i => ({ elem: g.s, x: P[i][0], y: P[i][1], z: P[i][2] })));
+      m.setStyle({}, { sphere: { radius: VDW[g.s] * scale * (g.s === "H" ? 0.9 : 1), color: g.col, opacity: g.op } });
+    });
+    if (S.gone && it.gone.length) {
+      const G = transform(set, it.gone.map(g => g.slice(1)));
+      it.gone.forEach((g, j) => viewer.addSphere({ center: { x: G[j][0], y: G[j][1], z: G[j][2] }, radius: (VDW[g[0]] || 1.5) * scale, color: "#d0453a", opacity: 0.35 }));
+    }
+    viewer.zoomTo(); viewer.render();
+  }
+  function render() {
+    const set = S.sets[S.set], it = set.items[S.item];
+    $("title").textContent = `${set.title} — ${it.label}`;
+    $("desc").textContent = set.text;
+    $("stats").innerHTML = `<span class="k">formula</span> ${it.formula} · <span class="k">atoms</span> ${it.n}` +
+      (set.ref_note !== "no reference" && S.item > 0 ? ` · <span class="k">vs ${set.ref_note}:</span> ${it.new.length} added, ${it.gone.length} removed` : "");
+    $("file").textContent = "structures/" + it.file;
+    $("dl").href = "structures/" + it.file;
+    const elems = [...new Set(it.sym)];
+    $("legend").innerHTML = elems.map(e => `<span><span class="dot" style="background:${COL[e]}"></span>${e}</span>`).join("") +
+      (it.new.length && S.hl ? `<span>full colour = added vs ${set.ref_note}; pale = shared</span>` : "") +
+      (it.gone.length && S.gone ? `<span><span class="dot" style="background:#d0453a;opacity:.5"></span>removed</span>` : "");
+    $("capA").textContent = it.label + " · " + set.views[S.view].name;
+    draw(VA, set, it, S.hl);
+    const ri = refIndex(set, S.item);
+    const two = S.cmp && ri !== null;
+    $("wrapB").hidden = !two; $("views").classList.toggle("two", two);
+    if (two) {
+      const ref = set.items[ri];
+      $("capB").textContent = "reference: " + ref.label;
+      draw(VB, set, { ...ref, new: [], gone: [] }, false);
+      VB.resize(); VB.zoomTo(); VB.render();
+    }
+    VA.resize(); VA.render();
+    [...$("items").children].forEach((b, i) => b.setAttribute("aria-current", String(i === S.item)));
+    [...$("viewbtns").children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === S.view)));
+    keep("cdse-viewer", JSON.stringify({ set: S.set, item: S.item }));
+  }
+  function pickSet(i) {
+    S.set = i; S.item = 0; S.view = 0;
+    [...$("sets").children].forEach((b, j) => b.setAttribute("aria-current", String(j === i)));
+    const set = S.sets[i];
+    $("items").innerHTML = "";
+    set.items.forEach((it, j) => {
+      const b = document.createElement("button");
+      b.innerHTML = `${it.label}<br><span class="meta">${it.formula}${it.new.length ? ` · +${it.new.length}` : ""}${it.gone.length ? ` −${it.gone.length}` : ""}</span>`;
+      b.onclick = () => { S.item = j; render(); };
+      $("items").appendChild(b);
+    });
+    $("viewbtns").innerHTML = "";
+    set.views.forEach((v, j) => {
+      const b = document.createElement("button"); b.textContent = v.name;
+      b.onclick = () => { S.view = j; render(); };
+      $("viewbtns").appendChild(b);
+    });
+    render();
+  }
+  function toggle(id, key) {
+    $(id).onclick = () => { S[key] = !S[key]; $(id).setAttribute("aria-pressed", String(S[key])); render(); };
+  }
+  toggle("hl", "hl"); toggle("gone", "gone"); toggle("cmp", "cmp");
+  $("scale").onchange = render; $("lig").onchange = render;
+  const step = d => { const n = S.sets[S.set].items.length; S.item = (S.item + d + n) % n; render(); };
+  $("prev").onclick = () => step(-1); $("next").onclick = () => step(1);
+  document.addEventListener("keydown", e => { if (e.target.tagName === "SELECT") return; if (e.key === "ArrowRight") step(1); if (e.key === "ArrowLeft") step(-1); });
+  $("copy").onclick = () => {
+    const it = S.sets[S.set].items[S.item];
+    const txt = `${it.n}\n${it.label} | ${it.formula}\n` + it.sym.map((s, i) => `${s} ${it.pos[i].map(v => v.toFixed(6)).join(" ")}`).join("\n") + "\n";
+    const done = () => { $("copy").textContent = "Copied"; setTimeout(() => $("copy").textContent = "Copy .xyz", 1500); };
+    const fallback = () => {
+      const ta = document.createElement("textarea"); ta.value = txt; ta.style.cssText = "position:fixed;left:-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { $("copy").textContent = "Select and copy failed"; }
+      ta.remove();
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done).catch(fallback); else fallback();
+  };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => render());
+  VA = $3Dmol.createViewer($("vA"), { backgroundColor: bg() });
+  VB = $3Dmol.createViewer($("vB"), { backgroundColor: bg() });
+  addEventListener("resize", () => { VA.resize(); VB.resize(); VA.render(); VB.render(); });
+  fetch("structures/structures.json").then(r => r.json()).then(d => {
+    S.sets = d.sets;
+    d.sets.forEach((s, i) => {
+      const b = document.createElement("button");
+      b.innerHTML = `${s.title}<br><span class="meta">${s.items.length} structures</span>`;
+      b.onclick = () => pickSet(i);
+      $("sets").appendChild(b);
+    });
+    let start = { set: 0, item: 0 };
+    const want = location.hash.slice(1);
+    const hi = d.sets.findIndex(s => s.key === want);
+    if (hi >= 0) start = { set: hi, item: 0 };
+    else { try { const v = JSON.parse(store("cdse-viewer")); if (v && d.sets[v.set] && d.sets[v.set].items[v.item]) start = v; } catch (e) {} }
+    pickSet(start.set); S.item = start.item; render();
+    addEventListener("hashchange", () => { const j = d.sets.findIndex(s => s.key === location.hash.slice(1)); if (j >= 0) pickSet(j); });
+  }).catch(e => { $("title").textContent = "Could not load structures/structures.json: " + e; });
+})();
+</script>
+</body>
+</html>

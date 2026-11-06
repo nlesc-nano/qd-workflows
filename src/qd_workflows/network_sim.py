@@ -253,7 +253,7 @@ class NetSim:
         steps carrying the most net flux (between compositions)."""
         net = self.net
         c, pl, N, t = self._pool_at(body)
-        nu, nu_src = net.prefactors(c["T"], c["eta_mPas"], c["s_nu"], c["a_site_A2"])
+        nu, nu_src = net.prefactors(c["T"], c["eta_mPas"], c["s_nu"])
         r = net.rates(c["T"], c["eps"], pl, nu, nu_src, c["islands"])
         om = r["Omega"]
         best = np.full(len(self.comp_keys), np.inf)
@@ -305,7 +305,7 @@ class NetSim:
 
     def _rates_at(self, run_id, i):
         c, pl, _N, _t = self._pool_at({"run_id": run_id, "i": i})
-        nu, nu_src = self.net.prefactors(c["T"], c["eta_mPas"], c["s_nu"], c["a_site_A2"])
+        nu, nu_src = self.net.prefactors(c["T"], c["eta_mPas"], c["s_nu"])
         return self.net.rates(c["T"], c["eps"], pl, nu, nu_src, c["islands"])
 
     def _edges(self):

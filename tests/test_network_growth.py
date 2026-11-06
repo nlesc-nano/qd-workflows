@@ -31,8 +31,8 @@ def _network(tmp_path, island_dg=-1.9):
               for i, (f, m, k) in enumerate([("Cd3Se2Cl2", 2, 1), ("Cd4Se3Cl2", 3, 1), ("Cd6Se4Cl4", 4, 2),
                                              ("Cd5Se4Cl2", 4, 1)])]
     steps = [{"a": 0, "b": 1, "dm": 1, "dk": 0, "kind": "attach", "facet": None, "sheet": 0},
-             {"a": 1, "b": 2, "dm": 1, "dk": 1, "kind": "layer", "facet": "111B", "sheet": 3},
-             {"a": 1, "b": 3, "dm": 1, "dk": 0, "kind": "layer", "facet": "100", "sheet": 2},
+             {"a": 1, "b": 2, "dm": 1, "dk": 1, "kind": "layer", "facet": "111B", "sheet": 3, "area_A2": 60.0},
+             {"a": 1, "b": 3, "dm": 1, "dk": 0, "kind": "layer", "facet": "100", "sheet": 2, "area_A2": 25.0},
              {"a": 3, "b": 2, "dm": 0, "dk": 1, "kind": "shell", "facet": None, "sheet": 0}]
     islands = [{"parent": 1, "family": "111B", "dm": 1, "dk": 0, "src": "island", "row": 4},
                {"parent": 1, "family": "111B", "dm": 2, "dk": 0, "src": "island", "row": 5}]
@@ -108,6 +108,21 @@ def test_conservation_and_island_slowdown(tmp_path):
     assert max(lo[1:]) > max(hi[1:])                            # the higher barrier grows {111}B slower
 
 
+def test_pruned_run(tmp_path):
+    cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.01, "c_MX0": 0.02, "k_conv_500K": 10.0, "t_start": 1e-3,
+            "t_end": 5.0, "n_out": 6}
+    net = _network(tmp_path)
+    exact = ng.simulate(net, {**cond, "prune_eV": 0.0})       # on the whole network (sets its matrix pattern)
+    wide = ng.simulate(net, {**cond, "prune_eV": 15.0})       # keeps every state: the same run
+    assert wide["states"] == net.n
+    assert np.allclose(np.array(wide["N"]), np.array(exact["N"]), rtol=1e-6, atol=1e-14)
+    narrow = ng.simulate(net, {**cond, "prune_eV": 0.01})     # grid nodes, the seed and each size's best only
+    assert narrow["states"] < net.n
+    x = np.array(narrow["alpha"]) * cond["c_P0"]
+    held = np.array([net.m @ n for n in narrow["N"]])
+    assert np.allclose(np.array(narrow["c_MA"]) + held, x, rtol=1e-5, atol=1e-12)
+
+
 def test_run_stops_with_its_outputs(tmp_path):
     cond = {"T": 500.0, "eps": 1.0, "c_P0": 0.01, "c_MX0": 0.02, "k_conv_500K": 10.0, "t_start": 1e-3,
             "t_end": 5.0, "n_out": 6, "dense_out": False}
@@ -152,3 +167,25 @@ def test_conversion_takes_the_salt_left_in_solution(tmp_path):
     q = 10.0 * (cond["c_P0"] - x) * c_x                        # the rate on the outputs, by trapezoids
     dx, qt = np.diff(x), 0.5 * (q[1:] + q[:-1]) * np.diff(t)
     assert np.median(np.abs(dx / qt - 1)) < 0.02
+
+
+def test_collision_areas_come_from_the_structures(tmp_path):
+    """Collision-limited (a tiny viscosity): nu / area is one constant per carrier, with the export's area_A2 for a
+    layer step and the dot's S for an attachment; a network exported without area_A2 is refused."""
+    net = _network(tmp_path)
+    nu, src = net.prefactors(500.0, 1e-6, 1.0)                  # k_d ~ 1e4 k_r
+    lay = np.where(net.kind == ng.KIND["layer"])[0]
+    att = np.where(net.kind == ng.KIND["attach"])[0][0]
+    assert sorted(net.area[lay]) == [25.0, 60.0]
+    per = nu[lay] / net.area[lay]
+    assert abs(per[0] / per[1] - 1) < 1e-3 and abs(nu[att] / net.S[net.a[att]] / per[0] - 1) < 1e-3
+    assert np.all(src > 0)
+    meta = json.loads((tmp_path / "network.json").read_text())
+    del meta["steps"][1]["area_A2"]
+    (tmp_path / "network.json").write_text(json.dumps(meta))
+    try:
+        ng.Network(tmp_path, _thermo(), {"eps": 1.0, "vdw_scale": 1.4, "e_el_eV_A2": -1.06e-3})
+    except ValueError as e:
+        assert "area_A2" in str(e)
+    else:
+        raise AssertionError("a layer step without area_A2 was accepted")
