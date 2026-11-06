@@ -73,9 +73,10 @@ The builder decides which surface Se become Cl and where the extra Cl goes, so o
 
 ## 4. From all lineage edges to the registry
 
-`treepaths.py data.json net_dir MMAX SMAX` repeats §3 for every lineage edge:
+`python -m qd_workflows.layer_path treepaths data.json net_dir --mmax MMAX --smax SMAX --cif CdSe_zb.cif` repeats §3 for every
+lineage edge:
 
-1. **Size the edge** (`size_edges.py`).
+1. **Size the edge** (`layer_path size-edges`, `edges_size.json`).
    - Embed the parent's lattice sites in the child (Td operation + translation).
    - Count the layers per plane: $L=(d_\mathrm{child}-d_\mathrm{parent})/\mathrm{spacing}$, with spacings (in n·r units of
      a/4) of 2 for {100}, 4 for {111} (a double layer) and 2 for {110}.
@@ -118,26 +119,26 @@ The registry grew in four `treepaths` runs with increasing MMAX, plus a fill:
   We have lots of data".
 - **The registry has 28,875 dots, all built.** The CdCl2 results hold 17,564 states (m 7–223); the acetate results
   hold 17,533.
-- Staging (`stage.py`): every registry dot without results goes to `WAVE/batchJ/dNNNNN.xyz`, with batches balanced
+- Staging (`layer_path stage`): every registry dot without results goes to `WAVE/batchJ/dNNNNN.xyz`, with batches balanced
   by Σ atoms^1.5.
 
 **The m 20–50 fill.** The first network had only one shell per Se framework at m 20–50, and few one-layer neighbours
 of its lowest states. Ivan asked to "plan the builder structures and shells for that window, with the count and GPU
 cost, before launching". The fill took four steps:
 
-1. `enumerate.py`:
+1. `layer_path fill-enumerate`:
    - Parents are the network states at m 14–55 within 0.4 eV of each m's lowest Ω (C_M 7.6e-4 and 3e-3 M, 500 K,
      ε 2), at most 6 per m. That gives 121 parents.
    - Moving every one of the 14 planes of each parent by ±1 spacing gives 808 classes not yet in the registry.
-2. `links.py`: 145 candidates link at least 2 low-lying parents; 121 link parents of different m.
-3. `build_all.py`:
+2. `layer_path fill-links`: 145 candidates link at least 2 low-lying parents; 121 link parents of different m.
+3. `layer_path fill-build`:
    - builds 548 new layer dots, plus Cd shells at $k_0\pm1$ and $\pm2$ by `z_type_target`, for 2,993 new dots in total;
    - keeps those with m ≥ 14: 2,757 (500 layer, 2,257 shell).
-4. `register.py`: registry ids 26,118–28,874, and one edge file `fill2050.json` with 2,955 steps.
+4. `layer_path fill-register`: registry ids 26,118–28,874, and one edge file `fill2050.json` with 2,955 steps.
 
 ## 6. Layer steps: what each step is
 
-`layer_steps.py net_dir results_by_key.json g_cache.json out.json` describes every dot-level step a → b:
+`python -m qd_workflows.layer_path layer-steps net_dir results_by_key.json g_cache.json out.json` describes every dot-level step a → b:
 
 | field | meaning |
 |---|---|
@@ -152,7 +153,7 @@ cost, before launching". The fill took four steps:
 | `perimeter` | the sheet Cd with fewer in-plane Cd neighbours than a full sheet (6 on {111}, 4 on {100}, 2 on {110}) |
 | `n_sheets` | the number of distinct new-Cd heights |
 | `same_slab_next` | chains a → b → c whose new Cd lie in one slab: rungs of one island |
-| `m_a`, `dG` | the Se count of a; $G_b-G_a$ at T (`attach_dg.py`) |
+| `m_a`, `dG` | the Se count of a; $G_b-G_a$ at T (`layer_path attach-dg`) |
 
 **The direction rule.** Look at the Cd that b has and a does not. Among the 26 normals, take those along which all new
 Cd lie beyond a's outermost Cd layer; of these, pick the one with the smallest span.

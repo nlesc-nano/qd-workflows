@@ -30,21 +30,24 @@ conditions. Check: a barrier exists at realistic supersaturation.
 **6. Wulff scan and lineage** (QD_builder `scan.py` on a CPU cluster; lineage script). Out: unique dots, the lineage tree
 from the first Wulff dot. Check: the first lineage node is the grid's hand-over dot.
 
-**7. Layer states and registry** (`size_edges.py`, `treepaths.py data.json net MMAX SMAX` in waves of growing MMAX).
+**7. Layer states and registry** (`python -m qd_workflows.layer_path size-edges data.json`, then `python -m qd_workflows.layer_path treepaths data.json net --mmax MMAX
+--smax SMAX --cif CdSe_zb.cif` in waves of growing MMAX).
 Out: `registry.json`, edge files, builds. Checks: failed edges per reason; the seed in the registry.
 
-**8. Fill and shells** where the low-Ω band is sparse (`enumerate.py`, `links.py`, `build_all.py`, `register.py`):
+**8. Fill and shells** where the low-Ω band is sparse (`layer_path fill-enumerate`, `fill-links`, `fill-build`, `fill-register`):
 one-layer neighbours of low-lying parents, Cd shells k0 ± 1, ± 2 by `z_type_target`. Plan the count and cost first.
 
-**9. Islands** (`islands.py` on ladder parents; `stage_islands.py`). Cover every facet family and parent sizes up to
+**9. Islands** (`layer_path islands` on ladder parents; `layer_path stage-islands`). Cover every facet family and parent sizes up to
 the largest m the growth will reach (CdSe stopped at m 150, which left the m 150–240 range without islands).
 
-**10. Relax** (`relax_states.py`, or `p1.py` for a dressed ligand; GPU batches, 8 per LUMI node or 4 per A100 node).
+**10. Relax** (`layer_path stage`, `layer_path relax` with `templates/slurm/layer_path_relax_lumi.sh`, then
+`layer_path collect` and `gcache`; or `p1.py` for a dressed ligand; GPU batches, 8 per LUMI node or 4 per A100 node).
 No anneal above the grid. FD Hessians on a training set spanning the m range (CdSe: m ≤ 60 plus part of the large
 sizes), learned F_vib for the rest. Checks: dressing failures, convergence, the F_vib model's domain flags.
 
-**11. Steps, ΔG, ladders, export** (`layer_steps.py`, or reuse the steps of another ligand on the same registry;
-`attach_dg.py`; `ladders.py`; `network_export`; one CPU node). Checks: state count of the seed's component, σ values,
+**11. Steps, ΔG, ladders, export** (`layer_path layer-steps`, or reuse the steps of another ligand on the same
+registry; `layer_path attach-dg`; `layer_path ladders`; `network_export`; one CPU node,
+`templates/slurm/layer_path_steps_lumi.sh`). Checks: state count of the seed's component, σ values,
 G-cache consistency (< 2 meV), island curves per family.
 
 **12. Growth** (`network_growth run --network OUT --thermo thermo_merged.json --params TEMPLATE`, or the page).
@@ -55,8 +58,10 @@ experiments; do not rerun atomistic stages for exactness.
 **13. Extend the map where the run stops** (the edge share > 0.5 or the dots piling where states thin out), then
 re-export and rerun.
 
-Before step 1 for a new system: commit the grid, ligand and layer-path code listed in the [overview](index.md) as one
-module, so every stage runs from one tagged version.
+Before step 1 for a new system: commit the grid and ligand code listed in the [overview](index.md) as one module, so
+every stage runs from one tagged version (the layer-path code is the module `qd_workflows.layer_path`). The layer
+path is CdSe zinc-blende only: the lattice constant, the anion species and the builder preset (Cl ligand, Cd²⁺,
+Se²⁻) are fixed in `layer_path/lattice.py` and `build.py`.
 
 
 ## 2. Current state and gaps (2026-11-04)

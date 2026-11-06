@@ -6,7 +6,8 @@ a few Cd and Se, and grows until the layer is complete. If the first atoms of an
 
 ## 1. Builder islands
 
-`islands.py net_dir parents.json outdir` builds islands on chosen (parent, facet) pairs:
+`python -m qd_workflows.layer_path islands net_dir parents.json outdir --cif CdSe_zb.cif` builds islands on chosen (parent, facet)
+pairs:
 
 1. Start from the parent's own recipe (its plane levels) and move one facet plane $n_0$ out by one spacing. On its own
    this would add the full layer.
@@ -45,7 +46,7 @@ atoms go in with Cl, and one Se of the old surface is swapped (Δ Se = −1 for 
 
 ## 2. The island index
 
-`states_index.json` (written by `islands.py` and `stage_islands.py`) has one row per built island:
+`states_index.json` (written by `layer_path islands` and `layer_path stage-islands`) has one row per built island:
 
 | field | meaning |
 |---|---|
@@ -74,13 +75,13 @@ The builds are kept in `network_growth_data/island_builds_cdcl2/`.
 ## 3. Ladder rungs already in the registry
 
 The registry steps contain partial layers too. A **ladder** is a set of one-sheet pure steps from the same parent, along
-the same facet, with different sheet sizes (`ladders.py`):
+the same facet, with different sheet sizes (`layer_path ladders`):
 
 - per (parent, facet, sheet size), keep the step with the lowest ΔG;
 - a ladder is a (parent, facet) pair with at least 3 sizes;
 - counts: CdCl2 2,891 ladders ({111}B 1,398, {100} 1,414, {111}A 74, {110} 5); acetate P1 1,032.
 
-The upstream scripts also print a per-facet regression $\Delta G\approx g_m\Delta m+g_k\Delta k+\epsilon\,P$ (P = perimeter
+`layer_path ladders` also prints a per-facet regression $\Delta G\approx g_m\Delta m+g_k\Delta k+\epsilon\,P$ (P = perimeter
 Cd) as a diagnostic. The growth model does not use it.
 
 ## 4. From islands to the barrier of a layer step
@@ -100,3 +101,7 @@ if it never does). A layer step of that parent on that facet must climb $B$ on t
 - {110} has no islands, so it uses the median over all curves.
 - The export carries 30 such curves (576 island rows) for the acetate network.
 - A median predicts one parent's barrier to about 0.8–1.1 eV (leave-one-out).
+
+The same curves at the three reference pools, outside the growth model, come from `layer_path island-barriers`
+(islands and rungs per added Cd, against the classical fit of `layer_path ladder-fit`) and `layer_path island-cdse`
+(per added CdSe with the shell equilibrated, as above).
