@@ -245,8 +245,10 @@ button:disabled { opacity: .55; cursor: progress; }
       <h2>4 · Map <small id="mapWhen"></small></h2>
       <div class="pickrow">colour <button id="mSeed" class="on">Ω from the seed</button><button id="mBest">Ω from the best shell at each m</button></div>
       <div class="pickrow">sizes <button id="rAll" class="on">all m</button><button id="rGrid">m ≤ 30 (grid and first dots)</button></div>
+      <div class="pickrow">draw <button id="vSmooth" class="on">smooth</button><button id="vCells">computed cells only</button></div>
       <div class="chart map" id="cMap"></div>
-      <div class="cap" id="mapCap">Each cell is one (m, k) composition (its lowest state). Circles: where the dots are
+      <div class="cap" id="mapCap">Each cell is one (m, k) composition (its lowest state); "smooth" averages the computed
+        cells with a Gaussian of 1.5 lattice units and fills only within 2 units of one, the hover gives the cell's own Ω. Circles: where the dots are
         at the bar's time; lines: the steps carrying the most net flux. m = 1 is the pool (the CdSe(CdCl₂)ₙ complexes),
         m 2–13 the nucleation grid's nodes, which the run passes through like any other state. Click a cell for its structures.</div>
     </section>
@@ -292,7 +294,7 @@ const CTRL = [
   ["max_wall_s", "stop the run after", "s wall"],
   ["frontier_stop", "stop at the network edge, dots on dead ends", "fraction"],
 ];
-let D = null, RUN = null, JOB = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", VIEW = null, SEL = null, LASTMAP = null;
+let D = null, RUN = null, JOB = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", MAPSMOOTH = true, VIEW = null, SEL = null, LASTMAP = null;
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -687,6 +689,9 @@ function saveXyz(xyz, name, note) {
 }
 const runTag = () => RUN ? `T ${RUN.cond.T} K, c_P0 ${RUN.cond.c_P0} M` : "";
 
+// turbo (blue low, red high), as matplotlib's from 0.05 to 0.95
+const TURBO = [[0, "#3d358b"], [0.1, "#4773eb"], [0.2, "#33adf7"], [0.3, "#18dec0"], [0.4, "#4ef97d"], [0.5, "#a4fc3c"],
+  [0.6, "#dde037"], [0.7, "#fcb136"], [0.8, "#f76f1a"], [0.9, "#d83706"], [1, "#a11201"]];
 function drawMap(m, when) {
   LASTMAP = [m, when];
   $("mapWhen").textContent = when;
@@ -696,32 +701,61 @@ function drawMap(m, when) {
   // colour range from the cells in view (m <= 30 when zoomed on the grid)
   const sorted = v.filter((_, i) => MAPRANGE !== "grid" || m.cells[i][0] <= 30).sort((a, b) => a - b), q = p => sorted[Math.floor(p * (sorted.length - 1))];
   const lo = MAPMODE === "seed" ? q(0.03) : 0, hi = MAPMODE === "seed" ? q(0.97) : q(0.9);
-  const ramp = [[0, css("--seq-9")], [0.25, css("--seq-7")], [0.5, css("--seq-5")], [0.75, css("--seq-3")], [1, css("--seq-1")]];
-  const traces = [{ type: "scattergl", mode: "markers", x: m.cells.map(c => c[0]), y: m.cells.map(c => c[1]),
-    marker: { symbol: "square", size: 6, color: v, cmin: lo, cmax: hi, colorscale: ramp,
-      colorbar: { thickness: 10, len: 0.8, title: { text: "eV", side: "right" }, tickfont: { size: 10 } } },
-    customdata: m.cells.map((c, i) => [c[4], v[i]]), hovertemplate: "m %{x}, k %{y}<br>Ω %{customdata[1]:.2f} eV<br>%{customdata[0]} state(s)<extra></extra>" }];
+  // Omega on the (m, k) lattice: "cells" draws each computed composition; "smooth" a Gaussian kernel average of the
+  // computed cells (sigma 1.5 lattice units), drawn only within 2 units of a computed composition (none invented far
+  // from the network); the hover always gives the cell's own Omega
+  const m0 = Math.min(...m.cells.map(c => c[0])), nm = Math.max(...m.cells.map(c => c[0])) - m0 + 1;
+  const nk = Math.max(...m.cells.map(c => c[1])) + 1;
+  const val = new Float64Array(nm * nk).fill(NaN), nst = new Int32Array(nm * nk);
+  m.cells.forEach((c, i) => { val[c[1] * nm + c[0] - m0] = v[i]; nst[c[1] * nm + c[0] - m0] = c[4]; });
+  const W = 4, wt = [];
+  for (let dk = -W; dk <= W; dk++) for (let di = -W; di <= W; di++) wt.push([dk, di, Math.exp(-(di * di + dk * dk) / (2 * 1.5 * 1.5)), di * di + dk * dk]);
+  const z = [], txt = [], cnt = [];
+  for (let k = 0; k < nk; k++) {
+    const zr = [], tr = [], cr = [];
+    for (let i = 0; i < nm; i++) {
+      const x = val[k * nm + i];
+      let zz = isNaN(x) ? null : x;
+      if (MAPSMOOTH) {
+        let sw = 0, sv = 0, near = false;
+        for (const [dk, di, w, d2] of wt) {
+          const kk = k + dk, ii = i + di;
+          if (kk < 0 || kk >= nk || ii < 0 || ii >= nm) continue;
+          const y = val[kk * nm + ii];
+          if (!isNaN(y)) { sw += w; sv += w * y; if (d2 <= 4) near = true; }
+        }
+        zz = near ? sv / sw : null;
+      }
+      zr.push(zz); cr.push(nst[k * nm + i]);
+      tr.push(isNaN(x) ? (zz == null ? "" : `m ${i + m0}, k ${k}<br>no computed state<br>smoothed Ω ${zz.toFixed(2)} eV`)
+        : `m ${i + m0}, k ${k}<br>Ω ${x.toFixed(2)} eV<br>${nst[k * nm + i]} state(s)`);
+    }
+    z.push(zr); txt.push(tr); cnt.push(cr);
+  }
+  const ink = css("--text-primary");
+  const traces = [{ type: "heatmap", x: Array.from({ length: nm }, (_, i) => i + m0), y: Array.from({ length: nk }, (_, k) => k),
+    z, text: txt, customdata: cnt, zmin: lo, zmax: hi, colorscale: TURBO, zsmooth: MAPSMOOTH ? "best" : false,
+    hoverongaps: false, hovertemplate: "%{text}<extra></extra>",
+    colorbar: { thickness: 10, len: 0.8, title: { text: "eV", side: "right" }, tickfont: { size: 10 } } }];
   if (m.routes && m.routes.length) {
-    const jmax = Math.max(...m.routes.map(r => Math.abs(r[4])));
     const X = [], Y = [];
     for (const [m1, k1, m2, k2, j] of m.routes.slice(0, 120)) { if (j >= 0) { X.push(m1, m2, null); Y.push(k1, k2, null); } else { X.push(m2, m1, null); Y.push(k2, k1, null); } }
-    traces.push({ type: "scattergl", mode: "lines", x: X, y: Y, line: { color: css("--series-2"), width: 1.5 }, hoverinfo: "skip" });
+    traces.push({ type: "scattergl", mode: "lines", x: X, y: Y, line: { color: ink, width: 1.5 }, hoverinfo: "skip" });
   }
   const occ = m.cells.filter(c => c[3] > 0);
   if (occ.length) {
     const pmax = Math.max(...occ.map(c => c[3]));
     const sel = occ.filter(c => c[3] > 1e-4 * pmax);
     traces.push({ type: "scattergl", mode: "markers", x: sel.map(c => c[0]), y: sel.map(c => c[1]),
-      marker: { size: sel.map(c => 5 + 13 * Math.sqrt(c[3] / pmax)), color: "rgba(0,0,0,0)", line: { color: css("--series-2"), width: 2 } },
+      marker: { size: sel.map(c => 5 + 13 * Math.sqrt(c[3] / pmax)), color: "rgba(0,0,0,0)", line: { color: ink, width: 2 } },
       customdata: sel.map(c => c[3]), hovertemplate: "m %{x}, k %{y}<br>%{customdata:.3g} M<extra></extra>" });
   }
   const zoom = MAPRANGE === "grid", kz = m.cells.filter(c => c[0] <= 30).map(c => c[1]);
-  if (zoom) traces[0].marker.size = 11;
   Plotly.react("cMap", traces, base({ margin: { l: 44, r: 10, t: 6, b: 36 },
     xaxis: { title: { text: "m (CdSe units)", standoff: 4 }, ...(zoom ? { range: [0.4, 30.6], dtick: 2 } : {}) },
     yaxis: { title: { text: "k (CdCl₂ units)", standoff: 4 }, ...(zoom ? { range: [-0.6, Math.max(...kz) + 0.6] } : {}) } }), CFG);
   $("cMap").removeAllListeners?.("plotly_click");
-  $("cMap").on("plotly_click", ev => { const p = ev.points[0]; if (p && p.curveNumber === 0) pickComposition(p.x, p.y); });
+  $("cMap").on("plotly_click", ev => { const p = ev.points[0]; if (p && p.curveNumber === 0 && p.customdata > 0) pickComposition(p.x, p.y); });
   if (m.barriers && !RUN) barrierTable(m.barriers);
 }
 
@@ -1001,6 +1035,10 @@ $("mBest").addEventListener("click", () => { MAPMODE = "best"; $("mBest").classL
 $("tnowR").addEventListener("input", () => syncT(true));
 for (const [id, r] of [["rAll", "all"], ["rGrid", "grid"]]) $(id).addEventListener("click", () => {
   MAPRANGE = r; $("rAll").classList.toggle("on", r === "all"); $("rGrid").classList.toggle("on", r === "grid");
+  if (LASTMAP) drawMap(...LASTMAP);
+});
+for (const [id, s] of [["vSmooth", true], ["vCells", false]]) $(id).addEventListener("click", () => {
+  MAPSMOOTH = s; $("vSmooth").classList.toggle("on", s); $("vCells").classList.toggle("on", !s);
   if (LASTMAP) drawMap(...LASTMAP);
 });
 $("tnow").addEventListener("change", () => syncT(false));
