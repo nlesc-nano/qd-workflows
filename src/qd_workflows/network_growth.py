@@ -64,8 +64,9 @@ TOL = 1e-8                                   # pool residual (relative to the to
 NEWTON_MAX = 0.2                             # largest Newton step in ln C_M, ln C_X
 CH_MAX = 0.2                                 # largest change per time step of ln C and of ln(number of dots)
 OUT_CH = (0.3, 0.5, 0.5)                     # dense outputs: change of ln C_M, ln(number of dots), <m> since the last
-M_STEP = 1.0                                 # largest change of the dots' <m> per step (CdSe units), once they hold
-DOT_SEEN = 1e-12                             # this share of the CdSe (the burst: <m> 13 -> 58 in ~0.3 s)
+M_STEP = 5.0                                 # largest change of the dots' <m> per step (CdSe units), once they hold
+DOT_SEEN = 1e-12                             # this share of the CdSe (the burst: <m> 13 -> 140 in ~0.4 s); M_STEP 1
+                                             # took 1.7x the steps (acetate p2 to 20 s: dots within 1.5e-3, alpha 3e-5)
 STALL_TRIES = 400                            # step attempts between two outputs before a run is stopped as stalled
 M_DOT = 13                                   # a dot: m >= the seed's 13 CdSe (the grid -> network hand-over)
 FAMILIES = ("100", "111A", "111B", "110")
@@ -518,13 +519,14 @@ def _median(v):
     return float(v[h]) if len(v) % 2 else float((v[h - 1] + v[h]) / 2)
 
 
-def _threads() -> int:
-    """Threads of the sparse LU: QDW_LU_THREADS, else the cores this process may use, at most 4 (a 7.6k-state LU
-    is no faster on more: M5 Pro 4 threads 0.019 s, 8 threads 0.026 s)."""
+def _threads(n_states: int = 0) -> int:
+    """Threads of the sparse LU: QDW_LU_THREADS, else the cores this process may use, at most 4 below 30,000 states
+    (a 7.6k-state LU is no faster on more: M5 Pro 4 threads 0.019 s, 8 threads 0.026 s) and 8 above (the 54.8k-state
+    acetate ext2 network: 0.37 s on 4, 0.25 s on 8, 0.28 s on 12 or 16)."""
     if os.environ.get("QDW_LU_THREADS"):
         return max(1, int(os.environ["QDW_LU_THREADS"]))
     n = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
-    return min(4, n)
+    return min(8 if n_states > 30000 else 4, n)
 
 
 class _Solver:
@@ -537,7 +539,7 @@ class _Solver:
 
     def __init__(self, n, threads=None):
         self.n, self.A, self.lu, self.n_lu, self.n_it = n, None, None, 0, 0
-        self.threads = threads or _threads()
+        self.threads = threads or _threads(n)
         self.mumps = None
         if os.environ.get("QDW_LU", "mumps").lower() != "superlu":
             try:
@@ -640,9 +642,9 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     output (the dots' once they hold DOT_SEEN of the CdSe). A step moves the dots' <m> by at most M_STEP, so the
     nucleation burst is resolved.
     The run ends early, with the outputs it has, its last state and the reason in out["stopped"], when stop() is
-    true, after max_wall_s, when STALL_TRIES step attempts do not reach the next output, when the pool does not
-    converge, or when frontier_stop of the dots sit on states without a growth step: past that the dots pile up at
-    the network's edge, C_M collapses and the run says nothing about growth.
+    true, after max_wall_s, when STALL_TRIES step attempts do not reach the next output (dense or not), when the pool
+    does not converge, or when frontier_stop of the dots sit on states without a growth step: past that the dots pile
+    up at the network's edge, C_M collapses and the run says nothing about growth.
     prune_eV > 0: on the subset of Network.prune (the CdCl2 left from c_MX0 down to c_MX0 - c_P0, at least 1e-6 M),
     populations returned on the whole network."""
     c = conditions(cond)
@@ -702,7 +704,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
            "barriers": [], "N": [], "V_mL": [], "steps": 0, "lu": 0, "wall_s": 0.0, "stopped": None}
     w0 = time.time()
     solver = _Solver(net.n)
-    dudt = None
+    dudt, took, d_took = None, np.zeros(2), np.zeros(2)  # the pool's ln C rate, the CdSe and X the states take (/s)
     diag = {"newton": 0, "backtrack": 0, "failed": 0, "rejected": 0}
     dot = net.m >= M_DOT
 
@@ -807,9 +809,17 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             break
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
-        if dudt is None:                                 # predictor: the pool's last rate of change, else the supply
-            x1 = conv(x, math.exp(u[1]), dt, t1)
-            f0, f1 = feed.phi(t), feed.phi(t1)
+        # predictor: the pool's balance, the supply over the step less what the states took at the last step's rate
+        # (one Newton iteration fewer than extrapolating ln C while C_M grows with the supply); else the pool's last
+        # rate of change
+        x1 = conv(x, math.exp(u[1]), dt, t1)
+        f0, f1 = feed.phi(t), feed.phi(t1)
+        tk = took + 0.5 * dt * d_took                   # the uptake's mean over the step, its rate extrapolated
+        cm = math.exp(u[0]) * f1 / f0 + f1 * (x1 - x - dt * tk[0])
+        cx = math.exp(u[1]) * f1 / f0 - f1 * (x1 - x + dt * tk[1])
+        if cm > 0 and cx > 0:
+            v = np.array([math.log(cm), math.log(cx)])
+        elif dudt is None:
             v = np.array([math.log(max(math.exp(u[0]) * f1 / f0 + f1 * (x1 - x), f1 * x1 * 1e-12)),
                           u[1] + math.log(f1 / f0) - (x1 - x) / max(c_mx0 - x, 1e-30)])
         else:
@@ -856,6 +866,8 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             dt *= 0.3
             continue
         dudt = (v - u) / dt
+        took1 = np.array([mvec @ (N1 - N), kvec @ (N1 - N)]) / dt
+        d_took, took = (took1 - took) / dt, took1
         t, x, u, N = t1, x1, v, N1
         acc = (pl, r)
         out["steps"] += 1
@@ -865,6 +877,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             tries = 0
         elif dense and _moved_since(N, pl):
             record(t, N, pl, r)
+            tries = 0
             if log:
                 log(f"t = {t:.4g} s: alpha {out['alpha'][-1]:.3f}, C_M {pl['c_MA']:.3g} M, dots {out['n_dots'][-1]:.3g} M, "
                     f"<m> {out['m_mean'][-1]:.1f}, {out['steps']} steps, {solver.n_lu} LU, {solver.n_it} GMRES it, {diag}, {time.time() - w0:.1f} s")
