@@ -89,6 +89,7 @@ $$
     - the carboxylate code (`ligands.py` and its `nucleation.py`): untracked, in the `cdse-carboxylate-plan` worktree
       and on LUMI `qdw/code`;
     - the layer-path scripts (`build2.py`, `treepaths.py`, `layer_steps.py`, `islands.py`, `stage*.py`, `ladders.py`,
-      …), now copied to `network_growth_data/pipeline_scripts_layer_path/`.
+      …) ran from session folders; they are now the module `qd_workflows.layer_path`
+      (`python -m qd_workflows.layer_path <command>`), with the same keys and builder recipes.
 
     The figures of this section were made with the scripts in `docs/protocols/cdse/figure_scripts/`.
