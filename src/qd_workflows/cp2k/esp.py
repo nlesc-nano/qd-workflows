@@ -13,9 +13,13 @@ MULTIPOLE, OT/DIIS), printing the Hartree-potential and density cubes:
     dot_<K>    the fully stripped dot, the last state of the MACE desorption ladder
                (props/detach_<K>.xyz), from scratch: the stripped states in between are
                interpolated in k by Orchestr.AI
+    dot_add<K> the fully added dot, the last state of the MACE adsorption ladder
+               (props/adsorb_<K>.xyz), from scratch: the added states (ladder up) are
+               interpolated in k between dot_0 and it (the webapp's solution-phase ladder)
     MA, MX     the monomers of props/monomers.xyz, from scratch in a small cell
 
-    qdw cp2k esp prepare <field/base/cp2k.inp> <esp dir> [--stripped detach_K.xyz] [--monomers monomers.xyz]
+    qdw cp2k esp prepare <field/base/cp2k.inp> <esp dir> [--stripped detach_K.xyz] [--added adsorb_K.xyz]
+                         [--monomers monomers.xyz]
     qdw cp2k esp status <esp dir>          # "all done" or the runs still to do
     qdw cp2k esp collect <esp dir> -o solvation.json
 """
@@ -50,9 +54,61 @@ def _sub(text: str, pattern: str, repl: str) -> str:
     return new
 
 
-def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | None = None) -> str:
+RESTART_EACH = 50      # SCF cycles between .wfn writes of the field and dot ESP runs
+
+
+def restart_print(t: str) -> str:
+    """Write the run's own .wfn every RESTART_EACH SCF cycles (no backups), so a run stopped at MAX_SCF
+    can go on from where it stopped (scf_restart) instead of from the start."""
+    block = (r"\g<1>&RESTART\n\g<1>  BACKUP_COPIES 0\n\g<1>  &EACH\n"
+             rf"\g<1>    QS_SCF {RESTART_EACH}\n\g<1>  &END EACH")
+    t, n = re.subn(r"^(\s*)&RESTART OFF\s*$", block, t, count=1, flags=re.M)
+    if n:
+        return t
+    return _sub(t, r"^(\s*)&SCF\s*$", r"\g<0>\n\g<1>  &PRINT\n" + block.replace(r"\g<1>", r"\g<1>    ")
+                + r"\n\g<1>    &END RESTART\n\g<1>  &END PRINT")
+
+
+MAX_SCF_RESTARTS = 3
+ESP_RESTART_EPS_SCF = "1e-5"
+
+
+def scf_restart(run_dir, max_restarts: int = MAX_SCF_RESTARTS) -> str:
+    """A run that stopped with "SCF run NOT converged": restart it from its own .wfn (SCF_GUESS restart), at most
+    `max_restarts` times; its outputs are kept as cp2k.out.unconverged, .unconverged2, ... Returns "restarted" or
+    why not. An ESP run (it prints the cubes) restarts with EPS_SCF 1e-5 and IGNORE_CONVERGENCE_FAILURE, so
+    its cubes are written in any case (Ivan, 2026-10-20: the energy goes down steadily, compute the ESP)."""
+    d = Path(run_dir)
+    out = d / "cp2k.out"
+    if not out.is_file() or "SCF run NOT converged" not in out.read_text(errors="ignore") or _done(d):
+        return "not an SCF failure"
+    done = len(list(d.glob("cp2k.out.unconverged*")))
+    if done >= max_restarts:
+        return f"already restarted {done} times"
+    tag = "unconverged" + (str(done + 1) if done else "")
+    t = (d / "cp2k.inp").read_text()
+    project = re.search(r"^\s*PROJECT\s+(\S+)", t, flags=re.M).group(1)
+    wfn = f"{project}-RESTART.wfn"
+    if not (d / wfn).is_file():
+        return f"no {wfn}"
+    t = _sub(t, r"^(\s*SCF_GUESS\s+)\S+", r"\g<1>restart")
+    t, n = re.subn(r"^(\s*WFN_RESTART_FILE_NAME\s+).*$", rf"\g<1>{wfn}", t, count=1, flags=re.M)
+    if not n:
+        t = _sub(t, r"^(\s*)&DFT\s*$", rf"\g<0>\n\g<1>  WFN_RESTART_FILE_NAME {wfn}")
+    if "&V_HARTREE_CUBE" in t and not _ignores_failure(t):
+        t = _sub(t, r"^(\s*)(EPS_SCF\s+)\S+", rf"\g<1>\g<2>{ESP_RESTART_EPS_SCF}\n\g<1>IGNORE_CONVERGENCE_FAILURE")
+    (d / "cp2k.inp").write_text(t)
+    out.rename(d / f"cp2k.out.{tag}")
+    if (d / "srun.log").is_file():
+        (d / "srun.log").rename(d / f"srun.log.{tag}")
+    return "restarted"
+
+
+def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | None = None,
+              restartable: bool = False) -> str:
     """The chain's single point as an energy run printing the potential and density cubes;
-    scratch: atomic guess instead of the geo_opt .wfn (another structure); cell: its own box."""
+    scratch: atomic guess instead of the geo_opt .wfn (another structure); cell: its own box;
+    restartable: write its own .wfn (restart_print; the dots, not the monomers of the library)."""
     t = _sub(base, r"^(\s*PROJECT\s+)\S+", rf"\g<1>{project}")
     t = _sub(t, r"^(\s*RUN_TYPE\s+)\S+", r"\g<1>ENERGY")
     if re.search(r"^    &PRINT\s*$", t, flags=re.M):          # a &DFT &PRINT already there
@@ -64,7 +120,7 @@ def esp_input(base: str, project: str, *, scratch: bool = False, cell: str | Non
         t = re.sub(r"^\s*WFN_RESTART_FILE_NAME.*\n", "", t, flags=re.M)
     if cell:
         t = _sub(t, r"^(\s*ABC\s+).*$", rf"\g<1>{cell}")
-    return t
+    return restart_print(t) if restartable else t
 
 
 def _frames(path: Path) -> list:
@@ -84,40 +140,61 @@ def _write(d: Path, inp: str, sym, pts, comment: str) -> None:
         f"{s} {x:.8f} {y:.8f} {z:.8f}\n" for s, (x, y, z) in zip(sym, np.asarray(pts, float))))
 
 
-def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: str | None = None) -> list[str]:
+def prepare(base_inp: str, out_dir: str, stripped: str | None = None, monomers: str | None = None,
+            added: str | None = None) -> list[str]:
     """<out_dir>/<run>/{cp2k.inp, geom.xyz} and runs.txt; returns the run names."""
     base_path = Path(base_inp)
     base = base_path.read_text()
     out = Path(out_dir)
     names = []
     sym, pts = read_xyz(base_path.parent / "geom.xyz")
-    _write(out / "dot_0", esp_input(base, "dot_0"), sym, pts, "intact dot (geo_opt)")
+    _write(out / "dot_0", esp_input(base, "dot_0", restartable=True), sym, pts, "intact dot (geo_opt)")
     names.append("dot_0")
     if stripped:
         m = re.search(r"detach_(\d+)\.xyz$", str(stripped))
         k = int(m.group(1)) if m else 0
         sym, pts = read_xyz(stripped)
         name = f"dot_{k}"
-        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts)), sym, pts,
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), restartable=True), sym, pts,
                f"fully stripped dot, {k} units removed (MACE ladder)")
+        names.append(name)
+    if added:
+        m = re.search(r"adsorb_(\d+)\.xyz$", str(added))
+        k = int(m.group(1)) if m else 0
+        sym, pts = read_xyz(added)
+        name = f"dot_add{k}"
+        _write(out / name, esp_input(base, name, scratch=True, cell=cell_abc(pts), restartable=True), sym, pts,
+               f"fully added dot, {k} units added (MACE adsorption ladder)")
         names.append(name)
     if monomers:
         for label, sym, pts in _frames(Path(monomers)):
-            ext = np.ptp(pts, axis=0) + 12.0
-            cell = " ".join(f"{max(x, MONOMER_MIN_CELL_A):.3f}" for x in ext)
+            cell = cell_abc(pts, min_length=MONOMER_MIN_CELL_A)        # 6 Å each side, common grid
             _write(out / label, esp_input(base, label, scratch=True, cell=cell), sym, pts, f"{label} monomer (MACE)")
             names.append(label)
     (out / "runs.txt").write_text("\n".join(names) + "\n")
     return names
 
 
+def _ignores_failure(inp: str) -> bool:
+    return bool(re.search(r"^\s*IGNORE_CONVERGENCE_FAILURE", inp, flags=re.M))
+
+
+def _scf_converged(d: Path) -> bool:
+    t = (d / "cp2k.out").read_text(errors="ignore")
+    return "SCF run converged" in t and "SCF run NOT converged" not in t
+
+
 def _done(d: Path) -> bool:
+    """Cubes written and the SCF converged, or an ESP restart that accepted the SCF as it was
+    (IGNORE_CONVERGENCE_FAILURE) and ended normally."""
     o = d / "cp2k.out"
-    if not o.is_file():
+    if not o.is_file() or not (any(d.glob("v_hartree*")) and any(d.glob("density*"))):
         return False
-    t = o.read_text(errors="ignore")
-    return ("SCF run converged" in t and "SCF run NOT converged" not in t
-            and any(d.glob("v_hartree*")) and any(d.glob("density*")))
+    if _scf_converged(d):
+        return True
+    inp = d / "cp2k.inp"
+    return (inp.is_file() and _ignores_failure(inp.read_text())
+            and "PROGRAM ENDED AT" in o.read_text(errors="ignore"))
 
 
 def status(out_dir: str) -> str:
@@ -144,10 +221,14 @@ def collect(out_dir: str, max_points: int = MAX_POINTS) -> dict:
         r = sv.cosmo_isodensity(pot, den, sv.RHO_ISO, spacing)
         sym, _ = read_xyz(d / "geom.xyz")
         res[name] = {"E_inf_eV": r["E_inf_eV"], "S_A2": r["S_A2"], "V_A3": r["V_A3"], "n_points": r["n_points"],
-                     "spacing_A": spacing, "n_atoms": len(sym), "screening_charge": r["screening_charge"]}
+                     "spacing_A": spacing, "n_atoms": len(sym), "screening_charge": r["screening_charge"],
+                     "scf_converged": _scf_converged(d)}
         m = re.match(r"dot_(\d+)$", name)
         if m:
             res[name]["k"] = int(m.group(1))
+        m = re.match(r"dot_add(\d+)$", name)
+        if m:                                                # not "k": Orchestr.AI reads the removals only
+            res[name]["k_added"] = int(m.group(1))
     return {"model": "COSMO on the DFT electrostatic potential, cavity on the density isosurface "
                      f"{sv.RHO_ISO:.2e} e/bohr^3 (qd_workflows.reaction.solvation)",
             "rho0_e_bohr3": sv.RHO_ISO, "beta0_alpha_gamma_mN_m": [sv.BETA0_SLOPE, sv.BETA0_OFFSET],

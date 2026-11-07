@@ -4,11 +4,10 @@
 name: nhr
 scheduler: slurm
 cores_per_node: 192          # cpu-genoa
-request: cores
+request: nodes              # every CP2K job on whole nodes, all cores as MPI ranks (Ivan's rule)
 min_cores: 48
-mem_per_cpu: 7g              # ~1.5 TB per 192-core node
-node_memory_gb: 1400         # usable; Slurm counts --mem-per-cpu per hardware thread
-threads_per_core: 2          # (-n 192 x 7g is refused: 384 threads x 7 GB)
+mem_per_cpu: 7g              # per core; CP2K jobs ask per node: #SBATCH --mem=<cores x 7 GB>
+node_memory_gb: 1400         # usable; the cap of --mem (-n 48 --mem-per-cpu=7g never starts on cpu-genoa)
 qos: normal
 account: bep00157           # project account (the personal one, becivinf, is out of compute time)
 setup: []
@@ -27,8 +26,10 @@ cp2k:
   t_c_g: /scratch/usr/becivinf/sw/cp2k-2026.2/data/t_c_g.dat   # truncated Coulomb (PBE0 in periodic cells)
   dftd3: /scratch/usr/becivinf/sw/cp2k-2026.2/data/dftd3.dat  # Grimme D3 parameters
   launcher: srun            # SLURM-built OpenMPI: srun (no mpirun on the path)
-  field_parallel: 13        # finite-field single points run side by side in the chain
+  field_parallel: 1         # every SCF on all the job's cores (Ivan): field single points one after the other
+  esp_parallel: 1           # ... and the ESP dots too
   omp_num_threads: 1
+  monomer_library: /scratch/projects/bep00157/qdw_campaign/monomers/cp2k   # CP2K monomer library (qdw monomers): MA, MX_q once per formula
   data_dir: /scratch/usr/becivinf/cp2k_basis
   basis_file: BASIS_MOLOPT_UZH
   potential_file: POTENTIAL_UZH
@@ -53,11 +54,11 @@ qdex:
   eps_out: 2.24
   g_shell: 2
 
-# GPU jobs (Orchestr.AI run_type PROPS): one A100 80 GB of a 4-GPU, 144-core node (gpu-a100),
+# GPU jobs (Orchestr.AI run_type PROPS): one A100 80 GB of a 4-GPU, 144-core node (gpu-a100:shared),
 # or one H200 of a 4-GPU, 256-core node (gpu-h200).
 props:
   dft_chain: true           # the GPU job submits a CP2K chain per record; the CPU job waits for them
-  partition: gpu-a100
+  partition: gpu-a100:shared   # 150 core-h per GPU-hour; gpu-a100 bills the whole node (600) even for one GPU
   test_partition: gpu-a100:test
   gres: gpu:A100:1
   cpus: 36
@@ -81,3 +82,29 @@ props:
     cpus: 96
     mem: 180G
     time: "01:00:00"
+
+# Compute budget (qdw campaign status): the project's charge since the period started, from sacct of every
+# user of the account, at NHR's rates (core-h per node-hour or GPU-hour). The allocation itself is only in
+# the NHR portal (Slurm does not hold it): copy it here each period.
+budget:
+  account: bep00157
+  period_start: 2026-10-01   # TODO: the start of the yearly grant (portal)
+  period_end: 2027-09-30
+  allocation_core_h: 4500000 # ~4-5 M core-h a year (GPUs charged in core-h); more can be asked for
+  charge:
+    cpu-clx: {per_node_h: 96}
+    cpu-genoa: {per_node_h: 192}
+    gpu-a100:shared: {per_gpu_h: 150}
+    gpu-a100: {per_node_h: 600}
+    gpu-h200: {per_node_h: 600}    # TODO: check the H200 rate in the portal
+
+# Storage (qdw campaign status): space and files of every quota area, warnings from 80 % of the limit.
+storage:
+  - {tool: nhr, command: show-quota --csv --home --work}
+
+# The structure-database campaign on this cluster (qdw campaign poll reaches it over ssh).
+campaign:
+  host: nhr
+  path: /scratch/projects/bep00157/qdw_campaign
+  python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
+  pythonpath: /scratch/projects/bep00157/qdw_campaign/code/qd-workflows/src

@@ -42,12 +42,14 @@ def find_cif(name: str, dirs) -> str:
 
 
 def prepare(record_path: str, window_path: str, out_dir: str, cluster: dict, *, orbitals: str = "../orbitals.h5",
-            geom: str = "../relaxed.xyz", threads: int = 8, max_states: int | None = None) -> dict:
+            geom: str = "../relaxed.xyz", threads: int = 8, max_states: int | None = None,
+            trap_filter: bool = False) -> dict:
     """
     Write `<out_dir>/config.yaml` with Ivan's QDEX settings (bulk QP with the scaled
     vertex, diagonal sBSE with the Resta kernel, SOC, toluene eps_out, fuzzy bands,
     PDOS and COOP). The sBSE space is balanced: min(occupied, virtual) MOs of the
-    TREXIO window, at most `max_states`.
+    TREXIO window, at most `max_states`. With `trap_filter`, the transitions from or to
+    surface states (Facet or Localized) are left out of the sBSE.
     """
     q, cp = cluster.get("qdex", {}), cluster["cp2k"]
     record = json.loads(Path(record_path).read_text())
@@ -61,7 +63,8 @@ def prepare(record_path: str, window_path: str, out_dir: str, cluster: dict, *, 
                    "basis_name": cp["basis"], "material": str(record["material"]).upper(), "nthreads": int(threads)},
         "environment": {"eps_out": float(q.get("eps_out", 2.24))},
         "quasiparticles": {"model": "bulk", "bulk_vertex": "scaled"},
-        "excitations": {"mode": "diagonal_sbse", "kernel": "resta", "nhomos": n, "nlumos": n},
+        "excitations": {"mode": "diagonal_sbse", "kernel": "resta", "nhomos": n, "nlumos": n,
+                        **({"trap_filter": True} if trap_filter else {})},
         "fuzzy": {"run_fuzzy": True, "cif": find_cif(cif_name, cif_dirs) if cif_name else None, "soc_window": 10.0,
                   "pdos_atoms": elements, "coop_pairs": coop_pairs(record), "fuzzy_sigma": 0.01,
                   "pdos_sigma": 0.08, "ewin": [-5.0, 5.0],
@@ -129,6 +132,7 @@ def summary(qdex_dir: str, bright_f: float = BRIGHT_F) -> dict:
 
 EDGE_WINDOW = 0.5       # eV above the lowest exciton: the band-edge states shown in the webapp
 EDGE_MIN, EDGE_MAX = 20, 300
+STICK_F_MIN = 1e-5     # states below this oscillator strength are left out of the spectrum sticks
 
 
 def _orbital_label(i: int, homo: int, prefix: str) -> str:
@@ -146,7 +150,8 @@ def webapp(qdex_dir: str, window: float = EDGE_WINDOW, n_min: int = EDGE_MIN, n_
     """
     One small JSON per dot for the webapp: the summary, the band-edge excitons (up to
     `window` eV above the lowest, at least n_min, at most n_max) with their descriptors,
-    and the absorption spectra (every computed state, fixed grid, two broadenings).
+    and the absorption spectra (every computed state, fixed grid, two broadenings, and the sticks:
+    energy and f of every state with f >= STICK_F_MIN).
     The full set up to excitations_emax stays in qdex_excitations.h5.
     """
     import h5py
@@ -179,6 +184,11 @@ def webapp(qdex_dir: str, window: float = EDGE_WINDOW, n_min: int = EDGE_MIN, n_
             out["excitons"][g] = states
             sp = ex[f"{g}/spectrum"]
             grid = sp["energy_ev"][:]
+            # every computed state with a non-negligible f, so the webapp can broaden the spectrum at any width
+            f_all = ex[f"{g}/f_osc"][:]
+            keep = f_all >= STICK_F_MIN
             out["spectrum"][g] = {"energy_ev": [float(grid[0]), float(grid[-1]), round(float(grid[1] - grid[0]), 6)],
-                                  **{k: [_sig(v, 4) for v in sp[k][:]] for k in sp if k.startswith("sigma_")}}
+                                  **{k: [_sig(v, 4) for v in sp[k][:]] for k in sp if k.startswith("sigma_")},
+                                  "sticks": {"energy_ev": [round(float(e), 5) for e in ex[f"{g}/energy_ev"][:][keep]],
+                                             "f_osc": [_sig(v, 4) for v in f_all[keep]]}}
     return out

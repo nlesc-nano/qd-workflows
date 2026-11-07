@@ -1,0 +1,208 @@
+NHR SCRATCH AND HOME CLEANUP PROPOSAL, 2026-10-18 (proposal nhr-scratch)
+STATUS: PROPOSAL ONLY. Nothing was moved, copied, tarred or deleted. Each group needs Ivan's approval of this file by name
+("approve cleanup 2026-10-18-nhr-scratch", or per group: "approve A", "approve B", ...).
+Cluster: NHR (blogin4), user becivinf, account bep00157. Read-only checks on 2026-10-18 (ssh -x nhr); squeue -u becivinf showed
+only USMAN/MD (9581354_0..3, pending) and monomers-AlSb (9582076, pending); none of the paths below is used by them.
+Units: GB = 10^9 bytes (du --apparent-size, bytes). "inodes" = files + directories (the quota unit); "files" = non-directory entries.
+Scratch quota unit is inodes; df -i /scratch/usr/becivinf: 237,630 IUsed of 250,000 soft (95 %).
+
+0. QUOTAS BEFORE
+   /scratch/usr/becivinf (user scratch):  237,630 inodes of 250,000 soft (95 %); 33 GB sw + 1.1 TB CP2K + 1.1 TB namd + 18 GB qdw_tests + ...
+   /home/becivinf (home):                 228,604 inodes; 31 GB used (23 GB miniforge3, 7.5 GB .cache) of 40 GB soft
+   /scratch/projects/bep00157 (project):  2.2 TB used by bepcrodr (another user), 6.2 GB cp2k, 0.64 GB qdw_campaign; quota 12 TiB, 1 M files
+
+1. GROUP A: CACHES AND DUPLICATE ARCHIVE (safest; deletion)
+   A1 /home/becivinf/.cache/pip                         7.996 GB   2,082 inodes   pip download/wheel cache (re-downloadable)
+   A2 /home/becivinf/.cache/conda                       0.015 GB   2,046 inodes   conda index/package-info cache
+   A3 /home/becivinf/miniforge3/pkgs (unlinked only)    1.536 GB  38,536 inodes   conda package cache entries not linked into any env
+                                                                                 (18,572 files + 19,964 dirs; files hard-linked into envs are NOT touched).
+                                                                                 Do it with: conda clean --packages --tarballs (conda keeps linked packages)
+   A4 /scratch/usr/becivinf/sw/libtorch-2.7.1-cu128.zip  3.780 GB        1 inode   download zip; extracted copy sw/libtorch-2.7.1-cu128 (in use by the CP2K build) stays
+   Group A total: 13.327 GB, 42,665 inodes
+   Effect: home 228,604 -> 185,939 inodes; home 31 GB -> ~18 GB. Scratch: none.
+
+2. GROUP B: CP2K BACKUPS OF FINISHED RUNS (deletion)
+   Only *.bak-* files (all of CP2K/), and *-BFGS.Hessian / *-pos-*.xyz where the same directory has a FINAL*/relaxed file
+   (converged geo_opt). Not included: CP2K/bulk_bands/run1/CsPbCl3_geo (2 files, no FINAL file). No RESTART.wfn is listed.
+   Run directories themselves stay. Lines marked "recent" have files modified 2026-10-14..17; re-check before approval.
+   Count per dir: files; bytes.
+   9 files  11,778,821,788 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Cd-Cd768Se632Cl272
+   5 files   4,808,227,235 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In407P336Cl201F12  (recent, 2026-10-15)
+   1 file    4,702,413,504 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd600Se489Cl222-reconstructed/scf/old
+   2 files   4,627,024,272 B  /scratch/usr/becivinf/CP2K/InP_dots/hle17/In-In407P336Cl213  (recent, 2026-10-14)
+   4 files   3,880,494,417 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd1072Se928Cl288-reconstructed
+   4 files   3,870,826,472 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Cs-Cs704Pb512Br1728
+   2 files   3,692,928,232 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/sp/CdSe-Cd-Cd768Se632Cl272
+   1 file    3,485,321,364 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd1072Se928Cl288-reconstructed/scf
+   4 files   3,331,390,636 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd985Se831Cl308-reconstructed
+   1 file    2,991,142,428 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Se-Cd985Se831Cl308-reconstructed
+   1 file    2,991,142,428 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd985Se831Cl308-reconstructed/scf
+   4 files   2,501,332,837 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd856Se731Cl250-reconstructed
+   3 files   2,242,432,241 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Se-Cd856Se731Cl250-reconstructed
+   1 file    2,241,792,808 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd856Se731Cl250-reconstructed/scf
+   3 files   1,850,960,869 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Cd-Cd768Se632Cl272-reconstructed
+   4 files   1,848,115,724 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Pb-Cs490Pb343Br1176
+   1 file    1,846,464,116 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd768Se632Cl272-reconstructed/scf
+   8 files   1,791,146,152 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Se-Cd508Se421Cl174
+   2 files   1,608,958,944 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/sp/CdSe-Se-Cd508Se421Cl174
+   4 files   1,512,112,433 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd663Se560Cl206-reconstructed
+   1 file    1,491,714,532 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Pb-Cs490Pb343Br1176_s500
+   1 file    1,354,236,680 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd663Se560Cl206-reconstructed/scf
+   1 file    1,133,596,272 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd600Se489Cl222-reconstructed/scf
+   4 files   1,053,825,008 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In407P336Cl213
+   4 files     937,984,827 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In415P324Cl273_swap  (recent, 2026-10-17)
+   1 file      804,479,472 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd508Se421Cl174-reconstructed/scf
+   1 file      774,940,536 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In415P324Cl273_swap/atomic_check  (recent, 2026-10-17)
+   4 files     757,768,623 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Cs-Cs324Pb216Br756
+   4 files     693,356,902 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In365P288Cl231
+   1 file      438,140,160 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/CdSe-Cd-Cd373Se304Cl138
+   1 file      357,250,692 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/CdSe-Se-Cd333Se261Cl144
+   1 file      323,653,720 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/tda/CdSe-Cd-Cd95Se60Cl70
+   1 file      300,324,640 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd301Se224Cl154-reconstructed/scf
+   4 files     285,099,417 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/P-In204P153Cl153
+   4 files     280,328,402 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Pb-Cs200Pb125Br450
+   4 files     264,869,742 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/P-In204P149Cl165_swap  (recent, 2026-10-16)
+   8 files     225,273,062 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Cd-Cd177Se140Cl174
+   8 files     184,911,200 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Se-Cd156Se111Cl90
+   4 files     160,530,077 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In149P108Cl123
+   8 files     153,352,746 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Cd-Cd139Se92Cl94
+   4 files     148,335,682 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In149P104Cl135_swap  (recent, 2026-10-16)
+   1 file      127,495,800 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/tda/CdSe-Se-Cd60Se39Cl42
+   1 file      100,435,040 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/CdSe-Cd-Cd177Se140Cl174
+   1 file       82,583,688 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/CdSe-Se-Cd156Se111Cl90
+   4 files      82,304,312 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Cs-Cs112Pb64Br240_unrelaxed
+   4 files      80,272,626 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Cs-Cs112Pb64Br240
+   4 files      76,464,243 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd139Se92Cl94-reconstructed
+   8 files      73,889,972 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Cd-Cd95Se60Cl70
+   8 files      70,153,824 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Se-Cd92Se55Cl74
+   1 file       67,886,536 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/CdSe-Cd-Cd139Se92Cl94
+   1 file       67,886,536 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd139Se92Cl94-reconstructed/scf
+   1 file       32,389,464 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/CdSe-Cd-Cd95Se60Cl70
+   8 files      28,996,194 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Se-Cd60Se39Cl42
+   4 files      27,293,016 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/P-In52P31Cl63
+   8 files      26,799,068 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Cd-Cd55Se28Cl54
+   4 files      17,500,089 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Pb-Cs54Pb27Br108
+   4 files      13,704,316 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/P-In40P23Cl51
+   1 file       12,764,712 B  /scratch/usr/becivinf/CP2K/CdSe_dots/pbe0/tda/CdSe-Se-Cd60Se39Cl42
+   1 file       11,794,872 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Cd-Cd55Se28Cl54-reconstructed
+   1 file       11,794,872 B  /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd55Se28Cl54-reconstructed/scf
+   4 files      10,422,576 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In31P16Cl45
+   4 files       6,950,705 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In31P16Cl45_bare
+   1 file        5,018,028 B  /scratch/usr/becivinf/CP2K/InP_dots/runs/In-In31P16Cl45_bare/failed_fullall
+   2 files       2,404,939 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Cd-Cd301Se224Cl154-reconstructed
+   4 files       2,001,228 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Cs-Cs20Pb8Br36_unrelaxed
+   4 files       1,971,755 B  /scratch/usr/becivinf/CP2K/CsPbBr3_dots/runs/CsPbBr3-Cs-Cs20Pb8Br36
+   8 files       1,930,371 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17/CdSe-Se-Cd16Se13Cl6
+   4 files         919,406 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hle17_test
+   4 files         914,739 B  /scratch/usr/becivinf/CP2K/CdSe_dots/Cd16Se13Cl6
+   1 file          812,544 B  /scratch/usr/becivinf/CP2K/CdSe_dots/Cd16Se13Cl6/scf
+   1 file          116,908 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Se-Cd600Se489Cl222-reconstructed
+   1 file           99,229 B  /scratch/usr/becivinf/CP2K/CdSe_dots/hyperion_orig/CdSe-Se-Cd508Se421Cl174-reconstructed
+   1 file            1,218 B  /scratch/usr/becivinf/CP2K/InP_dots/hle17
+   Group B total: 239 files, 80,842,404,716 B = 80.842 GB, 74 dirs
+   Effect: scratch -239 inodes.
+
+3. GROUP C: FINISHED NAMD AND CP2K MO DATA, ARCHIVE BY TAR TO THE PROJECT SPACE (move; needs Ivan)
+   Default rule for finished runs: one tar per directory into /scratch/projects/bep00157/archive/ (created on approval),
+   tar -tf entry count checked against the source, then the source directory is removed. Nothing is compressed (npz/bin
+   data is already compressed). Checks before approval: NAMD precompute logs end in "Done" (nac.log, pre.log) for all six
+   pre_* dirs; no NAMD or CP2K job is running on these paths. Ivan to confirm the MO blocks are not needed on scratch
+   (make_namd.py and the NAMD precompute read them; they are the MO inputs of the finished NAMD runs).
+   C1 NAMD raw precomputes (step_*/nac_*.npz; export_spectra.py and export_namd_package.py read them, the README says they
+      stay on NHR, so the tar stays on NHR in the project space):
+      2,012 inodes  45,712,610,708 B  /scratch/usr/becivinf/namd/CsPbI3/pre_sf
+      2,012 inodes 331,578,177,742 B  /scratch/usr/becivinf/namd/CsPbI3/pre_soc
+      2,012 inodes  45,713,168,314 B  /scratch/usr/becivinf/namd/CsPbCl3/pre_sf
+      2,012 inodes 331,575,328,220 B  /scratch/usr/becivinf/namd/CsPbCl3/pre_soc
+      1,968 inodes  44,708,532,287 B  /scratch/usr/becivinf/namd/CsPbBr3/pre_sf
+      1,968 inodes 324,282,787,164 B  /scratch/usr/becivinf/namd/CsPbBr3/pre_soc
+      subtotal C1: 11,984 inodes, 1,123.571 GB  -> 6 tar files
+   C2 CP2K frame MO results (MOs.mbse per frame, input of the NAMD precompute; blocks are 250 to 500 frames each):
+      1,756 inodes  51,642,055,721 B  /scratch/usr/becivinf/CP2K/CsPbI3/MOs/results/block_000
+      1,756 inodes  51,642,059,458 B  /scratch/usr/becivinf/CP2K/CsPbI3/MOs/results/block_001
+      1,756 inodes  51,642,058,702 B  /scratch/usr/becivinf/CP2K/CsPbI3/MOs/results/block_002
+      1,756 inodes  51,642,057,328 B  /scratch/usr/becivinf/CP2K/CsPbI3/MOs/results/block_003
+      3,506 inodes 103,059,531,129 B  /scratch/usr/becivinf/CP2K/CsPbCl3/MOs/results/block_000
+      3,506 inodes 103,059,812,854 B  /scratch/usr/becivinf/CP2K/CsPbCl3/MOs/results/block_001
+      3,506 inodes 103,059,804,608 B  /scratch/usr/becivinf/CP2K/CsPbBr3/MOs/results/block_000
+      3,357 inodes  98,535,138,873 B  /scratch/usr/becivinf/CP2K/CsPbBr3/MOs/results/block_001
+      subtotal C2: 20,899 inodes, 614.283 GB  -> 8 tar files
+   Group C total: 32,883 inodes, 1,737.854 GB; 14 tar files added (+14 inodes)  -> net -32,869 inodes on scratch
+   Not in C: CP2K/*/MOs/CsPbX3-RESTART.wfn, *.xyz, diag/ot inputs (top level of each MOs dir), pilot-results (pilot's
+   data is not ours to move without Ivan), namd/*/dyn_* and namd/*/traj (small, 9 to 1,000 inodes each; Ivan may add them).
+
+4. GROUP D: UNTRIMMED LEGACY TREXIO orbitals.h5 WHERE A TRIMMED FILE orbitals_trim5eV.h5 EXISTS (NEEDS IVAN'S DECISION)
+   The campaign rule ("untrimmed TREXIO once the trimmed orbitals.h5 exists") uses the campaign layout (trexio/orbitals.h5 and
+   run/orbitals.h5). These CdSe_dots runs use the legacy names: orbitals.h5 (TREXIO, untrimmed) and orbitals_trim5eV.h5 (trimmed,
+   present in every dir below). Not in the default approval: Ivan confirms that orbitals_trim5eV.h5 is the digest to keep.
+   Trimmed file exists in all 10; the scf/old copy has the same size as scf/ (check whether it is a hard link before counting).
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd1072Se928Cl288-reconstructed/scf/orbitals.h5     14,527,846,108 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd985Se831Cl308-reconstructed/scf/orbitals.h5      12,443,060,348 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd768Se632Cl272-reconstructed/scf/orbitals.h5       7,667,369,244 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd856Se731Cl250-reconstructed/scf/orbitals.h5       9,334,893,916 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd663Se560Cl206-reconstructed/scf/orbitals.h5       5,634,686,812 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd600Se489Cl222-reconstructed/scf/orbitals.h5       4,704,244,556 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd600Se489Cl222-reconstructed/scf/old/orbitals.h5   4,704,244,556 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd301Se224Cl154-reconstructed/scf/orbitals.h5       1,239,102,796 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Se-Cd508Se421Cl174-reconstructed/scf/orbitals.h5       3,342,795,212 B
+      /scratch/usr/becivinf/CP2K/CdSe_dots/CdSe-Cd-Cd139Se92Cl94-reconstructed/scf/orbitals.h5          278,430,172 B
+   Group D total: 10 files, 63,876,673,720 B = 63.877 GB (-10 inodes)
+   Not proposed: CsPbBr3_dots/runs/*/orbitals.h5 and orbitals_occall.h5 (no trimmed partner), hle17/*/orbitals_pbe.h5 and
+   orbitals_hle.h5 (7.7 GB each, no trimmed partner), all qdex_electronic.h5 and *.restart (QDEX inputs).
+
+5. GROUP E: LIST ONLY, NOT PROPOSED FOR ACTION (Ivan decides; old tests, earlier runs, other tools)
+   Sizes are du -sh (approx.), inodes from find | wc -l, last modification in brackets.
+   5.1 Test directories (qdw_tests, outside the campaign):
+       qdw_tests/B        3,250 inodes  13.6 GB  [2026-10-17]   (includes its B/pilot subdir)
+       qdw_tests/reaction 2,325 inodes   1.5 GB  [2026-10-14]
+       qdw_tests/cd68_full  570 inodes   0.7 GB  [2026-10-17]
+       qdw_tests/C          989 inodes   0.8 GB  [2026-10-11]
+       qdw_tests/qdextrap   267 inodes   0.2 GB  [2026-10-17]
+       qdw_tests/A          147 inodes   0.1 GB  [2026-10-11]
+       qdw_tests/memfix     199 inodes  <0.1 GB  [2026-10-17]
+       qdw_tests/oam_complex 165 inodes <0.1 GB  [2026-10-17]
+       qdw_tests/inputs      14 inodes  <0.1 GB  [2026-10-10]
+       qdw_tests/cd176_pilot 1,720 inodes 1.7 GB [2026-10-17]   PILOT: never proposed for deletion, listed for information only
+   5.2 Earlier runs and other work (not the campaign):
+       CP2K/CdSe_dots      8,233 inodes  [2026-10-11] (CP2K/CdSe_dots: restart.wfn kept; the rest is Ivan's, see group D)
+       CP2K/bulk_bands     6,081 inodes  [2026-10-07]  (CsPbCl3_geo has no FINAL file; .csr files)
+       CP2K/CsPbBr3_dots   2,701 inodes  [2026-10-11]
+       CP2K/InP_dots       2,404 inodes  [2026-10-17]  (active-looking today, not proposed)
+       bulk_hle17         12,647 inodes  0.6 GB [2026-10-10]
+       bulk_pbe0           3,899 inodes  2.5 GB [2026-10-12]
+       gw_cluster_test       171 inodes  1.3 GB [2026-10-09]
+       qdex_runs             976 inodes 10.4 GB [2026-10-07]  (cspbx3_v2, cdse_validation, cspbx3_fuzzy)
+       qdex_commit_test      455 inodes  0.1 GB [2026-10-10]
+       namd/CsPbX3_NAMD_hops, _sf, _soc: unpacked copies of the three *.tar.gz packages (501 inodes, 0.74 GB).
+         hops: 95 entries = tar entries (duplicate). sf: 230 vs 212 tar entries; soc: 176 vs 158 tar entries (18 extra files each,
+         not in the tarball). Not proposed until checked.
+   5.3 Software (sw, Ivan's builds; in use or needed for a rebuild):
+       sw/regtests      42,008 inodes  0.3 GB [2026-10-09 to 10]  6 TEST-* output dirs (CP2K regtest outputs)
+       sw/gpu_eigh      25,767 inodes  6.4 GB
+       sw/cp2k-2026.2   39,226 inodes  6.0 GB  (tools 21k, build 7.3k: needed for rebuild; install/ in use)
+       sw/cp2k-2026.2-cuda 30,521 inodes  6.0 GB  (same layout; install/ in use)
+       sw/libtorch-2.7.1-cu128 9,038 inodes 5.9 GB (in use by the CP2K build)
+       sw/cusolver_1175 (72 inodes, 1.9 GB) and sw/cusolver_123 (63 inodes, 1.1 GB): pip --target wheels
+       sw/git_mirrors      415 inodes  1.4 GB  (needed for the offline rebuild)
+       sw/tmp            3,588 inodes  0.15 GB (GauXC/exc/ixx/tblite FetchContent trees of the build)
+   5.4 Old copy of the campaign (Ivan deletes later, per instruction): /scratch/usr/becivinf/qdw_campaign: 980 inodes, 0.63 GB.
+   5.5 Other users / active: /scratch/usr/becivinf/USMAN (104 KB; pending jobs 9581354_0..3 use it). Not proposed.
+   5.6 Home environments in use (not proposed): miniforge3/envs/qdex 4.5 GB, qdw-compute 8.0 GB, skala-gpu 9.0 GB.
+
+6. PROTECTED, NEVER PROPOSED HERE
+   RESTART.wfn of every geo_opt dot (CP2K 175 files, 209 GB; qdw_tests 231; bulk_pbe0 9; gw_cluster_test 29), the Lowdin and
+   QDEX inputs (qdex_electronic.h5, qdex_excitations.h5), the NAMD populations.npz / spectra CSVs / exported packages, the
+   monomer library and campaign code (in the project space), jobs' paths (USMAN, pending monomers job in project space).
+
+7. TOTALS (proposal as written)
+   Group A  (approve A):  13.327 GB, 42,665 inodes deleted (home 228,604 -> 185,939 inodes; home 31 GB -> ~18 GB)
+   Group B  (approve B):  80.842 GB, 239 inodes deleted (scratch)
+   Group C  (approve C):  1,737.854 GB moved to /scratch/projects/bep00157/archive/ (14 tar files replace 32,883 inodes);
+                          project space use 6.2 GB + 0.64 GB + 1.74 TB, within the 12 TiB quota (bepcrodr 2.2 TB is theirs)
+   Group D  (decide D):   63.877 GB, 10 inodes (only if Ivan confirms the legacy naming)
+   Scratch inodes if B and C are approved: 237,630 - 239 - 32,869 = 204,522 (82 % of 250,000); 237,630 if none.
+   Scratch space: 80.84 GB (B) + 1,737.85 GB moved out (C). Scratch total 2.2 TB of 30 TB (df); space is not the constraint, files are.
+   Campaign data growth: user scratch stays above 80 % of the file limit until C is done; campaign files go to the project space.
+
+8. CLEANUP LOG (filled in only after approval)
+   (empty)

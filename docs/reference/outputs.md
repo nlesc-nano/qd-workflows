@@ -31,7 +31,8 @@ entry), plus:
 | `esp/`, `solvation.json` | the cube runs (`dot_0`, `dot_<K>`, `MA`, `MX`) and their COSMO energies and areas |
 | `pdos/`, `window.json` | MO energies and PDOS; the MO window |
 | `trexio/`, `orbitals.h5` | the TREXIO single point and the trimmed orbitals |
-| `qdex/` | `qdex_electronic.h5`, `qdex_excitations.h5`, MO cubes, `webapp.json` |
+| `qdex/` | `qdex_electronic.h5`, `qdex_excitations.h5`, MO cubes, `webapp.json`, the fuzzy-band and exciton-analysis dashboards (SF, SOC) |
+| `qdex_trap/` | the same, with the transitions from or to surface states left out of the sBSE |
 | `.done` | written when the chain finished |
 
 ## `qdw reaction` run directory

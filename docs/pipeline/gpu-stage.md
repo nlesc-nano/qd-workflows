@@ -9,6 +9,7 @@ flowchart LR
     H --> ST["stability"]
     H --> D["detachment<br/>≤ 600 atoms"]
     H --> W["wigner (+ md)"]
+    D --> DE["detach_ensemble<br/>(ladder MD)"]
     D -.-> SITES["(sites, CPU stage)"]
 ```
 
@@ -73,8 +74,25 @@ qualitatively at a bounded cost:
   the best; the others keep their previous $\Delta E$;
 - at most 12 removals (`detach_max_levels`);
 - candidates relaxed to 0.05 eV/Å, no polishing (`detach_quick`);
-- one Hessian per path, for the last state (dots up to 300 atoms); the vibrational free energy of
-  the states in between is linear in $k$ from the intact dot.
+- one Hessian per path, for the last state (dots up to 2,000 atoms, `detach_thermo_max_atoms`); the
+  vibrational free energy of the states in between is linear in $k$ from the intact dot (within
+  0.03 eV of every state's Hessian on Cd$_{68}$);
+- every candidate gets an unrelaxed single point at every step, and the estimates carried over from
+  the previous step follow its change (`detach_rigid_refresh`);
+- a step with more than 16 symmetry-distinct candidates is **screened** by those single points: the
+  12 lowest (up to 32 within 0.5 eV of the lowest) are relaxed; the others get an optimistic
+  estimate, and every estimate below the best relaxed candidate or within 0.1 eV above it is relaxed
+  before choosing, in batches (`detach_screen*`, `detach_lazy_margin`);
+- after a removal at most the 24 lowest estimates are re-relaxed (`detach_refresh_max`);
+- the same search runs **upward**: one $\mathrm{MX}_q$ added per step on a free surface anion, placed as
+  the builder's Z-type post-treatment places it, at most 12 additions (`detach_up`,
+  `detach_up_max_levels`); states `props/adsorb_<j>.xyz`;
+- every ladder state carries the configurational entropy $k_B\ln\binom{x}{y}$ of its ligand shell
+  ($y$ ligands on $x$ lattice sites next to the surface metals), and $\langle k\rangle(T,\mu)$ runs over
+  both ladders with and without it.
+
+The search, its theory and its approximations are explained step by step in
+[Desorption ladder](../theory/desorption.md).
 
 On Cd68Se55Cl26 the first four removals equal those of the full beam search and the path drifts
 higher by ~0.1 eV per unit after that; on Pb236S201Cl70 it equals the full greedy ladder. Cost on
@@ -95,11 +113,34 @@ Structure ensembles for DFT labelling and fine-tuning:
   $Q_j \sim \mathcal N\!\left(0, \frac{\hbar}{2\omega_j}\coth\frac{\hbar\omega_j}{2k_BT}\right)$; modes
   below 20 cm⁻¹ are left out and modes below 50 cm⁻¹ are sampled with the width of a 50 cm⁻¹
   mode (a straight-line displacement along a rotation-like mode stretches bonds).
-- **md** (`--md`, a subset of the library): short Langevin MD (BAOAB, 2 fs, 5 ps) for six
-  replicas at constant temperatures or ramps, one batched model call per step; frames every
-  100 fs after 0.5 ps, each with its exact MACE energy and forces.
+- **md** (`--md`, a subset of the library): short canonical MD (velocity Verlet, 2 fs, 5 ps)
+  with the CSVR thermostat of Bussi, Donadio and Parrinello (coupling time 100 fs; Langevin
+  BAOAB with `md_thermostat: langevin`) for two replicas, 300 K and a 300 → 1000 K ramp, one
+  batched model call per step; frames every 100 fs after 0.5 ps. CSVR rescales the velocities
+  so that the kinetic energy $K$ follows its canonical distribution: over a time $\Delta t$, with
+  $c = e^{-\Delta t/\tau}$, $N_f = 3N-3$ and $\bar K = N_f k_BT/2$,
+  $K' = K + (1-c)\left[\frac{\bar K}{N_f}\left(R_1^2 + \textstyle\sum_{i=2}^{N_f} R_i^2\right) - K\right]
+  + 2R_1\sqrt{\frac{c(1-c)\bar K K}{N_f}}$ ($R_i$ standard normal), applied for half a step
+  before and after each Verlet step.
 
-Every structure carries energy, forces and MACE descriptors; files go to `props/ensemble/`.
+- **frames from the desorption search** (`detach_frames`, on by default): every candidate
+  relaxation keeps snapshots at its start (the dot right after the unit is removed: large forces
+  on the under-coordinated atoms) and at the first optimiser steps that release 25, 50 and 75 % of
+  its energy drop (none for a drop below 0.05 eV). All frames of the relaxations on the best path
+  are kept, plus a seeded random subset of at most 100 from the other candidates:
+  `props/ensemble/detach_relax.extxyz`. The frames come from the batched L-BFGS at no extra
+  model cost and are spooled to disk as the search runs, so a resumed search keeps them.
+- **detach_ensemble**: short CSVR MD (1 ps, frames every 100 fs after 0.2 ps) at 300 and 600 K
+  from the ladder states $k$ = 1, 4, 8, 12 (those the search reached, and always the last one),
+  starting from Maxwell–Boltzmann velocities; all replicas share one batched model call per
+  step: `props/ensemble/detach_md.extxyz`. The ladder minima themselves add little to a training
+  set (their MACE forces are zero); the relaxation snapshots and the MD sample the newly exposed,
+  reconstructing surfaces away from the minimum.
+
+Every frame is written with its positions, the MACE-MH-1 energy (also per atom) and forces, and
+velocities where it has them (extxyz: info `energy`, `energy_per_atom`, `label`; arrays `forces`,
+`vel_A_fs`), so the files can be used for training as written and DFT labels can be added next to
+them; MACE descriptors go to `embeddings.npz`. Files go to `props/ensemble/`.
 
 ## Settings that matter
 
@@ -108,8 +149,9 @@ Every structure carries energy, forces and MACE descriptors; files go to `props/
 | `fmax` | 0.01 eV/Å | relaxation convergence |
 | `hessian` | `fd` | `fd`, `analytic` (autograd) or `auto` (analytic up to `analytic_max_atoms`) |
 | `hessian_max_atoms` | 2000 | larger dots: no Hessian or anything built on it |
-| `detach_max_atoms` | 600 | desorption search up to here |
-| `detach_thermo_max_atoms` | 300 | Hessians of the desorption products up to here |
+| `detach_max_atoms` | 600 | desorption search up to here (tested up to 2,000) |
+| `detach_thermo_max_atoms` | 2000 | Hessian of the last ladder state up to here |
+| `detach_up`, `detach_up_max_levels` | true, 12 | the adsorption ladder and its length |
 | `temperatures` | 50–800 K, step 25 | thermochemistry grid |
 | `wigner_temperatures`, `wigner_samples` | 300–600 K, 100 | ensembles |
 | `vibspec_source`, `solvation_charges` | `dft` | set by `qdw props prepare`: no xTB in the batch |

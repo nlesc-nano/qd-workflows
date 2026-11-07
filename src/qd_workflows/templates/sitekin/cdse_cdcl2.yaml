@@ -1,0 +1,61 @@
+# Site-kinetics protocol recipe (qdw sites): zinc-blende CdSe with CdCl2, as computed on 2026-10-29.
+# Paths may use environment variables ($QD_BUILDER, $M).
+material:
+  cif: $QD_BUILDER/examples/cifs/CdSe_zb.cif
+  charges: {Cd: 2, Se: -2, Cl: -1}
+  cation: Cd
+  anion: Se
+  g_bulk_eV: -5.818                 # bulk CdSe free energy per formula unit at T (MACE-MH-1)
+ligand:
+  anion: Cl                         # the unit X = cation + 2 ligand anions (CdCl2)
+builder:
+  centre: Se
+  positive_q_mode: add
+  passivation: {ligand: Cl, surf_tol: 2.0, prepass_mode: role-aware, prepass_min_cn_terrace: 3,
+                prepass_min_cn_edge: 2, prepass_min_cn_vertex: 1}
+  symmetry: {proper_rotations_only: true}
+  facets:                            # mix3: {100} + {111}A + {111}B at equal gamma
+    - {hkl: "100", termination: cation_rich, gamma: 1.0}
+    - {hkl: "111", termination: cation_rich, gamma: 1.0}
+    - {hkl: "-1-1-1", termination: anion_rich, gamma: 1.0}
+# surface: plain (the builder's Cl charge balance), swap (Cl swap reconstruction) or half_swap (swap, then bridging
+# Cl on {111}A and half the {111}B swaps reverted to Se); borrow_A: reach for a second Cl borrowed by a unit
+sizes:
+  - {size: 1.0, surface: plain, borrow_A: 7.0}
+  - {size: 1.5, surface: half_swap}
+  - {size: 2.0, surface: half_swap}
+  - {size: 2.5, surface: half_swap}
+  - {size: 3.0, surface: half_swap}
+T_K: 500.0
+model: {head: omat_pbe, path: $M}
+reference: {fmax: 0.03, max_steps: 2000, polish_rounds: 3, rattle_A: 0.05, polish_gain_eV: 0.02, seed: 13}
+sites: {r_env: 4.5, r_local: 6.0, borrow_A: 5.5}
+states: {fmax: 0.02, max_steps: 3000, imag_cm: -20.0}
+phva: {step_A: 0.01, floor_cm: 50.0}
+neb:
+  sizes: [2.5]                       # NEB per role at these sizes; the other sizes take these values
+  site: largest                      # per role, the site of its largest environment
+  r_mob: 8.0
+  gap: 3.2
+  h_min: 3.5
+  d_cdse: 2.40
+  d_cdcl: 2.27
+  images: 7
+  spring: 0.1
+  fmax_loose: 0.2
+  fmax_ci: 0.05
+  max_drift: 1.5
+  imag_cm: -30.0                     # n_imag counts modes below this (reported only)
+  ts_mode_cm: -5.0                   # TS check: the lowest mode below this, along the path (overlap >= ts_overlap),
+  ts_overlap: 0.5                    #   and the next one above ts_second_cm (numerical noise)
+  ts_second_cm: -10.0
+cluster:                             # job scripts (qdw sites job)
+  name: lumi
+  account: project_465003437
+  partition: small-g
+  gpus: 1
+  cpus: 7
+  mem: 60G
+  env: /scratch/project_465003437/qdw/env.sh
+  # the run line as it goes in the script ({cmd}: the steps); \$ is expanded inside the container
+  run: 'srun singularity exec $SIF bash -c "\$WITH_CONDA; source $W/venv/bin/activate; source $W/env.sh; export OMP_NUM_THREADS=7 QDW_OEQ=1; {cmd}"'

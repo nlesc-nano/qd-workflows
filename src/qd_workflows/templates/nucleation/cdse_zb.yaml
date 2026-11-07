@@ -1,0 +1,41 @@
+# Nucleation workflow of zinc-blende CdSe with Cl (python -m qd_workflows.nucleation).
+# The recipe is the QDSpace library's II-VI default (QD_builder examples/library/cdse_zb.yaml).
+material: CdSe
+phase: zinc-blende
+cif: /Users/ivaninfante/Documents/University/escience/QD_builder/examples/cifs/CdSe_zb.cif
+native_elements: [Cd, Se]          # cation, anion
+positive_q_mode: add
+
+preset:
+  charges: {Cd: 2, Se: -2, Cl: -1}
+  passivation:
+    ligand: Cl
+    surf_tol: 2.0
+    prepass_mode: role-aware
+    prepass_min_cn_terrace: 3
+    prepass_min_cn_edge: 2
+    prepass_min_cn_vertex: 1
+  facets:
+    - {hkl: "100", scope: family, termination: cation_rich, gamma: 1.0}
+    - {hkl: "111", scope: family, termination: cation_rich, gamma: 1.0}
+    - {hkl: "-1-1-1", scope: family, termination: anion_rich, gamma: 1.0}
+  symmetry: {proper_rotations_only: true}
+
+nucleation:                         # defaults written out (qd_workflows.nucleation.NUCLEATION)
+  sizes: {start: 0.5, stop: 3.0, step: 0.125}
+  centres: auto                     # every native species and the empty interstitial sites of the CIF
+  min_sites: 1.0                    # every facet family of the recipe must hold at least this many surface sites
+  anneal: {ps: 4.0, hot: [700.0, 900.0], small_m: 6, small_ps: 8.0, small_hot: [700.0, 900.0, 1100.0]}
+  max_md_atoms: 6000
+  search:
+    scheme: seeded                  # legacy: lattice + relaxed starts from the start dot, every candidate fully
+                                    # relaxed, one anneal of every node at the end
+    screen_steps: 0                 # > 0: short batched relaxation of every candidate (lost minima on CdSe m = 13) ...
+    screen_keep: 3                  # ... then the best 3 per node fully relaxed and polished
+    capacity: true                  # keep each step's most Z-capable product too (row tops reach the full k range)
+    anneal_all_m: 10                # rows m <= 10 anneal every node
+    anneal_starts: 2                # MD starts per annealed node: its best, then the best of the other seed path
+    anneal_window: 0.15             # eV: row anneal (and Hessians) for the nodes this close to the row's lowest
+                                    #   Omega without vibrations (= 0.1 eV with them) ...
+    mu_T: [300.0, 700.0]            #   Omega at some T (K) ...
+    mu_c: [1.0e-6, 1.0]             #   ... and free CdCl2 concentration (M)

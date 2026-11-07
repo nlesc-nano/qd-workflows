@@ -14,8 +14,8 @@ job script hard-codes a path. Shipped profiles: `nhr` (NHR@ZIB, production) and 
 | `cores_per_node` | 192 | CPU cores of a node (CP2K jobs) |
 | `request` | `cores` | `cores`: shared nodes, a job asks for a core count; `nodes`: whole nodes |
 | `min_cores` | 48 | smallest CP2K job |
-| `mem_per_cpu` | `7g` | memory per core, a floor for CP2K jobs |
-| `node_memory_gb`, `threads_per_core` | 1400, 2 | usable node memory; Slurm counts `--mem-per-cpu` per hardware thread |
+| `mem_per_cpu` | `7g` | memory per core, a floor for CP2K jobs; they ask for the cores' memory per node (`#SBATCH --mem`) |
+| `node_memory_gb` | 1400 | usable node memory: the cap of a job's `--mem` |
 | `qos` | `normal` | default QoS |
 | `account` | `bep00157` | `#SBATCH --account` of every job (omit for the user's default) |
 | `setup` | `[]` | shell lines at the top of every job (e.g. `source /etc/profile.d/lmod.sh`) |
@@ -30,7 +30,8 @@ job script hard-codes a path. Shipped profiles: `nhr` (NHR@ZIB, production) and 
 | `executable` | `cp2k.psmp` / `cp2k.popt` |
 | `partition`, `test_partition` | CPU partition; the 1 h partition for `--test-queue` |
 | `launcher` | `srun` or `mpirun` |
-| `field_parallel` | most finite-field single points side by side (13); the chain lowers it to what the memory holds |
+| `field_parallel` | most finite-field single points side by side (13); the chain lowers it to what the memory holds; 1: one after the other, each on all the job's ranks |
+| `esp_parallel` | most ESP dots side by side (3: intact, stripped, added); 1: one after the other on all ranks |
 | `omp_num_threads` | 1 (pure MPI; with threads every rank ended up on one core on NHR) |
 | `data_dir`, `basis_file`, `potential_file`, `basis`, `potential` | basis and pseudopotential files and families |
 | `t_c_g`, `dftd3` | truncated-Coulomb table (PBE0 in periodic cells), D3 parameters (`qdw reaction`) |
@@ -46,6 +47,7 @@ job script hard-codes a path. Shipped profiles: `nhr` (NHR@ZIB, production) and 
 | Key | Meaning |
 |---|---|
 | `dft_chain` | the GPU job submits one CP2K chain per record and the CPU job waits for them |
+| `chain_time` | wall time of those chains (default: estimated from the basis-function count, capped by `cp2k.time.chain`) |
 | `partition`, `test_partition`, `gres`, `constraint` | the GPU request (hyperion: the GPU model goes in `--constraint`) |
 | `cpus`, `mem`, `time` | the GPU job's cores, memory and wall time |
 | `conda_init`, `conda_env` | how the `qdw-compute` environment is activated |

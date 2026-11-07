@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network Growth Simulator</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/3dmol@2.4.2/build/3Dmol-min.js"></script>
+<style>
+/* Workflow: set the conditions and read step 1 (the grid's Omega up to the seed) and the network's map live at a
+   time; run the network growth model; then move the time bar to read the pool, the dots, the facets, the map and the
+   structures at any t. */
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #8a8984;
+  --grid: #ecebe7; --accent: #2a78d6; --accent-ink: #ffffff;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #8a5cc7;
+  --seq-1: #cde2fb; --seq-3: #86b6ef; --seq-5: #3987e5; --seq-7: #1c5cab; --seq-9: #0d366b;
+  --div-neg-2: #1c5cab; --div-neg-1: #86b6ef; --div-mid: #f0efec; --div-pos-1: #f2a09f; --div-pos-2: #b8302f;
+  --warn-bg: #fff4d6; --warn-ink: #6b4a00; --err-ink: #b42323;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #a382dc;
+    --seq-1: #1d2633; --seq-3: #184f95; --seq-5: #256abf; --seq-7: #3987e5; --seq-9: #cde2fb;
+    --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835; --div-pos-1: #9e3534; --div-pos-2: #e66767;
+    --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2d2b;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --grid: #262624; --accent: #3987e5; --accent-ink: #ffffff;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #a382dc;
+  --seq-1: #1d2633; --seq-3: #184f95; --seq-5: #256abf; --seq-7: #3987e5; --seq-9: #cde2fb;
+  --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835; --div-pos-1: #9e3534; --div-pos-2: #e66767;
+  --warn-bg: #3a2e10; --warn-ink: #f2d38a; --err-ink: #ff8a8a;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 18px 24px 8px; }
+h1 { font-size: 20px; margin: 0 0 2px; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0; max-width: 115ch; }
+.badge { display: inline-block; background: var(--warn-bg); color: var(--warn-ink); border-radius: 999px;
+  padding: 1px 10px; font-size: 12px; margin-left: 6px; }
+main { display: grid; grid-template-columns: 270px minmax(0, 1fr) minmax(0, 0.8fr); gap: 16px; padding: 8px 24px 24px; align-items: start; }
+.col1 { grid-row: span 2; align-self: stretch; }
+.wide { grid-column: 2 / -1; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.lawpick { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--text-secondary); margin: 2px 4px 4px; align-items: center; }
+.lawpick label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+#cBarLive { height: 390px; }
+.col { display: grid; gap: 16px; min-width: 0; }
+.sticky { position: sticky; top: 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary);
+  margin: 0 0 10px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
+.card h3 { font-size: 12px; color: var(--text-secondary); margin: 14px 0 8px; font-weight: 600; border-top: 1px solid var(--border); padding-top: 12px; }
+.ctl { margin-bottom: 11px; }
+.ctl label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.ctl .num { display: inline-flex; align-items: center; gap: 4px; }
+.ctl .num i { font-style: normal; font-size: 11.5px; color: var(--text-muted); min-width: 3.2em; }
+.num input { width: 6.2em; font: inherit; font-size: 13px; font-weight: 600; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--text-primary); background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; }
+.num input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.ctl select { font: inherit; font-size: 13px; font-weight: 600; color: var(--text-primary); background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; max-width: 13em; }
+.num input.bad { border-color: var(--err-ink); color: var(--err-ink); }
+.ctl .hint, .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.tog { display: flex; align-items: center; gap: 7px; cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+button { font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-1);
+  color: var(--text-primary); padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .55; cursor: progress; }
+.status { font-size: 12px; color: var(--text-muted); margin-top: 8px; min-height: 1.4em; white-space: pre-line; }
+.status.err { color: var(--err-ink); }
+.readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(122px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.ro { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; }
+.ro span { display: block; font-size: 11px; color: var(--text-secondary); }
+.ro b { font-size: 14px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.chart { height: 200px; }
+.chart.tall { height: 260px; }
+.chart.map { height: 420px; }
+.chart-title { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0 4px; }
+.cap { font-size: 11.5px; color: var(--text-muted); margin: 2px 4px 6px; }
+.timebar { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
+.timebar input { flex: 1; }
+.timebar b { font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; font-size: 15px; }
+.timebar button { min-width: 40px; padding: 4px 10px; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ptable th, .ptable td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: right; }
+.ptable th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+.ptable td:first-child, .ptable th:first-child { text-align: left; }
+.ptable tr.pick { cursor: pointer; }
+.ptable tr.pick:hover td { background: var(--surface-0); }
+.ptable tr.on td { color: var(--accent); }
+.pickrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 8px; font-size: 12px; color: var(--text-secondary); align-items: center; }
+.pickrow button { font-size: 12px; padding: 3px 9px; }
+.pickrow button.on { border-color: var(--accent); color: var(--accent); }
+#viewer, #movie { position: relative; width: 100%; height: 340px; border-radius: 8px; overflow: hidden;
+  background: var(--surface-0); border: 1px solid var(--border); }
+#viewer .empty, #movie .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
+.what { font-size: 13px; margin: 8px 0; min-height: 1.4em; }
+.atoms { display: inline-flex; gap: 10px; margin-right: 6px; }
+.atoms span { display: inline-flex; align-items: center; gap: 4px; }
+.atoms i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); margin: 2px 4px 6px; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+@media (max-width: 1250px) { main { grid-template-columns: 250px minmax(0, 1fr); } .col3 { grid-column: 1 / -1; } .sticky { position: static; }
+  .two { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 780px) { main { grid-template-columns: minmax(0, 1fr); padding: 8px 16px 16px; } header { padding: 14px 16px 6px; }
+  .charts { grid-template-columns: minmax(0, 1fr); } .col1 { grid-row: auto; } .wide { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Network growth simulator</h1>
+  <p class="sub">Dots are the relaxed structures of the layer-path network (below the seed, the nucleation grid's
+    nodes). They move over the network's steps with rates set by the grand potential at the current solution, and the
+    island barriers come from the relaxed builder islands. Set the conditions and read step 1 (the grid's grand
+    potential up to the seed, as the nucleation simulator has it) and the map live at any time; run the growth; then
+    move the time bar.
+    <span class="badge">implicit solvent only; few shells per framework at m 100–150; network up to <span id="mmax">–</span></span></p>
+</header>
+<main>
+  <div class="col col1">
+    <section class="card sticky">
+      <h2>Conditions</h2>
+      <div id="controls"></div>
+      <h3><label class="tog"><input type="checkbox" id="inject"> <span id="injLab">Inject the Se precursor with a syringe</span></label></h3>
+      <div id="injCtl" hidden></div>
+      <div class="ctl"><label class="tog"><input type="checkbox" id="islands" checked> Island barriers on layer steps</label>
+        <div class="hint">Off: every layer attaches as soon as it is downhill (attachment-limited growth).</div></div>
+      <button class="primary" id="runBtn">Run the growth</button> <button id="stopBtn" disabled>Stop</button>
+      <div class="status" id="runStatus"></div>
+      <h3>Look at Ω at</h3>
+      <div class="ctl"><label>time from the start <span class="num"><input id="tnow" value="10" aria-label="time from the start"><i>s</i></span></label>
+        <input type="range" id="tnowR" min="-3" max="4" step="0.01" value="1" aria-label="time from the start (log)">
+        <div class="hint">The pool from the precursor alone (no nuclei, no dots): the <span class="sMA">CdSe</span> converted by then and the <span class="sMX">CdCl₂</span> left. Sets step 1 and the live map.</div></div>
+      <div class="status" id="liveStatus"></div>
+      <h3>Network</h3>
+      <div class="hint" id="netInfo"></div>
+    </section>
+  </div>
+
+  <section class="card wide" id="nucCard">
+    <h2>1 · Nucleation: grand potential of the grid <small id="nucWhen"></small></h2>
+    <div class="readouts" id="nucRO"></div>
+    <div class="two">
+      <div>
+        <div class="chart-title">ΔΩ(m) = Ω(m) − Ω(1), with Ω(m) = −kT ln Σ<sub>k</sub> e<sup>−Ω(m,k)/kT</sup>, grid up to the seed's m = 13</div>
+        <div class="chart tall" id="cOmega"></div>
+        <div class="cap">Click a point to show the lowest cluster of that m (at its k*). Circle: where the clusters are. Below
+          a barrier, the most populated size, c(m) = c° e<sup>−Ω(m)/kT</sup>, among the sizes below the top; without a
+          barrier, m = 13: the clusters reach the seed. Triangle: the barrier top m*. The badge is ln S = (μ<sub><span class="sMA">CdSe</span></sub> − g<sub>bulk</sub>)/kT at this time.</div>
+      </div>
+      <div>
+        <div class="chart-title" id="kmapTitle">Cluster populations P(m, k), log scale</div>
+        <div class="lawpick" role="radiogroup" aria-label="Map of the grid">
+          <label><input type="radio" name="kmap" value="joint" id="kmap_joint" checked> all clusters P(m, k)</label>
+          <label><input type="radio" name="kmap" value="cond" id="kmap_cond"> shells per size P(k | m)</label>
+        </div>
+        <div class="chart tall" id="cHeat"></div>
+        <div class="cap" id="kmapCap"></div>
+        <div class="cap">Click any cell to see that cluster [<span class="sMA">CdSe</span>]<sub>m</sub>(<span class="sMX">CdCl₂</span>)<sub>k</sub> in the Structure card. Grey: grid
+          nodes without thermochemistry (not annealed, no Hessian): energy only, not in Ω.</div>
+      </div>
+    </div>
+    <div class="two">
+      <div>
+        <div class="chart-title">Barrier ΔΩ* (left), ln S and the pool's concentrations (right, log) along the time</div>
+        <div class="chart" id="cBarLive"></div>
+        <div class="cap">Solid: the precursor alone (no nuclei); dashed: the pool the network run leaves, when there is a
+          run for these conditions. The strip below: the precursor converted. Click the curve to move the time there.</div>
+      </div>
+      <div>
+        <div class="chart-title">ΔΩ(m, t) = Ω(m) − Ω(1) along the time (red uphill, blue downhill)</div>
+        <div class="lawpick" role="radiogroup" aria-label="Pool of the map">
+          <span>Pool:</span>
+          <label><input type="radio" name="mapsrc" value="pre" id="map_pre" checked> precursor only</label>
+          <label><input type="radio" name="mapsrc" value="run" id="map_run" disabled> network run</label>
+          <span class="cap" id="mapNote" style="margin:0">run the growth to compare</span>
+        </div>
+        <div class="chart tall" id="cOmegaT"></div>
+        <div class="cap">The solid line follows the barrier top m*(t), the thin contour is ΔΩ = 0, the dotted line is the time
+          shown. Click the map to move the time there.</div>
+      </div>
+    </div>
+    <div class="chart-title" style="margin-top:8px">From the pool to the dots: ΔΩ(m) = Ω(m) − Ω(1) at the time shown, grid (m ≤ 13) and the network's dots beyond</div>
+    <div class="lawpick" role="radiogroup" aria-label="Pool of the profile">
+      <span>Pool:</span>
+      <label><input type="radio" name="profsrc" value="pre" id="prof_pre" checked> precursor only (no nuclei)</label>
+      <label><input type="radio" name="profsrc" value="run" id="prof_run" disabled> network run (after the nuclei take their <span class="sMA">CdSe</span>)</label>
+      <span class="cap" id="profNote" style="margin:0"></span>
+    </div>
+    <div class="chart tall" id="cProfile"></div>
+    <div class="cap">Ω(m) = −kT ln Σ e<sup>−Ω/kT</sup> over every state of size m (shells and isomers) at the pool's μ, so a size
+      holds c(m) = c° e<sup>−Ω(m)/kT</sup> when it is in equilibrium with the pool. m = 1 is the pool itself; m = 2–13 the
+      nucleation grid; past the dotted line the network's dots (builder structures). Orange circles, with a run: where
+      the run's clusters and dots are, −kT ln(N(m)/c°); on the line where a size is in equilibrium with the pool, above
+      it where the run has not filled it. Click a point for the lowest structure of that size.</div>
+  </section>
+
+  <div class="col">
+    <section class="card">
+      <h2>2 · Growth <small id="runWhen">no run yet</small></h2>
+      <div class="timebar"><button id="playBtn" disabled aria-label="play the run">▶</button><input type="range" id="tbar" min="0" max="0" value="0" aria-label="time" disabled><b id="tval">–</b></div>
+      <div class="pickrow">time axis <button id="axLog" class="on">log</button><button id="axLin">linear</button>
+        <span class="cap" id="outNote" style="margin:0"></span></div>
+      <div class="readouts" id="ro"></div>
+      <div class="charts">
+        <div><div class="chart-title">Pool: <span class="sMA">CdSe</span> in solution and free <span class="sMX">CdCl₂</span> (M)</div><div class="chart" id="cPool"></div></div>
+        <div><div class="chart-title">Conversion α and the dots' share of the <span class="sMA">CdSe</span></div><div class="chart" id="cAlpha"></div></div>
+        <div><div class="chart-title">Dots (M, m ≥ 13) and nucleation (M/s)</div><div class="chart" id="cDots"></div></div>
+        <div><div class="chart-title">Mean diameter ± spread (nm)</div><div class="chart" id="cSize"></div></div>
+      </div>
+      <div class="chart-title">Size distribution: share of the dots per size, against time</div>
+      <div class="chart tall" id="cPSD"></div>
+      <div class="chart-title">At the time of the bar</div>
+      <div class="chart" id="cPSDt"></div>
+    </section>
+    <section class="card">
+      <h2>3 · Facets <small><span class="sMA">CdSe</span> per facet family through the layer steps</small></h2>
+      <div class="charts">
+        <div><div class="chart-title"><span class="sMA">CdSe</span> added by layer steps (M/s)</div><div class="chart" id="cFacet"></div></div>
+        <div><div class="chart-title">Share of the <span class="sMA">CdSe</span> added so far</div><div class="chart" id="cShare"></div></div>
+      </div>
+      <div class="chart-title">Island barriers at the time of the bar (eV, the curve's top before it turns downhill)</div>
+      <table class="ptable" id="barTable"></table>
+      <div class="cap">Parents with their own relaxed islands use their own curve; every other layer step uses the median
+        curve of its facet and parent-size bin (m in <span class="sMA">CdSe</span> units), then of its facet; {110} uses the median over all.</div>
+    </section>
+  </div>
+
+  <div class="col col3">
+    <section class="card">
+      <h2>4 · Map <small id="mapWhen"></small></h2>
+      <div class="pickrow">colour <button id="mSeed" class="on">Ω from the seed</button><button id="mBest">Ω from the best shell at each m</button></div>
+      <div class="pickrow">sizes <button id="rAll" class="on">all m</button><button id="rGrid">m ≤ 30 (grid and first dots)</button></div>
+      <div class="pickrow">draw <button id="vSmooth" class="on">smooth</button><button id="vCells">computed cells only</button></div>
+      <div class="chart map" id="cMap"></div>
+      <div class="cap" id="mapCap">Each cell is one (m, k) composition (its lowest state); "smooth" averages the computed
+        cells with a Gaussian of 1.5 lattice units and fills only within 2 units of one, the hover gives the cell's own Ω. Circles: where the dots are
+        at the bar's time; lines: the steps carrying the most net flux. m = 1 is the pool (the <span class="sMA">CdSe</span>(<span class="sMX">CdCl₂</span>)ₙ complexes),
+        m 2–13 the nucleation grid's nodes, which the run passes through like any other state. Click a cell for its structures.</div>
+    </section>
+    <section class="card">
+      <h2>5 · Structure</h2>
+      <table class="ptable" id="topTable"></table>
+      <div class="what" id="what"></div>
+      <div class="pickrow"><span class="atoms"><span><i style="background:#f0a030"></i>Cd</span><span><i style="background:#2f6fdf"></i>Se</span><span><i style="background:#9fd39f"></i>Cl</span><span><i style="background:#f2a6a6"></i>O</span><span><i style="background:#a8a8a8"></i>C</span><span><i style="background:#ececec"></i>H</span></span> ligands <button data-lig="sticks" class="on">thin</button><button data-lig="spheres">spheres</button><button data-lig="off">hidden</button></div>
+      <div id="viewer"><div class="empty">Run the growth, then pick a state, or click a cell of the map.</div></div>
+      <div class="pickrow">download .xyz <button id="dlTop" disabled>most populated at the bar's time</button><button id="dlShown" disabled>the one shown</button></div>
+    </section>
+    <section class="card">
+      <h2>6 · Growth movie <small id="movWhen"></small></h2>
+      <div class="timebar"><button id="movPlay" disabled aria-label="play the movie">▶</button><input type="range" id="movBar" min="0" max="0" value="0" aria-label="movie frame" disabled><b id="movT">–</b></div>
+      <div class="pickrow">speed <button data-fps="2">slow</button><button data-fps="5" class="on">normal</button><button data-fps="12">fast</button>
+        <button id="movRec" disabled>save as video (.webm)</button></div>
+      <table class="ptable" id="movTable"></table>
+      <div class="what" id="movWhat"></div>
+      <div class="pickrow"><span class="atoms"><span><i style="background:#f0a030"></i>Cd</span><span><i style="background:#2f6fdf"></i>Se</span><span><i style="background:#9fd39f"></i>Cl</span><span><i style="background:#f2a6a6"></i>O</span><span><i style="background:#a8a8a8"></i>C</span><span><i style="background:#ececec"></i>H</span></span> ligands <button data-lig="sticks" class="on">thin</button><button data-lig="spheres">spheres</button><button data-lig="off">hidden</button></div>
+      <div id="movie"><div class="empty">Run the growth to follow its path here.</div></div>
+      <div class="pickrow">download .xyz <button id="dlFrame" disabled>this frame</button></div>
+      <div class="cap"><b>Over time</b>: the most populated dot at each output, with the time bar, and the dots' shares at
+        the seed, on the way and at the network's edge; dense outputs resolve the nucleation burst. In the acetate
+        network the dots wait at the seed and cross to the edge faster than the outputs (under 3 % ever sit in between),
+        so the burst is the shares moving and the growth of one dot is a growth path. <b>Growth</b> (pick one of the
+        most populated at the time bar's time): from the pool to that state, the chain of steps along which the most
+        material has moved so far, i.e. whose narrowest step carried the most (the net flux integrated over the run),
+        played forward step by step. <b>Dissolution</b> (the populated dots losing more <span class="sMA">CdSe</span> to smaller states than they
+        gain, right then): from that dot down the steps with net flux to the smaller state at that time, the chain with
+        the largest narrowest flux, back to the pool when the flux reaches it. Every frame on the scale of the largest,
+        centred; drag to turn it, the turn is kept from frame to frame.</div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const FAM = ["100", "111A", "111B", "110"], FLAB = { "100": "{100}", "111A": "{111}A", "111B": "{111}B", "110": "{110}" };
+const CTRL = [
+  ["T", "T", "K"], ["c_P0", "{A} precursor c_P0", "M"], ["c_MX0", "{MX} c_MX0", "M"],
+  ["k_conv_500K", "k_conv (500 K)", "1/(M s)"], ["Ea_conv", "E_a of the conversion", "eV"], ["t_end", "time", "s"],
+  ["prune_eV", "fast: skip dots above their size's best by (0 = exact; can cut growth paths)", "eV"],
+  ["max_wall_s", "stop the run after", "s wall"],
+  ["frontier_stop", "stop at the network edge, dots on dead ends", "fraction"],
+];
+// the network's units (M A, the salt M X2), from /api/defaults
+let MA = "CdSe", XL = "CdCl₂", AEL = "Se";
+const INJ = [["c_syringe_M", "{A} precursor in the syringe", "M"], ["rate_mL_h", "infusion rate", "mL/h"],
+  ["inj_duration_s", "injection time", "s"], ["V0_mL", "flask volume at the start", "mL"]];
+let D = null, RUN = null, JOB = null, IDX = 0, MAPMODE = "seed", MAPRANGE = "all", MAPSMOOTH = true, VIEW = null, SEL = null, LASTMAP = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+const fmt = (x, d = 3) => x === null || x === undefined || !isFinite(x) ? "–" : (Math.abs(x) >= 1e4 || (Math.abs(x) < 1e-3 && x !== 0)) ? x.toExponential(d - 1) : (+x.toPrecision(d)).toString();
+function base(extra = {}) {
+  const ink = css("--text-secondary"), grid = css("--grid");
+  const ax = { gridcolor: grid, zerolinecolor: grid, linecolor: css("--border"), tickfont: { size: 11 }, automargin: true };
+  return { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: ink, size: 11 },
+    margin: { l: 52, r: 10, t: 6, b: 34 }, showlegend: false, hovermode: "closest",
+    xaxis: { ...ax, ...(extra.xaxis || {}) }, yaxis: { ...ax, ...(extra.yaxis || {}) },
+    ...Object.fromEntries(Object.entries(extra).filter(([k]) => k !== "xaxis" && k !== "yaxis")) };
+}
+const CFG = { displayModeBar: false, responsive: true };
+const tAxis = { type: "log", title: { text: "t (s)", standoff: 4 } };
+
+function conditions() {
+  const c = {};
+  for (const [k] of CTRL) { const el = $("in_" + k); const v = parseFloat(el.value); const [lo, hi] = D.limits[k] || [-Infinity, Infinity];
+    const ok = isFinite(v) && v >= lo && v <= hi; el.classList.toggle("bad", !ok); if (!ok) throw new Error(`${k} must be in [${lo}, ${hi}]`); c[k] = v; }
+  c.solvent = $("in_solvent").value;
+  c.inject = $("inject").checked;
+  if (c.inject) for (const [k] of INJ) { const el = $("in_" + k), v = parseFloat(el.value), [lo, hi] = D.limits[k];
+    const ok = isFinite(v) && v >= lo && v <= hi; el.classList.toggle("bad", !ok); if (!ok) throw new Error(`${k} must be in [${lo}, ${hi}]`); c[k] = v; }
+  if (!c.inject && !(c.c_P0 > 0)) { $("in_c_P0").classList.add("bad"); throw new Error("c_P0 must be > 0 without a syringe"); }
+  c.islands = $("islands").checked;
+  return c;
+}
+
+function buildControls() {
+  const sp = D.species, sub = (x) => x.replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[d]);
+  MA = sub(sp.MA); XL = sub(sp.MX); AEL = sp.A;
+  for (const el of document.querySelectorAll(".sMA")) el.textContent = MA;
+  for (const el of document.querySelectorAll(".sMX")) el.textContent = XL;
+  $("injLab").textContent = `Inject the ${AEL} precursor with a syringe`;
+  const lab = (x) => x.replace("{A}", AEL).replace("{MX}", XL);
+  const solv = `<div class="ctl"><label>solvent <select id="in_solvent" aria-label="solvent">` +
+    D.solvents.map((v) => `<option value="${v.name}"${v.name === D.conditions.solvent ? " selected" : ""}>${v.name}</option>`).join("") +
+    `</select></label><div class="hint" id="solvHint"></div></div>`;
+  $("controls").innerHTML = CTRL.slice(0, 1).concat([null], CTRL.slice(1)).map((r) => r === null ? solv :
+    `<div class="ctl"><label>${lab(r[1])} <span class="num"><input id="in_${r[0]}" value="${D.conditions[r[0]]}" aria-label="${lab(r[1])}"><i>${r[2]}</i></span></label>${r[0] === "c_P0" ? '<div class="hint" id="h_c_P0"></div>' : ""}</div>`).join("");
+  for (const [k] of CTRL) $("in_" + k).addEventListener("change", onConds);
+  $("in_solvent").addEventListener("change", onConds);
+  $("injCtl").innerHTML = INJ.map(([k, l, unit]) => `<div class="ctl"><label>${lab(l)} <span class="num"><input id="in_${k}" value="${D.conditions[k]}" aria-label="${lab(l)}"><i>${unit}</i></span></label></div>`).join("") +
+    `<div class="hint" id="injHint"></div>`;
+  for (const [k] of INJ) $("in_" + k).addEventListener("change", onConds);
+  $("inject").addEventListener("change", () => { $("injCtl").hidden = !$("inject").checked; onConds(); });
+  solventHint();
+  $("islands").addEventListener("change", onConds);
+  const n = D.network;
+  $("mmax").textContent = `m = ${n.m_max} (≈ ${n.d_max_nm.toFixed(1)} nm)`;
+  $("netInfo").innerHTML = `${n.states.toLocaleString()} states (${n.grid_nodes} grid nodes, seed ${n.seed}) in ${n.compositions.toLocaleString()} compositions; ` +
+    `${n.steps.toLocaleString()} steps: ${n.kinds.layer.toLocaleString()} layer, ${n.kinds.attach.toLocaleString()} attach, ${n.kinds.shell.toLocaleString()} shell, ` +
+    `${n.kinds.iso.toLocaleString()} isomer, ${n.kinds.grid.toLocaleString()} grid; ${n.island_curves} island curves.`;
+}
+
+// the syringe's volume and precursor
+function injHint() {
+  if (!$("inject").checked) { $("h_c_P0").textContent = ""; return; }
+  const g = (k) => parseFloat($("in_" + k).value), V0 = g("V0_mL"), dV = g("rate_mL_h") * g("inj_duration_s") / 3600;
+  const n = g("c_syringe_M") * dV / V0 + (parseFloat($("in_c_P0").value) || 0) * 1;
+  $("h_c_P0").textContent = `${AEL} in the flask at the start (0: all of it from the syringe)`;
+  $("injHint").textContent = `The syringe adds ${dV.toPrecision(2)} mL (the flask ends at ${(V0 + dV).toPrecision(3)} mL), ` +
+    `${(n).toPrecision(2)} mol of ${AEL} precursor per litre of the starting flask in all; every concentration dilutes as it fills.`;
+}
+// the solvent's epsilon and its viscosity at T: ln eta linear in 1/T through the table's points, the end pair's
+// slope beyond them (solvents.viscosity)
+function viscosity(pts, T) {
+  const p = [...pts].sort((a, b) => b[0] - a[0]), x = p.map((q) => 1 / q[0]), y = p.map((q) => Math.log(q[1])), u = 1 / T;
+  const seg = (i) => y[i] + (u - x[i]) * (y[i + 1] - y[i]) / (x[i + 1] - x[i]);
+  if (u <= x[0]) return Math.exp(seg(0));
+  for (let i = 0; i < x.length - 1; i++) if (u <= x[i + 1]) return Math.exp(seg(i));
+  return Math.exp(seg(x.length - 2));
+}
+function solventHint() {
+  injHint();
+  const v = D.solvents.find((x) => x.name === $("in_solvent").value), T = parseFloat($("in_T").value);
+  if (!v || !isFinite(T)) return;
+  const tmax = Math.max(...v.eta.map((q) => q[0])), warn = [];
+  if (v.Tb_K && T > v.Tb_K) warn.push(`above its boiling point (${v.Tb_K.toFixed(0)} K): a sealed or pressurised vessel`);
+  if (T > tmax + 1) warn.push(`η extrapolated beyond its data (to ${tmax.toFixed(0)} K)`);
+  if (v.basis === "estimate") warn.push("η and ε estimated from analogues (no data found)");
+  $("solvHint").innerHTML = `<span title="${v.source.replace(/"/g, "&quot;")}">ε ${v.eps.toFixed(2)}, η ${viscosity(v.eta, T).toPrecision(2)} mPa s at ${T} K (${v.basis})</span>` +
+    (warn.length ? `; ${warn.join("; ")}` : "");
+}
+
+// ---------------- the time shown live (step 1 and the map, precursor alone)
+const tNow = () => Math.min(1e4, Math.max(1e-3, +$("tnow").value || 10));
+function setT(t) {
+  $("tnow").value = (+(+t).toPrecision(3)).toString();
+  $("tnowR").value = Math.log10(tNow());
+  onConds();
+}
+function syncT(fromRange) {
+  if (fromRange) $("tnow").value = (+Math.pow(10, +$("tnowR").value).toPrecision(3)).toString();
+  else $("tnowR").value = Math.log10(tNow());
+  onConds();
+}
+function onConds() { solventHint(); requestNuc(); liveMap(); requestProfile(); }
+
+// ---------------- the profile from the pool to the dots (precursor-only pool, or the run's at the time shown)
+let profTok = 0, profTimer = null;
+function requestProfile() {
+  clearTimeout(profTimer);
+  profTimer = setTimeout(async () => {
+    const ok = sameRun();
+    $("prof_run").disabled = !ok;
+    if (!ok) $("prof_pre").checked = true;
+    $("profNote").textContent = ok ? "" : (RUN ? "the run is for other conditions" : "run the growth to compare");
+    const tok = ++profTok;
+    let body;
+    if (ok && $("prof_run").checked) {
+      const t = RUN.series.t, lt = Math.log(tNow());
+      let i = 0; t.forEach((x, j) => { if (Math.abs(Math.log(x) - lt) < Math.abs(Math.log(t[i]) - lt)) i = j; });
+      body = { run_id: RUN.run_id, i };
+    } else body = { conditions: conditions(), t: tNow() };
+    try { const o = await api("/api/profile", body); if (tok === profTok) drawProfile(o); }
+    catch (e) { $("profNote").textContent = e.message; }
+  }, 60);
+}
+function drawProfile(o) {
+  const mg = o.m_grid, kt = KB * (RUN && o.run ? RUN.cond.T : +$("in_T").value);
+  const idx = o.m.map((m, i) => i).filter((i) => o.dOmega[i] != null);
+  const pick = (f) => idx.filter((i) => f(o.m[i]));
+  const cd = (ii) => ii.map((i) => {
+    const lo = o.lowest[i];
+    return [lo[2], lo[1], lo[0], o.run && o.N[i] != null ? fmt(o.N[i]) + " M" : "–", sciLog(-(o.dOmega[i]) / kt / Math.LN10)];
+  });
+  const hov = "m = %{x}: ΔΩ = %{y:.2f} eV<br>lowest state %{customdata[0]} (k %{customdata[1]}), %{customdata[2]:.2f} eV" +
+    (o.run ? "<br>in the run: %{customdata[3]}" : "") + "<extra></extra>";
+  const gi = pick((m) => m <= mg), ni = pick((m) => m >= mg);
+  const traces = [
+    { x: gi.map((i) => o.m[i]), y: gi.map((i) => o.dOmega[i]), customdata: cd(gi), type: "scatter", mode: "lines+markers",
+      name: "grid", line: { color: css("--series-1"), width: 2 }, marker: { size: 7, color: css("--series-1") }, hovertemplate: hov },
+    { x: ni.map((i) => o.m[i]), y: ni.map((i) => o.dOmega[i]), customdata: cd(ni), type: "scatter", mode: "lines",
+      name: "network dots", line: { color: css("--series-4"), width: 1.5 }, hovertemplate: hov }];
+  if (o.run) {
+    const pi = o.m.map((m, i) => i).filter((i) => o.pop[i] != null);
+    traces.push({ x: pi.map((i) => o.m[i]), y: pi.map((i) => o.pop[i]), type: "scatter", mode: "markers", name: "run",
+      marker: { size: 7, symbol: "circle-open", color: css("--series-2"), line: { width: 1.5 } },
+      customdata: pi.map((i) => fmt(o.N[i])), hovertemplate: "m = %{x}: the run holds %{customdata} M (−kT ln N = %{y:.2f} eV)<extra></extra>" });
+  }
+  const L = layout("linear", { hovermode: "closest", showlegend: true,
+    legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { size: 10 } }, margin: { l: 50, r: 8, t: 24, b: 34 } });
+  L.xaxis = { type: "log", gridcolor: css("--grid"), zeroline: false, title: { text: `m (${MA} units), log`, standoff: 4 } };
+  L.yaxis = { gridcolor: css("--grid"), zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
+  L.shapes = [{ type: "line", xref: "x", yref: "paper", x0: mg + 0.5, x1: mg + 0.5, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } }];
+  L.annotations = [{ x: Math.log10(mg + 0.5), y: 1, xref: "x", yref: "paper", yanchor: "top", xanchor: "left", xshift: 4, showarrow: false,
+    text: "grid | dots", font: { size: 10, color: css("--text-muted") } },
+    { xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
+      text: `${o.run ? "run's pool" : "precursor only"} at ${fmt(o.t)} s: ${MA} in solution ${fmt(o.c_MA)} M, μ<sub>${MA}</sub> ${o.mu_MA.toFixed(3)} eV`,
+      font: { size: 11, color: css("--text-primary") } }];
+  Plotly.react("cProfile", traces, L, PCONF);
+  onClick("cProfile", (ev) => {
+    const p = ev.points[0], i = o.m.indexOf(p.x), lo = o.lowest[i];
+    if (!lo || lo[3] === "pool") return;
+    if (lo[3] === "grid") showGrid(p.x, lo[1]); else pickComposition(p.x, lo[1]);
+  });
+}
+let liveTimer = null;
+function liveMap() {
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(async () => {
+    try {
+      const m = await api("/api/map", { conditions: conditions(), t: tNow() });
+      $("liveStatus").className = "status";
+      $("liveStatus").textContent = `α ${fmt(m.alpha)}; μ_${MA} ${m.mu_MA.toFixed(3)} eV, μ_${XL} ${m.mu_MX.toFixed(3)} eV; free ${XL} ${fmt(m.c_MX_free)} M`;
+      drawMap(m, `live, t = ${fmt(tNow())} s (α = ${fmt(m.alpha)}), no dots`);
+    } catch (e) { $("liveStatus").className = "status err"; $("liveStatus").textContent = e.message; }
+  }, 150);
+}
+
+// ---------------- 1. nucleation: the grid's Omega up to the seed (the nucleation simulator's step 1)
+const KB = 8.617333e-5;
+let L0 = null, GSEL = null, nucTok = 0, nucTimer = null;
+const PCONF = CFG;
+function layout(ytype, extra = {}) {
+  const ink = css("--text-secondary"), grid = css("--grid");
+  return Object.assign({
+    margin: { l: 50, r: 8, t: 6, b: 32 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    font: { family: "system-ui, sans-serif", size: 11, color: ink }, showlegend: false, hovermode: "x unified",
+    xaxis: { type: "log", gridcolor: grid, zeroline: false, title: { text: "t (s)", standoff: 4 }, exponentformat: "power" },
+    yaxis: { type: ytype, gridcolor: grid, zeroline: false, exponentformat: "power" }, shapes: [],
+  }, extra);
+}
+const ln1 = (x, y, name, color, extra = {}) => ({ x, y, name, type: "scatter", mode: "lines", line: { color, width: 2 }, ...extra });
+const vline = (x) => ({ type: "line", xref: "x", yref: "paper", x0: x, x1: x, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } });
+// a number given by its log10, readable: 0.0063 down to 1e-3, else 1.3 × 10⁻⁷ (hover text, HTML)
+function sciLog(l) {
+  if (l == null || !isFinite(l)) return "–";
+  if (l >= -3) return (+(10 ** l).toPrecision(3)).toString();
+  let e = Math.floor(l), mant = 10 ** (l - e);
+  if (+mant.toFixed(1) >= 10) { mant /= 10; e += 1; }
+  return `${mant.toFixed(1)} × 10<sup>${String(e).replace("-", "−")}</sup>`;
+}
+// the pool's concentrations along the time, on the third axis (y3): CdSe supply, CdCl2 left, free CdCl2
+function concTraces(t, cm, cx, cf, dash, pre) {
+  const cC = css("--series-2"), cX = css("--series-4");
+  const tr = (y, name, color, d, w) => ln1(t, y.map((v) => (v > 0 ? v : null)), `${name}${pre ? ", run" : ""}`, color,
+    { yaxis: "y3", line: { color, width: w, dash: d }, hovertemplate: `${pre}${name} %{y:.2e} M<extra></extra>` });
+  return [tr(cm, `${MA} monomer`, cC, dash || "solid", 1.5), tr(cx, `${XL} left`, cX, dash || "solid", 1.5),
+          tr(cf, `free ${XL}`, cX, dash ? "dashdot" : "dot", 1.5)];
+}
+function onClick(id, fn) { $(id).removeAllListeners?.("plotly_click"); $(id).on("plotly_click", fn); }
+function requestNuc() {
+  if (!D.nucleation) { $("nucCard").hidden = true; return; }
+  clearTimeout(nucTimer);
+  nucTimer = setTimeout(async () => {
+    const tok = ++nucTok;
+    try {
+      const o = await api("/api/nucleation", { conditions: conditions(), t: tNow() });
+      if (tok === nucTok) { L0 = o; drawNucleation(o); }
+    } catch (e) { $("nucWhen").textContent = e.message; }
+  }, 30);
+}
+// the network run's Omega along its time, only while the run belongs to the conditions on the left
+function sameRun() {
+  if (!RUN || !RUN.omega_run || !RUN.omega_run.t.length) return false;
+  try { const c = conditions(); return Object.keys(c).every((k) => RUN.cond[k] === c[k]); } catch (e) { return false; }
+}
+function runOmega() {
+  const ok = sameRun();
+  $("map_run").disabled = !ok;
+  if (!ok) $("map_pre").checked = true;
+  $("mapNote").textContent = ok ? "" : (RUN ? "the run is for other conditions: run it again to compare" : "run the growth to compare");
+  return ok ? RUN.omega_run : null;
+}
+
+function drawNucleation(o) {
+  const c1 = css("--series-1"), grid = css("--grid");
+  const ro = (l, v) => `<div class="ro"><span>${l}</span><b>${v}</b></div>`;
+  $("nucWhen").textContent = `at ${fmt(o.t)} s from the start, ${o.T_now.toFixed(0)} K, ${fmt(100 * o.alpha)} % converted`;
+  $("nucRO").innerHTML = ro("barrier ΔΩ* (eV)", o.barrier == null ? "–" : o.barrier.toFixed(3)) + ro("critical m*", o.m_star)
+    + ro(`k* at m = ${o.m0}`, o.k_star_m0)
+    + ro(`${MA} supply (M)`, fmt(o.C_M)) + ro(`${XL} left / free (M)`, `${fmt(o.C_X)} / ${fmt(o.c_MX_free)}`)
+    + ro(`μ ${MA} / μ ${XL} (eV)`, `${o.mu_MA.toFixed(3)} / ${o.mu_MX.toFixed(3)}`) + ro(`⟨n⟩ in ${MA}(${XL})ₙ`, o.mean_n.toFixed(2));
+  // Delta Omega(m) = Omega(m) - Omega(1) on the grid, m = 1..13: its maximum is the barrier of the time curve and the map
+  const rows = o.per_m.filter((r) => r.m <= o.m0), om1 = rows[0].Omega_m;
+  const tr = { x: rows.map((r) => r.m), y: rows.map((r) => r.Omega_m - om1), type: "scatter", mode: "lines+markers", name: "ΔΩ(m)",
+    line: { color: c1, width: 2 }, marker: { size: 9, color: c1, line: { color: css("--surface-1"), width: 2 } },
+    // c(m) in equilibrium with the pool only below a barrier (without one there is no finite equilibrium)
+    customdata: rows.map((r) => [r.k_star, r.formula, r.Omega_m, o.barrier > 0 && r.m <= o.m_star
+      ? `<br>c(m) = ${sciLog(-r.Omega_m / (KB * o.T_now) / Math.LN10)} M in equilibrium with the pool` : ""]),
+    hovertemplate: "m = %{x}: ΔΩ = %{y:.3f} eV (Ω = %{customdata[2]:.3f} eV)<br>k* = %{customdata[0]} (%{customdata[1]})%{customdata[3]}<extra></extra>" };
+  const star = rows.find((r) => r.m === o.m_star);
+  const top = { x: [o.m_star], y: [star.Omega_m - om1], type: "scatter", mode: "markers", hoverinfo: "skip",
+    marker: { size: 13, symbol: "triangle-up-open", color: css("--text-secondary"), line: { width: 2 } } };
+  // where the clusters are: below a barrier the most populated size up to the top; without one, the seed's m
+  const kt = KB * o.T_now;
+  const pop = o.barrier > 0 ? rows.filter((r) => r.m <= o.m_star).reduce((a, b) => (b.Omega_m < a.Omega_m ? b : a))
+                            : rows[rows.length - 1];
+  const popTr = { x: [pop.m], y: [pop.Omega_m - om1], type: "scatter", mode: "markers",
+    marker: { size: 17, symbol: "circle-open", color: css("--series-2"), line: { width: 2.5 } },
+    hovertemplate: (o.barrier > 0
+      ? `most populated: m = ${pop.m}, c(m) = ${sciLog(-pop.Omega_m / kt / Math.LN10)} M`
+      : `no barrier: the clusters reach the seed (m = ${o.m0})`) + "<extra></extra>" };
+  const L = layout("linear", { hovermode: "closest" });
+  L.xaxis = { dtick: 1, gridcolor: grid, zeroline: false, title: { text: `m (${MA} units)`, standoff: 4 }, range: [0.5, o.m0 + 0.5] };
+  L.yaxis = { gridcolor: grid, zeroline: true, zerolinecolor: css("--text-muted"), title: { text: "ΔΩ (eV)", standoff: 4 } };
+  L.annotations = o.barrier > 0 ? [{ x: o.m_star, y: o.barrier, text: `ΔΩ* = ${o.barrier.toFixed(2)} eV`, showarrow: false,
+    yshift: 16, font: { size: 11, color: css("--text-primary") } }] : [];
+  L.margin = { l: 50, r: 8, t: 26, b: 32 };
+  L.annotations.push({ xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", yshift: 4, showarrow: false,
+    text: `ln S = <b>${Math.log(o.S).toFixed(2)}</b> (Δμ = ${(kt * Math.log(o.S)).toFixed(3)} eV) at ${fmt(o.t)} s`, font: { size: 11, color: css("--text-primary") },
+    bgcolor: css("--surface-0"), bordercolor: css("--series-2"), borderwidth: 1.5, borderpad: 4 });
+  Plotly.react("cOmega", [tr, top, popTr], L, PCONF);
+  onClick("cOmega", (ev) => { const p = ev.points.find((q) => q.customdata); if (p) showGrid(p.x, p.customdata[0]); });
+  // the grid map: all clusters P(m, k) (joint, log) or the shells of each size P(k | m)
+  const joint = $("kmap_joint").checked;
+  const om = o.ks.map((_, j) => o.ms.map((_, i) => o.Omega[i][j]));
+  const scale = [[0, css("--seq-1")], [0.25, css("--seq-3")], [0.5, css("--seq-5")], [0.75, css("--seq-7")], [1, css("--seq-9")]];
+  let heat, ks, unreached = null;
+  if (joint) {
+    // c(m, k) = c° e^(-Omega(m,k)/kT) in equilibrium with the pool, normalised over every cluster the system can
+    // reach: m <= m* below a barrier, the grid up to m = 13 without one
+    const topm = o.barrier > 0 ? o.m_star : o.m0, LO = -12;
+    const lc = o.ks.map((_, j) => o.ms.map((m, i) => (o.Omega[i][j] == null || m > topm ? null : -o.Omega[i][j] / kt / Math.LN10)));
+    const mx = Math.max(...lc.flat().filter((v) => v != null));
+    const lsum = mx + Math.log10(lc.flat().filter((v) => v != null).reduce((a, v) => a + 10 ** (v - mx), 0));
+    const lp = lc.map((row) => row.map((v) => (v == null ? null : v - lsum)));
+    const zc = lp.map((row) => row.map((v) => (v == null ? null : Math.max(v, LO))));
+    const cd = lp.map((row, j) => row.map((v, i) => [sciLog(v), sciLog(lc[j][i]), om[j][i]]));
+    heat = { x: o.ms, y: o.ks, z: zc, customdata: cd, type: "heatmap", colorscale: scale, zmin: LO, zmax: 0, xgap: 2, ygap: 2,
+      colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 },
+                  tickvals: [-12, -9, -6, -3, 0], ticktext: ["≤10⁻¹²", "10⁻⁹", "10⁻⁶", "10⁻³", "1"] },
+      hovertemplate: "m = %{x}, k = %{y}<br>P(m,k) = %{customdata[0]}<br>c = %{customdata[1]} M<br>Ω = %{customdata[2]:.3f} eV<extra></extra>",
+      hoverongaps: false };
+    let best = null;
+    lp.forEach((row, j) => row.forEach((v, i) => { if (v != null && (!best || v > best.v)) best = { v, m: o.ms[i], k: o.ks[j] }; }));
+    ks = { x: [best.m], y: [best.k], type: "scatter", mode: "markers", hoverinfo: "skip",
+      marker: { symbol: "square-open", size: 13, color: css("--series-2"), line: { width: 2 } } };
+    unreached = { x: o.ms, y: o.ks, z: o.ks.map((_, j) => o.ms.map((m, i) => (o.Omega[i][j] != null && m > topm ? 1 : null))),
+      type: "heatmap", colorscale: [[0, css("--grid")], [1, css("--grid")]], zmin: 0, zmax: 1, showscale: false, xgap: 2, ygap: 2,
+      hoverongaps: false, hovertemplate: "m = %{x}, k = %{y}<br>past the barrier top: not populated before nucleation<extra></extra>" };
+    $("kmapTitle").textContent = "Cluster populations P(m, k), log scale";
+    $("kmapCap").innerHTML = `Every (m, k) in equilibrium with the pool, c(m, k) = c° e<sup>−Ω(m,k)/kT</sup>, normalised over all
+      the clusters ${o.barrier > 0 ? `up to the barrier top m* = ${o.m_star} (larger ones, pale, are not populated before nucleation)`
+      : `of the grid (no barrier: the population runs to the seed's size, m = ${o.m0})`}. Most populated: (${best.m}, ${best.k}), outlined in orange.`;
+  } else {
+    const z = o.ks.map((_, j) => o.ms.map((_, i) => (o.Omega[i][j] == null ? null : o.P_k[i][j])));
+    heat = { x: o.ms, y: o.ks, z, customdata: om, type: "heatmap", colorscale: scale, zmin: 0, zmax: 1, xgap: 2, ygap: 2,
+      colorbar: { thickness: 8, len: 0.9, title: { text: "P", side: "right" }, tickfont: { size: 10 } },
+      hovertemplate: "m = %{x}, k = %{y}<br>P(k|m) = %{z:.3f}<br>Ω = %{customdata:.3f} eV<extra></extra>", hoverongaps: false };
+    ks = { x: o.per_m.map((r) => r.m), y: o.per_m.map((r) => r.k_star), type: "scatter", mode: "markers", hoverinfo: "skip",
+      marker: { symbol: "square-open", size: 13, color: css("--series-2"), line: { width: 2 } } };
+    $("kmapTitle").textContent = "Shell distribution P(k | m)";
+    $("kmapCap").textContent = "The shells of each size m, normalised per m (each column sums to 1); k* of each m outlined in orange.";
+  }
+  const H = layout("linear", { hovermode: "closest", margin: { l: 40, r: 8, t: 6, b: 32 } });
+  H.xaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
+  H.yaxis = { dtick: 2, title: { text: "k", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false };
+  const nt = new Set((D.no_thermo || []).map(([m, k]) => `${m},${k}`));
+  const grey = { x: o.ms, y: o.ks, z: o.ks.map((k) => o.ms.map((m) => (nt.has(`${m},${k}`) ? 1 : null))), type: "heatmap",
+    colorscale: [[0, css("--text-muted")], [1, css("--text-muted")]], zmin: 0, zmax: 1, showscale: false, opacity: 0.6,
+    xgap: 2, ygap: 2, hoverongaps: false, hovertemplate: "m = %{x}, k = %{y}<br>no thermo: energy only, not in Ω<extra></extra>" };
+  H.shapes = gselShape();
+  Plotly.react("cHeat", [heat, ...(unreached ? [unreached] : []), ...(nt.size ? [grey] : []), ks], H, PCONF);
+  onClick("cHeat", (ev) => { const p = ev.points.find((q) => q.data.type === "heatmap" && q.z != null); if (p) showGrid(p.x, p.y); });
+  // barrier along the time
+  const B = layout("linear", { hovermode: "x unified" });
+  const cS = css("--series-3");
+  B.yaxis.title = { text: "ΔΩ* (eV)", standoff: 4, font: { color: c1 } };
+  B.yaxis2 = { type: "linear", overlaying: "y", side: "right", showgrid: false, zeroline: true, zerolinecolor: cS,
+    zerolinewidth: 1, title: { text: "ln S", standoff: 8, font: { color: cS } }, tickfont: { color: cS } };
+  B.xaxis.title = { text: "time from the start (s)", standoff: 4 };
+  B.xaxis.domain = [0, 0.84];
+  B.yaxis2.anchor = "x";
+  const ink2 = css("--text-secondary");
+  B.yaxis3 = { type: "log", overlaying: "y", side: "right", anchor: "free", position: 1.0, showgrid: false, zeroline: false,
+    exponentformat: "power", title: { text: "c (M)", standoff: 6, font: { color: ink2 } }, tickfont: { color: ink2 } };
+  B.shapes = [vline(o.t)];
+  const DOM = [0.3, 1];
+  B.yaxis.domain = DOM; B.yaxis2.domain = DOM; B.yaxis3.domain = DOM;
+  B.yaxis4 = { domain: [0, 0.2], anchor: "x", range: [0, 100], dtick: 50, gridcolor: css("--grid"), zeroline: false,
+    title: { text: "conv. %", standoff: 4, font: { size: 10 } }, tickfont: { size: 10 } };
+  B.xaxis.anchor = "y4";
+  const run = runOmega();
+  const barTraces = [ln1(o.curve.map((r) => r.t), o.curve.map((r) => r.barrier), "ΔΩ*", c1,
+    { customdata: o.curve.map((r) => [r.m_star, r.C_M, 100 * r.alpha]), hovertemplate: `ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, ${MA} %{customdata[1]:.2e} M, %{customdata[2]:.1f} % converted<extra></extra>` }),
+    ln1(o.curve.map((r) => r.t), o.curve.map((r) => Math.log(r.S)), "ln S", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5 }, hovertemplate: "ln S = %{y:.2f}<extra></extra>" }),
+    ...concTraces(o.curve.map((r) => r.t), o.curve.map((r) => r.C_M), o.curve.map((r) => r.C_X), o.curve.map((r) => r.c_X_free), "", "")];
+  if (run) {
+    barTraces.push(ln1(run.t, run.barrier, "ΔΩ*, run", c1,
+      { line: { color: c1, width: 2, dash: "dash" }, customdata: run.t.map((_, i) => [run.m_star[i], run.C_M[i]]),
+        hovertemplate: `run: ΔΩ* = %{y:.3f} eV, m* = %{customdata[0]}, ${MA} %{customdata[1]:.2e} M<extra></extra>` }));
+    barTraces.push(ln1(run.t, run.S.map(Math.log), "ln S, run", cS,
+      { yaxis: "y2", line: { color: cS, width: 1.5, dash: "dash" }, hovertemplate: "run: ln S = %{y:.2f}<extra></extra>" }));
+    barTraces.push(...concTraces(run.t, run.C_M, run.C_X, run.c_X_free, "dash", "run: "));
+  }
+  const cs = barTraces.filter((tr) => tr.yaxis === "y3").flatMap((tr) => tr.y).filter((v) => v > 0);
+  if (cs.length) B.yaxis3.range = [Math.max(Math.floor(Math.log10(Math.min(...cs))), -12), Math.log10(Math.max(...cs)) + 0.3];
+  B.showlegend = true;
+  B.legend = { orientation: "h", x: 0, y: -0.2, yanchor: "top", font: { size: 10 }, entrywidth: 0.5, entrywidthmode: "fraction" };
+  barTraces.push(ln1(o.curve.map((r) => r.t), o.curve.map((r) => 100 * r.alpha), "conversion", css("--text-secondary"),
+    { yaxis: "y4", line: { color: css("--text-secondary"), width: 1.5 }, hovertemplate: "%{y:.1f} % converted<extra></extra>" }));
+  B.margin = { l: 50, r: 52, t: 6, b: 32 };
+  Plotly.react("cBarLive", barTraces, B, PCONF);
+  onClick("cBarLive", (ev) => setT(ev.points[0].x));
+  // Delta Omega(m, t): diverging around zero, saturated at +-1 eV
+  const useRun = run && $("map_run").checked;
+  const hm = useRun ? { t: run.t, m: run.m, dOmega: run.dOmega } : o.heat, ink = css("--text-primary"), Z = 1.0;
+  const pathSrc = useRun ? run.t.map((t, i) => ({ t, m_star: run.m_star[i] })) : o.curve;
+  const div = [[0, css("--div-neg-2")], [0.25, css("--div-neg-1")], [0.5, css("--div-mid")], [0.75, css("--div-pos-1")], [1, css("--div-pos-2")]];
+  const map = { x: hm.t, y: hm.m, z: hm.dOmega, type: "heatmap", colorscale: div, zmin: -Z, zmax: Z,
+    colorbar: { thickness: 8, len: 0.9, title: { text: "ΔΩ (eV)", side: "right" }, tickfont: { size: 10 },
+                tickvals: [-Z, -Z / 2, 0, Z / 2, Z], ticktext: [`≤ −${Z}`, `−${Z / 2}`, "0", `${Z / 2}`, `≥ ${Z}`] },
+    hovertemplate: "t = %{x:.3g} s, m = %{y}<br>ΔΩ = %{z:.3f} eV<extra></extra>" };
+  const zero = { x: hm.t, y: hm.m, z: hm.dOmega, type: "contour", showscale: false, hoverinfo: "skip",
+    contours: { start: 0, end: 0, size: 1, coloring: "none" }, line: { color: css("--text-muted"), width: 1 } };
+  const path = { x: pathSrc.map((r) => r.t), y: pathSrc.map((r) => r.m_star), type: "scatter", mode: "lines", line: { color: ink, width: 2, shape: "hv" },
+    hovertemplate: "m* = %{y} at %{x:.3g} s<extra></extra>" };
+  const M = layout("linear", { hovermode: "closest", margin: { l: 44, r: 8, t: 6, b: 32 } });
+  M.xaxis = { type: "log", title: { text: "time from the start (s)", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, exponentformat: "power" };
+  M.yaxis = { dtick: 1, title: { text: "m", standoff: 4 }, gridcolor: "rgba(0,0,0,0)", zeroline: false, range: [0.5, o.m0 + 0.5] };
+  M.shapes = [vline(o.t)];
+  Plotly.react("cOmegaT", [map, zero, path], M, PCONF);
+  onClick("cOmegaT", (ev) => setT(ev.points[0].x));
+  if (GSEL) gridWhat();
+}
+const gselShape = () => GSEL ? [{ type: "rect", xref: "x", yref: "y", x0: GSEL.m - 0.5, x1: GSEL.m + 0.5, y0: GSEL.k - 0.5, y1: GSEL.k + 0.5,
+  line: { color: css("--text-primary"), width: 2.5 } }] : [];
+// a grid cluster clicked in step 1, in the Structure card, with its Omega and P(k | m) at the time shown
+function gridWhat() {
+  const { m, k, s } = GSEL, o = L0, i = o ? o.ms.indexOf(m) : -1, j = o ? o.ks.indexOf(k) : -1;
+  const om = i >= 0 && j >= 0 ? o.Omega[i][j] : null, pk = om != null ? o.P_k[i][j] : null;
+  $("what").innerHTML = `<b>Grid cluster [${MA}]<sub>${m}</sub>(${XL})<sub>${k}</sub></b>, ${s.formula}: the lowest of ${s.n_states} state(s), ${parseInt(s.xyz, 10)} atoms`
+    + (s.thermo === false ? `; <b>no thermochemistry</b> (energy only, not in Ω)` : `; at ${fmt(o.t)} s Ω = ${om == null ? "–" : om.toFixed(3)} eV, P(k | m) = ${pk == null ? "–" : fmt(pk)}`);
+}
+async function showGrid(m, k) {
+  const tok = ++structTok;
+  $("what").textContent = `Loading the grid cluster m = ${m}, k = ${k}…`;
+  try {
+    const s = await api(`/api/grid_structure?m=${m}&k=${k}`);
+    if (tok !== structTok) return;
+    GSEL = { m, k, s }; SEL = null;
+    gridWhat();
+    drawMol(s.xyz, `grid_m${m}_k${k}_${s.formula}`, `grid cluster m = ${m}, k = ${k}, ${s.formula}`);
+    Plotly.relayout("cHeat", { shapes: gselShape() });
+    $("viewer").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) { if (tok === structTok) noMol(e.message); }
+}
+// the Structure card's viewer: one per page, its model replaced; a failed load empties it (no stale structure)
+let structTok = 0;
+function molViewer(el) {
+  el.innerHTML = "";
+  return $3Dmol.createViewer(el, { backgroundColor: css("--surface-0"), preserveDrawingBuffer: true });
+}
+// space filling: Cd and Se as Bondi vdW spheres in two clearly different colours; the ligand atoms pale, as thin sticks
+// (default), spheres or hidden
+const CORE = { Cd: "#f0a030", Se: "#2f6fdf" }, LIGC = { Cl: "#9fd39f", O: "#f2a6a6", C: "#a8a8a8", H: "#ececec" };
+const VDW = { Cd: 1.58, Se: 1.90, Cl: 1.75, O: 1.52, C: 1.70, H: 1.20 };
+let LIG = "sticks", SHOWN = null;                              // SHOWN: [xyz, file name, comment] of the Structure card
+function molStyle(v) {
+  v.setStyle({}, { sphere: { scale: 0.9 } });
+  for (const [e, c] of Object.entries(CORE)) v.setStyle({ elem: e }, { sphere: { radius: VDW[e], color: c } });
+  for (const [e, c] of Object.entries(LIGC))
+    v.setStyle({ elem: e }, LIG === "spheres" ? { sphere: { radius: VDW[e], color: c } } : LIG === "sticks" ? { stick: { radius: 0.12, color: c } } : {});
+}
+function drawMol(xyz, name = null, note = "") {
+  if (!VIEW) VIEW = molViewer($("viewer"));
+  VIEW.removeAllModels();
+  VIEW.addModel(xyz, "xyz");
+  molStyle(VIEW);
+  VIEW.zoomTo(); VIEW.render();
+  SHOWN = name ? [xyz, name, note] : null; $("dlShown").disabled = !SHOWN;
+}
+function noMol(msg) {
+  if (VIEW) { VIEW.removeAllModels(); VIEW.render(); }
+  SHOWN = null; $("dlShown").disabled = true;
+  $("what").textContent = msg;
+}
+function saveXyz(xyz, name, note) {
+  const L = xyz.trim().split("\n");
+  if (note) L[1] = note;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([L.join("\n") + "\n"], { type: "chemical/x-xyz" }));
+  a.download = name.replace(/[^A-Za-z0-9.+-]+/g, "_").replace(/^_+|_+$/g, "") + ".xyz";
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const runTag = () => RUN ? `T ${RUN.cond.T} K, c_P0 ${RUN.cond.c_P0} M` : "";
+
+// turbo (blue low, red high), as matplotlib's from 0.05 to 0.95
+const TURBO = [[0, "#3d358b"], [0.1, "#4773eb"], [0.2, "#33adf7"], [0.3, "#18dec0"], [0.4, "#4ef97d"], [0.5, "#a4fc3c"],
+  [0.6, "#dde037"], [0.7, "#fcb136"], [0.8, "#f76f1a"], [0.9, "#d83706"], [1, "#a11201"]];
+function drawMap(m, when) {
+  LASTMAP = [m, when];
+  $("mapWhen").textContent = when;
+  const best = new Map();
+  for (const [mm, k, om] of m.cells) if (!best.has(mm) || om < best.get(mm)) best.set(mm, om);
+  const v = m.cells.map(([mm, k, om]) => MAPMODE === "seed" ? om : om - best.get(mm));
+  // colour range from the cells in view (m <= 30 when zoomed on the grid)
+  const sorted = v.filter((_, i) => MAPRANGE !== "grid" || m.cells[i][0] <= 30).sort((a, b) => a - b), q = p => sorted[Math.floor(p * (sorted.length - 1))];
+  const lo = MAPMODE === "seed" ? q(0.03) : 0, hi = MAPMODE === "seed" ? q(0.97) : q(0.9);
+  // Omega on the (m, k) lattice: "cells" draws each computed composition; "smooth" a Gaussian kernel average of the
+  // computed cells (sigma 1.5 lattice units), drawn only within 2 units of a computed composition (none invented far
+  // from the network); the hover always gives the cell's own Omega
+  const m0 = Math.min(...m.cells.map(c => c[0])), nm = Math.max(...m.cells.map(c => c[0])) - m0 + 1;
+  const nk = Math.max(...m.cells.map(c => c[1])) + 1;
+  const val = new Float64Array(nm * nk).fill(NaN), nst = new Int32Array(nm * nk);
+  m.cells.forEach((c, i) => { val[c[1] * nm + c[0] - m0] = v[i]; nst[c[1] * nm + c[0] - m0] = c[4]; });
+  const W = 4, wt = [];
+  for (let dk = -W; dk <= W; dk++) for (let di = -W; di <= W; di++) wt.push([dk, di, Math.exp(-(di * di + dk * dk) / (2 * 1.5 * 1.5)), di * di + dk * dk]);
+  const z = [], txt = [], cnt = [];
+  for (let k = 0; k < nk; k++) {
+    const zr = [], tr = [], cr = [];
+    for (let i = 0; i < nm; i++) {
+      const x = val[k * nm + i];
+      let zz = isNaN(x) ? null : x;
+      if (MAPSMOOTH) {
+        let sw = 0, sv = 0, near = false;
+        for (const [dk, di, w, d2] of wt) {
+          const kk = k + dk, ii = i + di;
+          if (kk < 0 || kk >= nk || ii < 0 || ii >= nm) continue;
+          const y = val[kk * nm + ii];
+          if (!isNaN(y)) { sw += w; sv += w * y; if (d2 <= 4) near = true; }
+        }
+        zz = near ? sv / sw : null;
+      }
+      zr.push(zz); cr.push(nst[k * nm + i]);
+      tr.push(isNaN(x) ? (zz == null ? "" : `m ${i + m0}, k ${k}<br>no computed state<br>smoothed Ω ${zz.toFixed(2)} eV`)
+        : `m ${i + m0}, k ${k}<br>Ω ${x.toFixed(2)} eV<br>${nst[k * nm + i]} state(s)`);
+    }
+    z.push(zr); txt.push(tr); cnt.push(cr);
+  }
+  const ink = css("--text-primary");
+  const traces = [{ type: "heatmap", x: Array.from({ length: nm }, (_, i) => i + m0), y: Array.from({ length: nk }, (_, k) => k),
+    z, text: txt, customdata: cnt, zmin: lo, zmax: hi, colorscale: TURBO, zsmooth: MAPSMOOTH ? "best" : false,
+    hoverongaps: false, hovertemplate: "%{text}<extra></extra>",
+    colorbar: { thickness: 10, len: 0.8, title: { text: "eV", side: "right" }, tickfont: { size: 10 } } }];
+  if (m.routes && m.routes.length) {
+    const X = [], Y = [];
+    for (const [m1, k1, m2, k2, j] of m.routes.slice(0, 120)) { if (j >= 0) { X.push(m1, m2, null); Y.push(k1, k2, null); } else { X.push(m2, m1, null); Y.push(k2, k1, null); } }
+    traces.push({ type: "scattergl", mode: "lines", x: X, y: Y, line: { color: ink, width: 1.5 }, hoverinfo: "skip" });
+  }
+  const occ = m.cells.filter(c => c[3] > 0);
+  if (occ.length) {
+    const pmax = Math.max(...occ.map(c => c[3]));
+    const sel = occ.filter(c => c[3] > 1e-4 * pmax);
+    traces.push({ type: "scattergl", mode: "markers", x: sel.map(c => c[0]), y: sel.map(c => c[1]),
+      marker: { size: sel.map(c => 5 + 13 * Math.sqrt(c[3] / pmax)), color: "rgba(0,0,0,0)", line: { color: ink, width: 2 } },
+      customdata: sel.map(c => c[3]), hovertemplate: "m %{x}, k %{y}<br>%{customdata:.3g} M<extra></extra>" });
+  }
+  const zoom = MAPRANGE === "grid", kz = m.cells.filter(c => c[0] <= 30).map(c => c[1]);
+  Plotly.react("cMap", traces, base({ margin: { l: 44, r: 10, t: 6, b: 36 },
+    xaxis: { title: { text: `m (${MA} units)`, standoff: 4 }, ...(zoom ? { range: [0.4, 30.6], dtick: 2 } : {}) },
+    yaxis: { title: { text: `k (${XL} units)`, standoff: 4 }, ...(zoom ? { range: [-0.6, Math.max(...kz) + 0.6] } : {}) } }), CFG);
+  $("cMap").removeAllListeners?.("plotly_click");
+  $("cMap").on("plotly_click", ev => { const p = ev.points[0]; if (p && p.curveNumber === 0 && p.customdata > 0) pickComposition(p.x, p.y); });
+  if (m.barriers && !RUN) barrierTable(m.barriers);
+}
+
+// ---------------- run
+async function run() {
+  let c;
+  try { c = conditions(); } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; return; }
+  $("runBtn").disabled = true; $("stopBtn").disabled = false; $("runStatus").className = "status"; $("runStatus").textContent = "running…";
+  JOB = null;
+  const t0 = performance.now();
+  try {
+    const { job } = await api("/api/run", { conditions: c });
+    JOB = job;
+    for (;;) {
+      await new Promise(res => setTimeout(res, 1000));
+      const j = await api(`/api/job?id=${job}`);
+      if (j.state === "error") throw new Error(j.error);
+      if (j.state === "done") { RUN = j.result; break; }
+      $("runStatus").textContent = `running, ${((performance.now() - t0) / 1000).toFixed(0)} s\n${j.log}`;
+    }
+    const s = RUN.stats;
+    $("runStatus").textContent = `${s.steps} implicit steps, ${s.lu} sparse solves, ${s.wall_s.toFixed(1)} s on the server (${((performance.now() - t0) / 1000).toFixed(1)} s in all)`;
+    if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
+    $("runWhen").textContent = `T ${c.T} K, ${c.solvent}, c_P0 ${c.c_P0} M, ${XL} ${c.c_MX0} M` +
+      (c.inject ? `, syringe ${c.c_syringe_M} M at ${c.rate_mL_h} mL/h for ${c.inj_duration_s} s into ${c.V0_mL} mL` : "") + (c.islands ? "" : ", no island barriers");
+    $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
+    $("playBtn").disabled = false;
+    $("outNote").textContent = `${RUN.series.t.length} outputs: ${RUN.cond.n_out} log-spaced, the others where C_M, the number of dots or ⟨m⟩ move fast`;
+    drawRun(); setTime(RUN.series.t.length - 1); buildMovie(RUN.path_i);
+    if (L0) drawNucleation(L0);
+    $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
+  } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
+  $("runBtn").disabled = false; $("stopBtn").disabled = true; JOB = null;
+}
+
+function marker(i) {
+  const t = RUN.series.t[i];
+  return { shapes: [{ type: "line", xref: "x", yref: "paper", x0: t, x1: t, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } }] };
+}
+function line(x, y, color, name, dash) { return { type: "scatter", mode: "lines", x, y, name, line: { color, width: 2, dash }, hovertemplate: `${name} %{y:.3g}<extra></extra>` }; }
+
+function drawRun() {
+  const s = RUN.series, t = s.t, c = RUN.cond;
+  const pos = (a, floor = 0) => a.map(v => v > floor ? v : null);
+  const seen = i => s.n_dots[i] > 1e-15;               // a size only once there are dots
+  Plotly.react("cPool", [line(t, s.c_MA, css("--series-1"), `${MA}`), line(t, s.c_MX_free, css("--series-2"), `free ${XL}`)],
+    base({ xaxis: tAxis, yaxis: { type: "log" }, showlegend: true, legend: { orientation: "h", y: 1.12, font: { size: 11 } } }), CFG);
+  const share = t.map((_, i) => s.alpha[i] > 0 ? 1 - s.c_MA[i] / (s.alpha[i] * c.c_P0) : 0);
+  Plotly.react("cAlpha", [line(t, s.alpha, css("--series-1"), "α"), line(t, share, css("--series-3"), "in dots and clusters", "dash")],
+    base({ xaxis: tAxis, yaxis: { range: [0, 1] }, showlegend: true, legend: { orientation: "h", y: 1.12, font: { size: 11 } } }), CFG);
+  Plotly.react("cDots", [line(t, pos(s.n_dots), css("--series-1"), "dots"), line(t, pos(s.nucleation), css("--series-2"), "nucleation", "dash")],
+    base({ xaxis: tAxis, yaxis: { type: "log" }, showlegend: true, legend: { orientation: "h", y: 1.12, font: { size: 11 } } }), CFG);
+  const dm = s.d_mean_nm, up = [], dn = [];
+  for (let i = 0; i < t.length; i++) { const m = s.m_mean[i], sd = s.m_std[i]; const d = x => Math.cbrt(6 * Math.max(x, 0) * 59.667 / Math.PI) / 10; up.push(seen(i) ? d(m + sd) : null); dn.push(seen(i) ? d(Math.max(m - sd, 13)) : null); }
+  Plotly.react("cSize", [{ type: "scatter", mode: "lines", x: t, y: up, line: { width: 0 }, hoverinfo: "skip" },
+    { type: "scatter", mode: "lines", x: t, y: dn, fill: "tonexty", fillcolor: "rgba(127,127,127,0.18)", line: { width: 0 }, hoverinfo: "skip" },
+    line(t, dm.map((v, i) => seen(i) ? v : null), css("--series-1"), "d")], base({ xaxis: tAxis }), CFG);
+  // size distribution: per time, the share per m (columns normalised)
+  const ms = RUN.psd.m, Z = ms.map(() => []);
+  RUN.psd.N.forEach((h, j) => { const tot = h.reduce((a, b) => a + b, 0) || 1; h.forEach((v, i) => Z[i].push(v / tot)); });
+  const ramp = [[0, css("--surface-1")], [0.15, css("--seq-1")], [0.4, css("--seq-3")], [0.7, css("--seq-5")], [1, css("--seq-9")]];
+  Plotly.react("cPSD", [{ type: "heatmap", x: t, y: RUN.psd.d_nm, z: Z, zmin: 0, zmax: 0.25, colorscale: ramp,
+    colorbar: { thickness: 10, len: 0.9, tickfont: { size: 10 } }, hovertemplate: "t %{x:.3g} s<br>d %{y:.2f} nm<br>share %{z:.3f}<extra></extra>" }],
+    base({ xaxis: tAxis, yaxis: { title: { text: "d (nm)", standoff: 4 } } }), CFG);
+  const fl = FAM.map((f, i) => line(t, pos(s.cdse_flux[f], 1e-25), css(`--series-${i + 1}`), FLAB[f]));
+  Plotly.react("cFacet", fl, base({ xaxis: tAxis, yaxis: { type: "log" }, showlegend: true, legend: { orientation: "h", y: 1.14, font: { size: 11 } } }), CFG);
+  // cumulative CdSe per family (trapezoid in t)
+  const cum = FAM.map(f => { let a = 0; return t.map((tt, i) => (i ? (a += 0.5 * (Math.max(s.cdse_flux[f][i], 0) + Math.max(s.cdse_flux[f][i - 1], 0)) * (tt - t[i - 1])) : 0)); });
+  const tot = t.map((_, i) => cum.reduce((a, c2) => a + c2[i], 0));
+  Plotly.react("cShare", FAM.map((f, i) => ({ type: "scatter", mode: "lines", stackgroup: "one", x: t, y: t.map((_, j) => tot[j] > 0 ? cum[i][j] / tot[j] : 0),
+    name: FLAB[f], line: { color: css(`--series-${i + 1}`), width: 1 }, hovertemplate: `${FLAB[f]} %{y:.2f}<extra></extra>` })),
+    base({ xaxis: tAxis, yaxis: { range: [0, 1] }, showlegend: true, legend: { orientation: "h", y: 1.14, font: { size: 11 } } }), CFG);
+}
+
+async function setTime(i) {
+  IDX = i;
+  const s = RUN.series, t = s.t[i];
+  $("tval").textContent = `${fmt(t)} s`;
+  for (const id of ["cPool", "cAlpha", "cDots", "cSize", "cPSD", "cFacet", "cShare"]) Plotly.relayout(id, marker(i));
+  $("ro").innerHTML = [["α", fmt(s.alpha[i])], [`${MA} in solution`, fmt(s.c_MA[i]) + " M"], ["dots", fmt(s.n_dots[i]) + " M"],
+    ["mean d", s.n_dots[i] > 0 ? s.d_mean_nm[i].toFixed(2) + " nm" : "–"], ["⟨m⟩ ± σ", s.n_dots[i] > 0 ? `${s.m_mean[i].toFixed(0)} ± ${s.m_std[i].toFixed(0)}` : "–"],
+    ["on the network's edge", (100 * s.frontier[i]).toFixed(0) + " %"],
+    ...(RUN.cond.inject ? [["flask volume", s.V_mL[i].toPrecision(3) + " mL"]] : [])].map(([a, b]) => `<div class="ro"><span>${a}</span><b>${b}</b></div>`).join("");
+  const h = RUN.psd.N[i], totN = h.reduce((a, b) => a + b, 0) || 1;
+  Plotly.react("cPSDt", [{ type: "bar", x: RUN.psd.d_nm, y: h.map(v => v / totN), marker: { color: css("--series-1") }, hovertemplate: "d %{x:.2f} nm: %{y:.3f}<extra></extra>" }],
+    base({ xaxis: { title: { text: "d (nm)", standoff: 4 } }, yaxis: { title: { text: "share", standoff: 4 } }, bargap: 0.05 }), CFG);
+  barrierTable(s.barriers[i]);
+  topTable(RUN.top[i]);
+  $("dlTop").disabled = !RUN.top[i].length;
+  if (!PLAY) movTable(i);
+  if (MOV && MOV.mode === "time" && !MOV.play) movFrame(Math.max(0, MOV.idx.findLastIndex(j => j <= i)));
+  try { drawMap(await api("/api/map", { run_id: RUN.run_id, i }), `t = ${fmt(t)} s of the run`); } catch (e) { $("mapCap").textContent = e.message; }
+}
+
+function barrierTable(b) {
+  if (!b) { $("barTable").innerHTML = "<tr><td>island barriers off</td></tr>"; return; }
+  const bins = ["0", "30", "60", "100", "150"], lab = ["< 30", "30–60", "60–100", "100–150", "≥ 150"];
+  let h = `<tr><th>facet</th>${lab.map(x => `<th>m ${x}</th>`).join("")}<th>all sizes</th><th>own curves</th></tr>`;
+  for (const f of ["111B", "100", "111A"]) {
+    const own = Object.entries(b.own).filter(([k]) => k.endsWith("|" + f)).map(([, v]) => v);
+    const med = own.length ? [...own].sort((a, c) => a - c)[Math.floor(own.length / 2)] : null;
+    h += `<tr><td>${FLAB[f]}</td>${bins.map(x => `<td>${b.bin[`${f}|${x}`] === undefined ? "·" : b.bin[`${f}|${x}`].toFixed(2)}</td>`).join("")}` +
+      `<td>${b.family[f] === undefined ? "·" : b.family[f].toFixed(2)}</td><td>${own.length ? `${own.length}, median ${med.toFixed(2)}` : "·"}</td></tr>`;
+  }
+  $("barTable").innerHTML = h;
+}
+
+function topTable(rows) {
+  $("topTable").innerHTML = `<tr><th>most populated at the bar's time</th><th>m</th><th>k</th><th>N (M)</th></tr>` +
+    rows.map(([i, lab, m, k, N]) => `<tr class="pick${i === SEL ? " on" : ""}" data-s="${i}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td></tr>`).join("");
+  for (const tr of $("topTable").querySelectorAll("tr.pick")) tr.addEventListener("click", () => show(+tr.dataset.s));
+  if (SEL === null && rows.length) show(rows[0][0]);
+}
+
+async function pickComposition(m, k) {
+  try {
+    if (m === 1) { if (D.nucleation) showGrid(1, k); return; }       // the pool's complex: its grid structure
+    const c = await api(`/api/composition?m=${m}&k=${k}` + (RUN ? `&run_id=${RUN.run_id}&i=${IDX}` : ""));
+    $("topTable").innerHTML = `<tr><th>states of (${m}, ${k})</th><th>registry id</th><th></th><th>N (M)</th></tr>` +
+      c.states.map(([i, lab, rid, N]) => `<tr class="pick" data-s="${i}"><td>${lab}</td><td>${rid < 0 ? "grid" : rid}</td><td></td><td>${N === null ? "–" : fmt(N)}</td></tr>`).join("");
+    for (const tr of $("topTable").querySelectorAll("tr.pick")) tr.addEventListener("click", () => show(+tr.dataset.s));
+    show(c.states[0][0]);
+  } catch (e) { $("what").textContent = e.message; }
+}
+
+async function show(state) {
+  SEL = state;
+  if (GSEL) { GSEL = null; Plotly.relayout("cHeat", { shapes: [] }); }
+  for (const tr of $("topTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", +tr.dataset.s === state);
+  const tok = ++structTok;
+  $("what").textContent = "Loading…";
+  try {
+    const s = await structure(state);
+    if (tok !== structTok) return;
+    $("what").innerHTML = `<b>${s.label}</b>: m = ${s.m}, k = ${s.k}, ${s.source === "grid" ? "nucleation grid node" : "registry id " + s.registry_id}`;
+    drawMol(s.xyz, `${s.label}_m${s.m}_k${s.k}`, `${s.label}, m = ${s.m}, k = ${s.k}, ${s.source === "grid" ? "grid node" : "registry id " + s.registry_id}`);
+  } catch (e) { if (tok === structTok) noMol(e.message); }
+}
+const STRUCT = new Map();                                      // state -> /api/structure reply
+async function structure(state) {
+  if (!STRUCT.has(state)) STRUCT.set(state, await api(`/api/structure?state=${state}`));
+  return STRUCT.get(state);
+}
+
+// ---------------- play the run (time bar) and the growth movie (step 6)
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+let PLAY = false;
+async function playRun() {
+  if (PLAY) { PLAY = false; return; }
+  const last = RUN.series.t.length - 1;
+  let i = +$("tbar").value;
+  if (i >= last) i = 0;
+  PLAY = true; $("playBtn").textContent = "⏸"; $("playBtn").setAttribute("aria-label", "pause");
+  while (PLAY && i <= last) {
+    $("tbar").value = i;
+    await setTime(i);
+    await sleep(250);
+    i++;
+  }
+  PLAY = false; $("playBtn").textContent = "▶"; $("playBtn").setAttribute("aria-label", "play the run");
+  movTable(+$("tbar").value);
+}
+let MOV = null, MVIEW = null;
+function centred(xyz) {
+  const L = xyz.trim().split("\n"), n = parseInt(L[0], 10), at = L.slice(2, 2 + n).map(l => l.trim().split(/\s+/));
+  const c = [1, 2, 3].map(j => at.reduce((a, x) => a + +x[j], 0) / n);
+  return [n, L[1], ...at.map(x => `${x[0]} ${(+x[1] - c[0]).toFixed(4)} ${(+x[2] - c[1]).toFixed(4)} ${(+x[3] - c[2]).toFixed(4)}`)].join("\n") + "\n";
+}
+async function frameXyz(f) {
+  const key = f[0] < 0 ? `pool${f[3]}` : f[0];
+  if (!STRUCT.has(key)) STRUCT.set(key, f[0] < 0 ? await api(`/api/grid_structure?m=1&k=${f[3]}`) : await api(`/api/structure?state=${f[0]}`));
+  return [key, STRUCT.get(key)];
+}
+async function buildMovie(i, state = null, mode = "growth") {
+  if (MOV) MOV.play = false;
+  MOV = null; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = true;
+  $("movWhat").textContent = `Following the ${mode} path at t = ${fmt(RUN.series.t[i])} s…`;
+  try {
+    const p = await api(`/api/path?run_id=${RUN.run_id}&i=${i}&mode=${mode}` + (state === null ? "" : `&state=${state}`)), fr = p.frames;
+    if (!fr.length) { $("movWhat").textContent = mode === "growth" ? `nothing formed by t = ${fmt(p.t)} s` : `no dot loses ${MA} at t = ${fmt(p.t)} s`; return; }
+    await loadMovie(fr, mode, `${mode} at t = ${fmt(p.t)} s, ${fr.length} frames, m ${fr[0][2]} → ${fr.at(-1)[2]}`, null);
+    const pick = state ?? (mode === "growth" ? fr.at(-1)[0] : fr[0][0]);
+    for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === mode && +tr.dataset.s === pick);
+    MOV.t = p.t;
+  } catch (e) { $("movWhat").textContent = e.message; }
+}
+// the most populated dot at every output once the dots hold 1e-12 of the CdSe (DOT_SEEN): the burst at dense outputs
+async function timeMovie() {
+  if (MOV) MOV.play = false;
+  const s = RUN.series, idx = [];
+  s.t.forEach((_, i) => { if (RUN.dot_top[i] && s.n_dots[i] * s.m_mean[i] >= 1e-12 * s.alpha[i] * RUN.cond.c_P0) idx.push(i); });
+  if (!idx.length) { $("movWhat").textContent = "no dots in this run"; return; }
+  const fr = idx.map(i => { const [x, lab, m, k, N] = RUN.dot_top[i]; return [x, lab, m, k, s.t[i], "time", N]; });
+  try {
+    await loadMovie(fr, "time", `the most populated dot over time: ${fmt(s.t[idx[0]])} → ${fmt(s.t.at(-1))} s, ${fr.length} outputs`, idx);
+    MOV.t = s.t.at(-1);
+    for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.classList.toggle("on", tr.dataset.mode === "time");
+    movFrame(Math.max(0, idx.findLastIndex(j => j <= IDX)));
+  } catch (e) { $("movWhat").textContent = e.message; }
+}
+async function loadMovie(fr, mode, when, idx) {
+  $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = $("dlFrame").disabled = true;
+  $("movWhat").textContent = `Loading ${new Set(fr.map(f => f[0])).size} structures…`;
+  const got = await Promise.all(fr.map(frameXyz));
+  const xyz = new Map(got.map(([k, s]) => [k, centred(s.xyz)]));
+  if (!MVIEW) MVIEW = molViewer($("movie"));
+  const big = got.reduce((a, b) => parseInt(b[1].xyz, 10) > parseInt(a[1].xyz, 10) ? b : a);
+  MVIEW.removeAllModels(); MVIEW.addModel(xyz.get(big[0]), "xyz"); molStyle(MVIEW); MVIEW.zoomTo();
+  MOV = { fr, keys: got.map(g => g[0]), xyz, i: 0, play: false, mode, idx };
+  $("movBar").max = fr.length - 1; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = false;
+  $("movWhen").textContent = when;
+  movFrame(0);
+}
+function movFrame(i) {
+  if (!MOV) return;
+  MOV.i = i; $("movBar").value = i;
+  const [state, lab, m, k, f, how, N] = MOV.fr[i];
+  $("movT").textContent = `${i + 1} / ${MOV.fr.length}`;
+  const v = MVIEW.getView();
+  MVIEW.removeAllModels();
+  MVIEW.addModel(MOV.xyz.get(MOV.keys[i]), "xyz");
+  molStyle(MVIEW);
+  MVIEW.setView(v); MVIEW.render();
+  $("dlFrame").disabled = false;
+  const d = m >= 13 ? `, d ≈ ${(Math.cbrt(6 * m * 59.667 / Math.PI) / 10).toFixed(2)} nm` : "";
+  if (MOV.mode === "time") {
+    const j = MOV.idx[i], s = RUN.series;
+    $("movT").textContent = `${fmt(f)} s`;
+    const h = RUN.psd.N[j], tot = h.reduce((a, b) => a + b, 0) || 1, seed = h[0] / tot, edge = s.frontier[j];
+    $("movWhat").innerHTML = `<b>${lab}</b>: m = ${m}, k = ${k}${d}, N = ${fmt(N)} M, the most populated dot at ${fmt(f)} s; all dots ⟨m⟩ ${s.m_mean[j].toFixed(1)} ± ${s.m_std[j].toFixed(1)}, ${fmt(s.n_dots[j])} M: `
+      + `<b>${(100 * seed).toFixed(1)} %</b> at the seed's m = 13, <b>${(100 * Math.max(1 - seed - edge, 0)).toFixed(1)} %</b> on the way, <b>${(100 * edge).toFixed(1)} %</b> at the network's edge (no growth step)`;
+    return;
+  }
+  let step;
+  if (MOV.mode === "growth") step = how === "nucleus" ? `the nucleus, from the pool (${fmt(f)} M formed so far)` : `by a ${how} step, ${fmt(f)} M moved along it so far`;
+  else step = how === "start" ? "the dissolving dot" : how === "to the pool" ? `back to the pool, net ${fmt(f)} M/s` : `down a ${how} step, net ${fmt(f)} M/s`;
+  $("movWhat").innerHTML = `<b>${state < 0 ? `the pool's ${MA}(${XL})<sub>${k}</sub>` : lab}</b>: m = ${m}, k = ${k}${d}; ${step}; ${state < 0 ? "c" : "N"} = ${fmt(N)} M`;
+}
+async function movTable(i) {
+  const top = RUN.top[i], t = fmt(RUN.series.t[i]);
+  let h = `<tr class="pick" data-mode="time" data-s="-1"><td colspan="5"><b>▶ the dots over time</b> (the most populated, one frame per output; follows the time bar)</td></tr>` +
+    `<tr><th>grow to: most populated at ${t} s</th><th>m</th><th>k</th><th>N (M)</th><th></th></tr>` +
+    top.map(([x, lab, m, k, N]) => `<tr class="pick" data-mode="growth" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td></td></tr>`).join("");
+  try {
+    const d = await api(`/api/dissolving?run_id=${RUN.run_id}&i=${i}`);
+    h += `<tr><th>dissolving at ${t} s: most ${MA} lost to smaller states</th><th>m</th><th>k</th><th>N (M)</th><th>${MA} lost / gained (M/s)</th></tr>` +
+      (d.states.length ? d.states.map(([x, lab, m, k, N, dn, up]) => `<tr class="pick" data-mode="dissolution" data-s="${x}"><td>${lab}</td><td>${m}</td><td>${k}</td><td>${fmt(N)}</td><td>${fmt(dn)} / ${fmt(up)}</td></tr>`).join("")
+        : `<tr><td colspan="5">no populated dot is shrinking at this time</td></tr>`);
+  } catch (e) { h += `<tr><td colspan="5">${e.message}</td></tr>`; }
+  $("movTable").innerHTML = h;
+  for (const tr of $("movTable").querySelectorAll("tr.pick")) tr.addEventListener("click", () => tr.dataset.mode === "time" ? timeMovie() : buildMovie(i, +tr.dataset.s, tr.dataset.mode));
+  if (MOV) for (const tr of $("movTable").querySelectorAll("tr.pick")) if (tr.dataset.mode === "time") tr.classList.toggle("on", MOV.mode === "time");
+}
+let MOV_FPS = 5;
+async function playMovie(record) {
+  if (MOV.play) { MOV.play = false; return; }
+  const last = MOV.fr.length - 1;
+  let i = record || MOV.i >= last ? 0 : MOV.i, rec = null, parts = [];
+  if (record) {
+    const cv = $("movie").querySelector("canvas"), mime = ["video/webm;codecs=vp9", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
+    rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime });
+    rec.ondataavailable = e => e.data.size && parts.push(e.data);
+    rec.start();
+  }
+  MOV.play = true; $("movPlay").textContent = "⏸"; $("movRec").disabled = true;
+  while (MOV.play && i <= last) { movFrame(i); await sleep(1000 / MOV_FPS); i++; }
+  MOV.play = false; $("movPlay").textContent = "▶"; $("movRec").disabled = false;
+  if (rec) {
+    await new Promise(res => { rec.onstop = res; rec.stop(); });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(parts, { type: "video/webm" }));
+    a.download = `${MOV.mode}_path_T${RUN.cond.T}_cP${RUN.cond.c_P0}_t${fmt(MOV.t)}s.webm`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+}
+
+$("mSeed").addEventListener("click", () => { MAPMODE = "seed"; $("mSeed").classList.add("on"); $("mBest").classList.remove("on"); RUN ? setTime(IDX) : liveMap(); });
+$("mBest").addEventListener("click", () => { MAPMODE = "best"; $("mBest").classList.add("on"); $("mSeed").classList.remove("on"); RUN ? setTime(IDX) : liveMap(); });
+$("tnowR").addEventListener("input", () => syncT(true));
+for (const [id, r] of [["rAll", "all"], ["rGrid", "grid"]]) $(id).addEventListener("click", () => {
+  MAPRANGE = r; $("rAll").classList.toggle("on", r === "all"); $("rGrid").classList.toggle("on", r === "grid");
+  if (LASTMAP) drawMap(...LASTMAP);
+});
+for (const [id, s] of [["vSmooth", true], ["vCells", false]]) $(id).addEventListener("click", () => {
+  MAPSMOOTH = s; $("vSmooth").classList.toggle("on", s); $("vCells").classList.toggle("on", !s);
+  if (LASTMAP) drawMap(...LASTMAP);
+});
+$("tnow").addEventListener("change", () => syncT(false));
+document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
+document.querySelectorAll('input[name="profsrc"]').forEach((r) => r.addEventListener("change", requestProfile));
+$("runBtn").addEventListener("click", run);
+$("stopBtn").addEventListener("click", () => { if (JOB) { api(`/api/stop?id=${JOB}`, {}); $("stopBtn").disabled = true; } });
+let tTimer = null;
+$("tbar").addEventListener("input", () => { PLAY = false; clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });
+$("playBtn").addEventListener("click", playRun);
+for (const [id, ty] of [["axLog", "log"], ["axLin", "linear"]]) $(id).addEventListener("click", () => {
+  tAxis.type = ty; $("axLog").classList.toggle("on", ty === "log"); $("axLin").classList.toggle("on", ty === "linear");
+  if (RUN) { drawRun(); for (const c of ["cPool", "cAlpha", "cDots", "cSize", "cPSD", "cFacet", "cShare"]) Plotly.relayout(c, marker(IDX)); }
+});
+$("movPlay").addEventListener("click", () => playMovie(false));
+$("movRec").addEventListener("click", () => playMovie(true));
+
+document.querySelectorAll("[data-lig]").forEach(b => b.addEventListener("click", () => {
+  LIG = b.dataset.lig; document.querySelectorAll("[data-lig]").forEach(x => x.classList.toggle("on", x.dataset.lig === LIG));
+  for (const v of [VIEW, MVIEW]) if (v) { molStyle(v); v.render(); }
+}));
+$("dlShown").addEventListener("click", () => SHOWN && saveXyz(SHOWN[0], SHOWN[1], SHOWN[2]));
+$("dlTop").addEventListener("click", async () => {
+  const [x, lab, m, k, N] = RUN.top[IDX][0], t = RUN.series.t[IDX];
+  try {
+    const s = await structure(x);
+    saveXyz(s.xyz, `${lab}_m${m}_k${k}_t${fmt(t)}s`, `${lab}, m = ${m}, k = ${k}: the most populated at t = ${fmt(t)} s, N = ${fmt(N)} M (${runTag()})`);
+  } catch (e) { $("what").textContent = e.message; }
+});
+$("dlFrame").addEventListener("click", () => {
+  if (!MOV) return;
+  const [state, lab, m, k, f, how, N] = MOV.fr[MOV.i], name = state < 0 ? `pool_k${k}` : lab;
+  const when = MOV.mode === "time" ? `t = ${fmt(f)} s` : `frame ${MOV.i + 1} of ${MOV.fr.length}`;
+  saveXyz(MOV.xyz.get(MOV.keys[MOV.i]), `${MOV.mode}_${MOV.mode === "time" ? "t" + fmt(f) + "s" : MOV.i + 1}_${name}_m${m}_k${k}`,
+    `${name}, m = ${m}, k = ${k}: ${MOV.mode} movie, ${when} (${runTag()})`);
+});
+$("movBar").addEventListener("input", () => { if (MOV) { MOV.play = false; movFrame(+$("movBar").value); } });
+document.querySelectorAll("[data-fps]").forEach(b => b.addEventListener("click", () => {
+  MOV_FPS = +b.dataset.fps; document.querySelectorAll("[data-fps]").forEach(x => x.classList.toggle("on", x === b));
+}));
+(async () => { D = await api("/api/defaults"); buildControls(); onConds(); })();
+</script>
+</body>
+</html>

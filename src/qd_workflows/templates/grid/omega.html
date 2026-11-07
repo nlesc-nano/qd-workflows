@@ -1,0 +1,322 @@
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: controls in one band above the charts; landscape line, P(k|m) heatmap, speciation, table */
+  :root {
+    --bg: #f4f5f7; --surface: #fcfcfb; --fg: #0b0b0b; --muted: #52514e; --rule: #dcdcd7; --grid: #ebebe7;
+    --line: #2a78d6; --seq-0: #f3f7fd; --seq-1: #cde2fb; --seq-2: #86b6ef; --seq-3: #3987e5; --seq-4: #1c5cab; --seq-5: #0d366b;
+    --mark: #0b0b0b; --warn-bg: #fdf3e2; --warn-fg: #7a4b00;
+    --f-ui: "Public Sans", "Helvetica Neue", Arial, sans-serif; --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #121211; --surface: #1a1a19; --fg: #f0efec; --muted: #c3c2b7; --rule: #383835; --grid: #2a2a28;
+    --line: #3987e5; --seq-0: #1d2633; --seq-1: #184f95; --seq-2: #256abf; --seq-3: #3987e5; --seq-4: #86b6ef; --seq-5: #cde2fb;
+    --mark: #f0efec; --warn-bg: #3a2e16; --warn-fg: #f3cf8a; color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #121211; --surface: #1a1a19; --fg: #f0efec; --muted: #c3c2b7; --rule: #383835; --grid: #2a2a28;
+    --line: #3987e5; --seq-0: #1d2633; --seq-1: #184f95; --seq-2: #256abf; --seq-3: #3987e5; --seq-4: #86b6ef; --seq-5: #cde2fb;
+    --mark: #f0efec; --warn-bg: #3a2e16; --warn-fg: #f3cf8a; color-scheme: dark; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--f-ui); font-size: 14px; line-height: 1.5; }
+  .wrap { max-width: 72rem; margin: 0 auto; padding-block: 24px 56px;
+          padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1 { font-size: 1.45rem; margin: 0 0 4px; text-wrap: balance; }
+  .sub { color: var(--muted); margin: 0 0 16px; max-width: 80ch; }
+  .note { background: var(--warn-bg); color: var(--warn-fg); padding: 8px 12px; border-radius: 6px; margin: 0 0 14px; font-size: 13px; }
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 14px 22px; margin-bottom: 14px; }
+  .ctl:not(.check) label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+  .ctl output { font-family: var(--f-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; accent-color: var(--line); }
+  .ctl.check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .ro { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 12px; }
+  .ro > span { display: block; font-size: 11.5px; color: var(--muted); }
+  .ro b { font-family: var(--f-mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 14px; margin-bottom: 14px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+  .chart h2, .tablebox h2 { font-size: 13.5px; margin: 0 0 2px; }
+  .chart p.cap { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .svgbox { overflow-x: auto; position: relative; }
+  svg text { font-family: var(--f-mono); font-size: 10.5px; fill: var(--muted); }
+  .tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--fg); border: 1px solid var(--rule);
+         border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.12); white-space: nowrap; z-index: 5; }
+  .tip b { font-family: var(--f-mono); }
+  .tablebox { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { padding: 5px 10px; border-bottom: 1px solid var(--rule); text-align: right; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td:last-child, th:last-child { text-align: left; font-family: var(--f-mono); font-size: 12px; }
+  .legend { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 16px; height: 10px; border-radius: 2px; }
+</style>
+
+<div class="wrap">
+  <h1 id="title"></h1>
+  <p class="sub">Grand potential Ω(m, k) = G(m, k) − m μ<sub id="u-ma1"></sub> − k μ<sub id="u-mx1"></sub> of every grid node (ideal gas, 1 M standard
+    state, MACE-MH-1). Monomer formation <span class="u-mx"></span> + P=Se → <span class="u-ma"></span> + PCl<sub>2</sub> runs at Q = k<sub>conv</sub>(T) c<sub><span class="u-mx"></span></sub> c<sub>P</sub>;
+    by time t it has supplied ∫Q dt of <span class="u-ma"></span> and used as much <span class="u-mx"></span>. What is left is shared between free <span class="u-mx"></span> and the
+    complexes <span class="u-ma"></span>(<span class="u-mx"></span>)<sub>n</sub> (the grid's m = 1 row), which fixes both μ<sub id="u-ma2"></sub> and μ<sub class="u-mx"></sub>.
+    Clusters are taken as dilute probes of this pool (pre-nucleation).</p>
+  <div class="note" id="note" hidden></div>
+
+  <div class="panel controls">
+    <div class="ctl"><label for="t">Temperature <output id="t-o"></output></label><input type="range" id="t"></div>
+    <div class="ctl"><label for="cma"><span>Initial Se precursor c<sub>P,0</sub></span> <output id="cma-o"></output></label>
+      <input type="range" id="cma" min="-5" max="0" step="0.05" value="-2" aria-label="Initial Se precursor (log10 M)"></div>
+    <div class="ctl"><label for="cmx"><span>Initial <span class="u-mx"></span></span> <output id="cmx-o"></output></label>
+      <input type="range" id="cmx" min="-5" max="0.3" step="0.05" value="-1.3" aria-label="Initial metal halide (log10 M)"></div>
+    <div class="ctl"><label for="time"><span>Reaction time t</span> <output id="time-o"></output></label>
+      <input type="range" id="time" min="-1" max="6" step="0.02" value="1" aria-label="Reaction time (log10 s)"></div>
+    <div class="ctl"><label for="kconv"><span>k<sub>conv</sub> at 500 K</span> <output id="kconv-o"></output></label>
+      <input type="range" id="kconv" min="-5" max="3" step="0.05" value="0" aria-label="Conversion rate constant at 500 K (log10 1/(M s))"></div>
+    <div class="ctl"><label for="ea"><span>Conversion E<sub>a</sub></span> <output id="ea-o"></output></label>
+      <input type="range" id="ea" min="0" max="2" step="0.01" value="0" aria-label="Activation energy of the conversion (eV)"></div>
+    <div class="ctl check"><input type="checkbox" id="bare"><label for="bare" style="color:var(--fg);font-size:13px">Bare monomer only (no <span class="u-ma"></span>(<span class="u-mx"></span>)<sub>n</sub> complexes)</label></div>
+    <div class="ctl check"><input type="checkbox" id="amine"><label for="amine" style="color:var(--fg);font-size:13px">Amine binds <span class="u-mx"></span> (L<sub>2</sub><span class="u-mx"></span>)</label></div>
+    <div class="ctl"><label for="kl"><span>log₁₀ K<sub>L</sub></span> <output id="kl-o"></output></label><input type="range" id="kl" min="0" max="12" step="0.1" value="6" disabled></div>
+    <div class="ctl"><label for="cl">Amine concentration <output id="cl-o"></output></label><input type="range" id="cl" min="-3" max="1" step="0.05" value="0" disabled></div>
+  </div>
+
+  <div class="note" id="err" hidden></div>
+  <div class="readouts">
+    <div class="ro"><span>μ<sub class="u-ma"></sub> (eV)</span><b id="r-mua"></b></div>
+    <div class="ro"><span>μ<sub class="u-mx"></sub> (eV)</span><b id="r-mux"></b></div>
+    <div class="ro"><span>conversion α(t) · k<sub>conv</sub>(T)</span><b id="r-alpha"></b></div>
+    <div class="ro"><span><span class="u-ma"></span> supply ∫Q dt (= <span class="u-mx"></span> used)</span><b id="r-cma"></b></div>
+    <div class="ro"><span><span class="u-mx"></span> left</span><b id="r-left"></b></div>
+    <div class="ro"><span><span class="u-mx"></span> in complexes (⟨n⟩)</span><b id="r-cplx"></b></div>
+    <div class="ro"><span>free <span class="u-mx"></span></span><b id="r-cmx"></b></div>
+    <div class="ro"><span id="r-start-l"></span><b id="r-start"></b></div>
+  </div>
+
+  <div class="charts">
+    <div class="panel chart">
+      <h2>Size landscape Ω(m)</h2>
+      <p class="cap">All shells of each size together, Ω(m) = −k<sub>B</sub>T ln Σ<sub>k</sub> e<sup>−Ω(m,k)/k<sub>B</sub>T</sup>. Lower is more stable; minima are magic sizes.</p>
+      <div class="svgbox" id="landscape"></div>
+    </div>
+    <div class="panel chart">
+      <h2>Shell populations P(k | m)</h2>
+      <p class="cap">At each size, the share of each shell k; the outlined cell is the most stable shell k*(m).</p>
+      <div class="svgbox" id="heat"></div>
+      <div class="legend"><span>0</span><i style="background:var(--seq-0)"></i><i style="background:var(--seq-1)"></i><i style="background:var(--seq-2)"></i><i style="background:var(--seq-3)"></i><i style="background:var(--seq-4)"></i><i style="background:var(--seq-5)"></i><span>1</span></div>
+    </div>
+  </div>
+
+  <div class="charts">
+    <div class="panel chart">
+      <h2>Precursor speciation</h2>
+      <p class="cap">Share of the <span class="u-ma"></span> monomer supply in each complex <span class="u-ma"></span>(<span class="u-mx"></span>)<sub>n</sub>.</p>
+      <div class="svgbox" id="spec"></div>
+    </div>
+    <div class="panel tablebox">
+      <h2>Most stable shell of each size</h2>
+      <table><thead><tr><th>m</th><th>k*</th><th>⟨k⟩</th><th>Ω(m, k*) eV</th><th>Ω(m) eV</th><th>source</th><th>structure</th></tr></thead><tbody id="rows"></tbody></table>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const D = {{DATA}};
+const KB = 8.617333262e-5;
+const $ = id => document.getElementById(id);
+const fmtC = c => c >= 0.1 ? c.toFixed(2) + " M" : c >= 1e-3 ? (c * 1e3).toFixed(c >= 1e-2 ? 1 : 2) + " mM" : c >= 1e-6 ? (c * 1e6).toFixed(c >= 1e-5 ? 1 : 2) + " µM" : (c * 1e9).toFixed(2) + " nM";
+const sub = s => s.replace(/(\d+)/g, "<sub>$1</sub>");
+
+document.querySelectorAll(".u-ma").forEach(e => e.innerHTML = sub(D.units.MA));
+document.querySelectorAll(".u-mx").forEach(e => e.innerHTML = sub(D.units.MX));
+["u-ma1", "u-ma2"].forEach(i => $(i).innerHTML = sub(D.units.MA));
+$("u-mx1").innerHTML = sub(D.units.MX);
+$("title").textContent = D.title;
+const notes = [];
+if (!D.vibrations) notes.push("No vibrations yet: G = E + translation + rotation only, for the clusters and the monomers alike. The page is regenerated with the Hessians when they are done.");
+if (!D.grid_complete) notes.push("The grid is still running: only the rows finished so far are included.");
+if (!D.nodes.some(n => n.m === 1)) notes.push("No m = 1 row yet: the " + D.units.MA + " monomer is the only precursor species (n = 0).");
+if (notes.length) { $("note").hidden = false; $("note").textContent = notes.join(" "); }
+
+const T = D.temperatures;
+$("t").min = 0; $("t").max = T.length - 1; $("t").step = 1; $("t").value = Math.max(0, T.indexOf(300));
+const at = (i, arr) => arr[i];
+
+function nodeG(n, ti) {
+  const kt = KB * T[ti];
+  const gs = n.states.map(s => at(ti, s.G));
+  const best = n.states.reduce((a, b) => a.E <= b.E ? a : b);
+  const shift = at(ti, best.G) - best.E;
+  const extra = n.ens.slice();
+  for (const s of n.states) {
+    let j = -1, d = 1e9;
+    extra.forEach((x, i) => { if (Math.abs(x - s.E) < d) { d = Math.abs(x - s.E); j = i; } });
+    if (j >= 0 && d < 1e-4) extra.splice(j, 1);
+  }
+  const all = gs.concat(extra.map(e => e + shift));
+  const g0 = Math.min(...all);
+  return g0 - kt * Math.log(all.reduce((a, g) => a + Math.exp(-(g - g0) / kt), 0));
+}
+
+function speciation(gn, muMX, kt) {
+  const a = Object.fromEntries(Object.entries(gn).map(([n, g]) => [n, -(g - n * muMX) / kt]));
+  const amax = Math.max(...Object.values(a));
+  const lse = amax + Math.log(Object.values(a).reduce((s, v) => s + Math.exp(v - amax), 0));
+  const spec = Object.entries(a).map(([n, v]) => [+n, Math.exp(v - lse)]).sort((x, y) => x[0] - y[0]);
+  return { lse, spec, mean: spec.reduce((s, [n, x]) => s + n * x, 0) };
+}
+
+/* x(t) = integral of Q = k c_MX c_P dt (1:1, second order), stable for either initial excess */
+function converted(time, k, cp0, cmx0) {
+  const d = cmx0 - cp0, kt_ = k * time;
+  if (Math.abs(d) * kt_ < 1e-8) { const c0 = 0.5 * (cmx0 + cp0); return c0 * c0 * kt_ / (1 + c0 * kt_); }
+  const e = Math.exp(-Math.abs(d) * kt_), hi = Math.max(cmx0, cp0), lo = Math.min(cmx0, cp0);
+  return hi * lo * (1 - e) / (hi - lo * e);
+}
+
+function compute() {
+  const ti = +$("t").value, t = T[ti], kt = KB * t;
+  const cp0 = Math.pow(10, +$("cma").value), cmx0 = Math.pow(10, +$("cmx").value);
+  const time = Math.pow(10, +$("time").value), kconv = Math.pow(10, +$("kconv").value) * Math.exp(-(+$("ea").value) / KB * (1 / t - 1 / 500));
+  const amine = $("amine").checked, KL = Math.pow(10, +$("kl").value), cL = Math.pow(10, +$("cl").value);
+  const bind = amine ? 1 + KL * cL * cL : 1;
+  const cma = converted(time, kconv, cp0, cmx0), alpha = cma / cp0, left = cmx0 - cma, bare = $("bare").checked;
+  const gmx = at(ti, D.references[D.units.MX].G);
+  const G = new Map();
+  for (const n of D.nodes) G.set(n.m + "," + n.k, nodeG(n, ti));
+  const gn = {};
+  for (const n of D.nodes) if (n.m === 1) gn[n.k] = G.get("1," + n.k);
+  if (gn[0] === undefined && D.references[D.units.MA]) gn[0] = at(ti, D.references[D.units.MA].G);
+  const base = { cma, left, alpha, kconv };
+  if (cma <= 0) return { ...base, error: `No ${D.units.MA} monomer yet at this time: increase t or k(conv).` };
+  if (left <= cmx0 * 1e-9) return { ...base, error: `All the ${D.units.MX} has been converted (it is the limiting reagent): nothing is left to passivate or complex. Shorten t or add ${D.units.MX}.` };
+  let cmxFree, muMX, S, muMA;
+  if (bare) {                              /* pre-nucleation formula: bare monomer, all the MX_q left is free */
+    if (gn[0] === undefined) return { ...base, error: `No bare ${D.units.MA} monomer in the data.` };
+    cmxFree = left / bind; muMX = gmx + kt * Math.log(cmxFree);
+    S = { spec: [[0, 1]], mean: 0 }; muMA = gn[0] + kt * Math.log(cma);
+  } else {                                 /* free MX_q: x bind + c_MA <n>(mu_MX(x)) = MX_q left (monotonic in ln x) */
+    const excess = lx => Math.exp(lx) * bind + cma * speciation(gn, gmx + kt * lx, kt).mean - left;
+    let lo = Math.log(left) - 80, hi = Math.log(left / bind);
+    if (excess(lo) > 0) return { ...base, error: `The ${D.units.MA} complexes need more ${D.units.MX} than is left: no free ${D.units.MX} solves the balance.` };
+    for (let i = 0; i < 200; i++) { const mid = 0.5 * (lo + hi); if (excess(mid) < 0) lo = mid; else hi = mid; }
+    cmxFree = Math.exp(0.5 * (lo + hi)); muMX = gmx + kt * Math.log(cmxFree);
+    S = speciation(gn, muMX, kt); muMA = kt * Math.log(cma) - kt * S.lse;
+  }
+  const spec = S.spec;
+  const Om = new Map();
+  for (const [key, g] of G) { const [m, k] = key.split(",").map(Number); Om.set(key, g - m * muMA - k * muMX); }
+  const ms = [...new Set(D.nodes.map(n => n.m))].sort((x, y) => y - x);
+  const perM = ms.map(m => {
+    const nodes = D.nodes.filter(n => n.m === m).sort((x, y) => x.k - y.k);
+    const v = nodes.map(n => Om.get(m + "," + n.k)), vmin = Math.min(...v);
+    const w = v.map(x => Math.exp(-(x - vmin) / kt)), ws = w.reduce((s, x) => s + x, 0);
+    const p = w.map(x => x / ws), i = v.indexOf(vmin);
+    return { m, ks: nodes.map(n => n.k), v, p, kstar: nodes[i].k, vmin, Om: vmin - kt * Math.log(ws),
+             mean: p.reduce((s, x, j) => s + x * nodes[j].k, 0), file: nodes[i].states[0].file, src: nodes[i].states[0].src, formula: nodes[i].formula, nodes };
+  });
+  return { ...base, t, muMA, muMX, cplx: cma * S.mean, meanN: S.mean, cmxFree, spec, Om, perM };
+}
+
+/* ---------- drawing ---------- */
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(t, a, parent, txt) { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (txt !== undefined) e.textContent = txt; parent.appendChild(e); return e; }
+const tip = $("tip");
+function showTip(ev, html) { tip.innerHTML = html; tip.hidden = false; const x = ev.clientX + 14, y = ev.clientY + 12;
+  tip.style.left = Math.min(x, window.innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = Math.min(y, window.innerHeight - tip.offsetHeight - 8) + "px"; }
+function hideTip() { tip.hidden = true; }
+function niceTicks(lo, hi, n) { const span = hi - lo || 1, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map(s => s * mag).find(s => span / s <= n) || 10 * mag; const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(10)); return out; }
+
+function drawLandscape(R) {
+  const box = $("landscape"); box.innerHTML = "";
+  const pts = R.perM.slice().sort((x, y) => x.m - y.m);
+  const W = 460, H = 280, L = 58, Rr = 14, Tp = 12, B = 34;
+  const ys = pts.map(p => p.Om), lo = Math.min(...ys), hi = Math.max(...ys), pad = (hi - lo) * 0.08 || 1;
+  const y0 = lo - pad, y1 = hi + pad, mlo = pts[0].m, mhi = pts[pts.length - 1].m;
+  const x = m => L + (mhi === mlo ? 0.5 : (m - mlo) / (mhi - mlo)) * (W - L - Rr), y = v => Tp + (y1 - v) / (y1 - y0) * (H - Tp - B);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Omega(m) against m" }, box);
+  for (const v of niceTicks(y0, y1, 5)) { svgEl("line", { x1: L, x2: W - Rr, y1: y(v), y2: y(v), style: "stroke:var(--grid)" }, svg);
+    svgEl("text", { x: L - 6, y: y(v) + 3.5, "text-anchor": "end" }, svg, v.toFixed(Math.abs(y1 - y0) < 2 ? 2 : 1)); }
+  for (const p of pts) svgEl("text", { x: x(p.m), y: H - B + 16, "text-anchor": "middle" }, svg, p.m);
+  svgEl("text", { x: (L + W - Rr) / 2, y: H - 4, "text-anchor": "middle" }, svg, "m (" + D.units.MA + " units)");
+  svgEl("text", { x: 12, y: (Tp + H - B) / 2, "text-anchor": "middle", transform: `rotate(-90 12 ${(Tp + H - B) / 2})` }, svg, "Ω(m) (eV)");
+  svgEl("polyline", { points: pts.map(p => x(p.m) + "," + y(p.Om)).join(" "), style: "fill:none;stroke:var(--line);stroke-width:2" }, svg);
+  const cross = svgEl("line", { y1: Tp, y2: H - B, style: "stroke:var(--muted);stroke-dasharray:3 3", visibility: "hidden" }, svg);
+  for (const p of pts) svgEl("circle", { cx: x(p.m), cy: y(p.Om), r: 4.5, style: "fill:var(--line);stroke:var(--surface);stroke-width:2" }, svg);
+  const hit = svgEl("rect", { x: L, y: Tp, width: W - L - Rr, height: H - Tp - B, style: "fill:transparent" }, svg);
+  hit.addEventListener("mousemove", ev => { const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) * W / r.width;
+    const p = pts.reduce((a, b) => Math.abs(x(a.m) - sx) <= Math.abs(x(b.m) - sx) ? a : b);
+    cross.setAttribute("x1", x(p.m)); cross.setAttribute("x2", x(p.m)); cross.setAttribute("visibility", "visible");
+    showTip(ev, `m = <b>${p.m}</b> · Ω(m) <b>${p.Om.toFixed(3)} eV</b><br>k* = <b>${p.kstar}</b> (${sub(p.formula)}, from ${p.src}) · ⟨k⟩ = <b>${p.mean.toFixed(2)}</b>`); });
+  hit.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+}
+
+function seqColor(p) { const i = Math.min(5, Math.floor(p * 5.999)); return `var(--seq-${p < 0.005 ? 0 : Math.max(1, i)})`; }
+function drawHeat(R) {
+  const box = $("heat"); box.innerHTML = "";
+  const kmax = Math.max(...D.nodes.map(n => n.k)), ms = R.perM.map(p => p.m);
+  const c = 22, L = 34, Tp = 8, B = 34, W = L + (kmax + 1) * c + 8, H = Tp + ms.length * c + B;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: Math.min(W * 1.15, 640), role: "img", "aria-label": "P(k|m) heatmap" }, box);
+  R.perM.forEach((row, ri) => {
+    svgEl("text", { x: L - 6, y: Tp + ri * c + c / 2 + 3.5, "text-anchor": "end" }, svg, row.m);
+    row.ks.forEach((k, j) => {
+      const rect = svgEl("rect", { x: L + k * c + 1, y: Tp + ri * c + 1, width: c - 2, height: c - 2, rx: 3,
+        style: `fill:${seqColor(row.p[j])}` + (k === row.kstar ? ";stroke:var(--mark);stroke-width:2" : "") }, svg);
+      rect.addEventListener("mousemove", ev => showTip(ev, `${sub(row.nodes[j].formula)} (m=${row.m}, k=${k})<br>P(k|m) <b>${(100 * row.p[j]).toFixed(1)} %</b> · Ω <b>${row.v[j].toFixed(3)} eV</b><br>lowest from <b>${row.nodes[j].states[0].src}</b> · sources: ${[...new Set(row.nodes[j].states.map(s => s.src))].join(", ")}`));
+      rect.addEventListener("mouseleave", hideTip);
+    });
+  });
+  for (let k = 0; k <= kmax; k += (kmax > 12 ? 2 : 1)) svgEl("text", { x: L + k * c + c / 2, y: Tp + ms.length * c + 14, "text-anchor": "middle" }, svg, k);
+  svgEl("text", { x: L + (kmax + 1) * c / 2, y: H - 4, "text-anchor": "middle" }, svg, "k (" + D.units.MX + " units)");
+}
+
+function drawSpec(R) {
+  const box = $("spec"); box.innerHTML = "";
+  const W = 420, rowH = 26, L = 92, H = R.spec.length * rowH + 22;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "precursor speciation" }, box);
+  R.spec.forEach(([n, x], i) => {
+    const y = 4 + i * rowH, w = (W - L - 60) * x;
+    svgEl("text", { x: L - 8, y: y + 15, "text-anchor": "end" }, svg, D.units.MA + "(" + D.units.MX + ")" + n);
+    svgEl("rect", { x: L, y: y + 3, width: Math.max(w, 1), height: rowH - 8, rx: 4, style: "fill:var(--line)" }, svg);
+    svgEl("text", { x: L + Math.max(w, 1) + 6, y: y + 15 }, svg, (100 * x).toFixed(x > 0.999 || x < 0.001 ? 2 : 1) + " %");
+  });
+}
+
+function render() {
+  const ti = +$("t").value;
+  $("t-o").textContent = T[ti].toFixed(0) + " K";
+  $("cma-o").textContent = fmtC(Math.pow(10, +$("cma").value));
+  const tm = Math.pow(10, +$("time").value);
+  $("time-o").textContent = tm < 60 ? tm.toPrecision(2) + " s" : tm < 3600 ? (tm / 60).toPrecision(2) + " min" : tm < 86400 ? (tm / 3600).toPrecision(2) + " h" : (tm / 86400).toPrecision(2) + " d";
+  $("kconv-o").textContent = Math.pow(10, +$("kconv").value).toPrecision(2) + " M⁻¹s⁻¹";
+  $("ea-o").textContent = (+$("ea").value).toFixed(2) + " eV";
+  $("cmx-o").textContent = fmtC(Math.pow(10, +$("cmx").value));
+  $("kl-o").textContent = (+$("kl").value).toFixed(1);
+  $("cl-o").textContent = fmtC(Math.pow(10, +$("cl").value));
+  $("kl").disabled = $("cl").disabled = !$("amine").checked;
+  const R = compute();
+  $("r-alpha").textContent = (100 * R.alpha).toPrecision(3) + " % · " + R.kconv.toPrecision(2) + " M⁻¹s⁻¹";
+  $("r-cma").textContent = R.cma > 0 ? fmtC(R.cma) : "none";
+  $("r-left").textContent = R.left > 0 ? fmtC(R.left) : "none";
+  $("err").hidden = !R.error;
+  if (R.error) {
+    $("err").textContent = R.error;
+    ["r-mua", "r-mux", "r-cplx", "r-cmx", "r-start"].forEach(i => $(i).textContent = "–");
+    ["landscape", "heat", "spec", "rows"].forEach(i => $(i).innerHTML = "");
+    return;
+  }
+  $("r-mua").textContent = R.muMA.toFixed(3);
+  $("r-mux").textContent = R.muMX.toFixed(3);
+  $("r-cplx").textContent = fmtC(R.cplx) + " (" + R.meanN.toFixed(2) + ")";
+  $("r-cmx").textContent = fmtC(R.cmxFree);
+  const sk = D.start[0] + "," + D.start[1], sn = D.nodes.find(n => n.m === D.start[0] && n.k === D.start[1]);
+  $("r-start-l").innerHTML = "Ω of " + (sn ? sub(sn.formula) : sk) + " (eV, formation)";
+  $("r-start").textContent = R.Om.has(sk) ? R.Om.get(sk).toFixed(3) : "–";
+  drawLandscape(R); drawHeat(R); drawSpec(R);
+  $("rows").innerHTML = R.perM.map(p => `<tr><td>${p.m}</td><td>${p.kstar}</td><td>${p.mean.toFixed(2)}</td><td>${p.vmin.toFixed(3)}</td><td>${p.Om.toFixed(3)}</td><td>${p.src}</td><td>${p.file}</td></tr>`).join("");
+}
+["t", "cma", "cmx", "time", "kconv", "ea", "bare", "kl", "cl", "amine"].forEach(id => $(id).addEventListener("input", render));
+render();
+</script>

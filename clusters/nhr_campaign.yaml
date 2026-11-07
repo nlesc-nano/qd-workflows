@@ -1,0 +1,81 @@
+# NHR@ZIB for the structure-database campaign (qdw campaign): the pilot's tested CLX setup (Camilo's
+# CP2K 2026.2 CLX build, srun), whole nodes for every CP2K job, and the campaign's own code, MACE
+# references and monomer library under /scratch/projects/bep00157/qdw_campaign. No `campaign`/`budget`
+# blocks: those are in nhr.yaml (one poll of NHR).
+name: nhr_campaign
+scheduler: slurm
+cores_per_node: 96           # cpu-clx (96 cores, ~380 GB); cpu-clx:large has 765 GB
+request: nodes               # every CP2K job on whole nodes, all cores as MPI ranks (Ivan's rule)
+min_cores: 96
+mem_per_cpu: 3g
+node_memory_gb: 330          # usable on a standard cpu-clx node (380 GB minus the 40 GB Slurm keeps, MemSpecLimit)
+threads_per_core: 2
+qos: normal
+account: bep00157
+setup: []
+qdw_python: /home/becivinf/miniforge3/envs/qdw-compute/bin/python
+qdw_pythonpath: /scratch/projects/bep00157/qdw_campaign/code/qd-workflows/src:/scratch/projects/bep00157/qdw_campaign/code/Orchestr.AI/src
+
+cp2k:
+  module: null
+  env_script: /scratch/projects/bep00157/cp2k/2026.2-clx/cp2k_env
+  executable: cp2k.psmp
+  partition: cpu-clx
+  test_partition: cpu-clx:test     # 1 h, one running job per user across the test partitions
+  t_c_g: /scratch/projects/bep00157/cp2k/2026.2-clx/share/cp2k/data/t_c_g.dat
+  dftd3: /scratch/projects/bep00157/cp2k/2026.2-clx/share/cp2k/data/dftd3.dat
+  launcher: srun
+  field_parallel: 1
+  esp_parallel: 1
+  omp_num_threads: 1
+  monomer_library: /scratch/projects/bep00157/qdw_campaign/monomers/cp2k   # MA, MX_q once per formula
+  data_dir: /scratch/usr/becivinf/cp2k_basis
+  basis_file: BASIS_MOLOPT_UZH
+  potential_file: POTENTIAL_UZH
+  basis: DZVP-MOLOPT-GGA-GTH
+  potential: GTH-GGA
+  time:
+    geo_opt: "12:00:00"
+    pdos: "06:00:00"
+    trexio: "06:00:00"
+    sample: "02:00:00"
+    chain: "12:00:00"
+  calibration:
+    basis_functions: 24000
+    cores: 240
+    memory_gb: 340
+
+qdex:
+  command: /scratch/usr/becivinf/qdw_tests/cd176_pilot/code/bin/qdex
+  pythonpath: /scratch/usr/becivinf/qdw_tests/cd176_pilot/code/QDEX
+  gth_soc_file: /scratch/usr/becivinf/qdw_tests/cd176_pilot/code/QDEX/tests/CdSe/1.2nm/GTH_SOC_POTENTIALS.txt
+  max_states: 1000
+  eps_out: 2.24
+  g_shell: 2
+
+props:
+  dft_chain: false             # campaign: GPU and DFT campaigns run independently; the ledger joins them
+  partition: gpu-a100:shared   # 150 core-h per GPU-hour
+  test_partition: gpu-a100:test
+  gres: gpu:A100:1
+  cpus: 36
+  mem: 200G
+  time: "01:00:00"
+  conda_init: source /home/becivinf/miniforge3/etc/profile.d/conda.sh
+  conda_env: qdw-compute
+  env:
+    PYTHONPATH: /scratch/projects/bep00157/qdw_campaign/code/Orchestr.AI/src
+  model: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/models/macemh1model
+  head: omat_pbe
+  gxtb: /scratch/usr/becivinf/qdw_tests/B/from_hyperion/xtb/xtb-6.7.1/bin/gxtb
+  cif_dirs:
+    - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/cifs
+    - /scratch/usr/becivinf/qdw_tests/B/from_hyperion/escience/qdw-test/QD_Builder/examples/library/cifs
+  refs: /scratch/projects/bep00157/qdw_campaign/references   # MACE references and the MACE monomer library
+  settings:                    # Orchestr.AI settings of every campaign props job
+    detach_max_atoms: 2000     # desorption/adsorption ladder up to 2,000 atoms (Ivan, 2026-10-17)
+  cpu:
+    partition: cpu-clx
+    cpus: 96
+    mem: 180G
+    time: "01:00:00"

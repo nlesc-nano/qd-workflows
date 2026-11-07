@@ -21,4 +21,20 @@ export QDPROPS_REFS={{REFS}}
 
 # assembly steps only (field, vibspec, solvation, sites, report): the MACE steps come from the
 # GPU stage's cache (props.upstream: cached)
+# Progress log of the run (qdw log, $QDW_LOG): start and end of the job, and each step as it ends
+# with its key result (a follower reads this job's output).
+export QDW_LOG=${QDW_LOG:-{{QDW_LOG}}}
+qdwlog() { [ -z "$QDW_LOG" ] || env -u PYTHONHOME PYTHONPATH={{QDW_PYTHONPATH}} python -m qd_workflows.cli log "$@" > /dev/null 2>&1 || true; }
+T0=$(date +%s); STOP=.follow_stop.$SLURM_JOB_ID; rm -f $STOP
+OUT=$(scontrol show job $SLURM_JOB_ID 2>/dev/null | sed -n 's/^ *StdOut=//p'); [ -n "$OUT" ] || OUT=$SLURM_SUBMIT_DIR/slurm-$SLURM_JOB_ID.out
+qdwlog event cpu "start: {{JOB_NAME}}, $(echo "$SLURM_CPUS_PER_TASK cores"), limit {{TIME}}"
+[ -z "$QDW_LOG" ] || [ -z "{{RECORDS}}" ] || { qdwlog follow "$OUT" --stage cpu --records {{RECORDS}} --stop $STOP & FOLLOW=$!; }
+on_exit() {
+    local rc=$?
+    touch $STOP; [ -z "${FOLLOW:-}" ] || wait $FOLLOW; rm -f $STOP
+    if [ $rc -eq 0 ]; then qdwlog event cpu "end: {{JOB_NAME}}" --since $T0
+    else qdwlog event cpu "ERROR {{JOB_NAME}} ended with exit $rc (read $OUT)" --since $T0; fi
+}
+trap on_exit EXIT
+
 {{RUN}}

@@ -10,7 +10,7 @@ flowchart TB
     GEO["1 · geo_opt<br/>from the MACE structure"] --> FIELD["2 · field<br/>13 finite-field single points<br/>+ MA, MX_q monomers"]
     FIELD --> ESP["2b · esp<br/>potential + density cubes<br/>→ solvation.json"]
     ESP --> PDOS["3 · pdos<br/>all MO energies"] --> WIN["4 · MO window"]
-    WIN --> TRX["5 · TREXIO<br/>one diagonalisation"] --> TRIM["6 · trim"] --> QDEX["7 · QDEX<br/>→ webapp.json"]
+    WIN --> TRX["5 · TREXIO<br/>one diagonalisation"] --> TRIM["6 · trim"] --> QDEX["7 · QDEX<br/>qdex + qdex_trap<br/>→ webapp.json, dashboards"]
     GEO -. ".wfn" .-> FIELD
     GEO -. ".wfn" .-> ESP
     GEO -. ".wfn" .-> PDOS
@@ -58,14 +58,19 @@ ranks shared among them.
 
 ## 2b · esp (solvation cubes)
 
-Hartree-potential and electron-density cubes (stride 2) of four structures, with the field
+Hartree-potential and electron-density cubes (stride 2) of up to five structures, with the field
 step's single-point settings:
 
 | Run | Structure | Start |
 |---|---|---|
 | `dot_0` | the intact dot | restart from the geo_opt .wfn |
 | `dot_K` | the fully stripped dot, last state of the desorption ladder (`props/detach_K.xyz`) | atomic guess, own cell |
+| `dot_addK` | the fully added dot, last state of the adsorption ladder (`props/adsorb_K.xyz`), when there is one | atomic guess, own cell |
 | `MA`, `MX` | the monomers (`props/monomers.xyz`) | atomic guess, cell ≥ 15 Å |
+
+The dots run side by side when the memory holds them, the monomers after them. Orchestr.AI
+interpolates the stripped states between `dot_0` and `dot_K`; the webapp interpolates the added
+states (ladder up) between `dot_0` and `dot_addK` (`k_added` in `solvation.json`).
 
 `qdw cp2k esp collect` turns each pair of cubes into the COSMO conductor energy on the density
 isosurface and the isosurface area, written to `cp2k/solvation.json`
@@ -83,8 +88,17 @@ isosurface and the isosurface area, written to `cp2k/solvation.json`
 
 ## 7 · QDEX
 
-With the record's `record.json` present, QDEX runs on the trimmed orbitals on the first node's
-cores, then `qdw qdex webapp` writes `qdex/webapp.json` ([QDEX](qdex.md)).
+With the record's `record.json` present, QDEX runs twice on the trimmed orbitals, on the first
+node's cores ([QDEX](qdex.md)):
+
+| Run | sBSE |
+|---|---|
+| `qdex/` | every transition of the balanced window |
+| `qdex_trap/` | the same, without the transitions from or to surface states (`excitations: trap_filter: true`) |
+
+In each, `qdw qdex webapp` writes `webapp.json`, and `qdex dashboards .` rebuilds the HTML pages
+from the HDF5 files (log in `dashboards.out`; a failure there is reported and the chain goes on).
+The trap-filtered run reads the same `../orbitals.h5` and takes about a minute for Cd68Se55Cl26.
 
 ## Resources
 
@@ -106,7 +120,31 @@ $$
 
 reads at run time the memory Slurm granted, and runs side by side at most
 $\lfloor 0.8\, M_\mathrm{job} / M_\mathrm{run}\rfloor$ field single points (at most 13) and esp dots
-(at most 2). Examples: 5 at a time in 96 GB, all 13 in 336 GB (NHR, 48 × 7 GB).
+(at most 3). Examples: 5 at a time in 96 GB, all 13 in 336 GB (NHR, 48 × 7 GB).
+
+The job asks for its memory per node, `#SBATCH --mem` = the ranks on a node × `mem_per_cpu`, at
+most `node_memory_gb`, with the ranks spread evenly over the nodes (`--ntasks-per-node`). It does
+not ask per core: on NHR's cpu-genoa a job with `-n 48 --mem-per-cpu=7g` was planned on an idle
+node in every backfill cycle and never started (the Cd68 chain waited over an hour), while the same
+total as `--mem=336G` starts at once. Asked per node, the memory belongs to the job, not to its
+ranks, and an `srun` step that names none takes all of it: the next run side by side waits for it.
+So every run side by side asks for its share,
+
+$$
+M_\mathrm{step} = \frac{0.9\, M_\mathrm{node}}{k},\qquad
+k = \left\lceil \frac{n\, s}{N} \right\rceil,\qquad s = \left\lceil \frac{r}{p} \right\rceil
+$$
+
+per node for $n$ runs of $r$ ranks side by side on $N$ nodes of $p$ ranks (`srun --mem`). A run that
+fits on one node ($s = 1$) stays on one (`srun -N 1`): spread over two it would hold its memory on
+both and talk across them. On the Cd176 pilot (2 CLX nodes of 96 cores) the 13 field runs of 14
+ranks each were spread over both nodes and only 8 fitted at once. Since then, on several nodes each
+run gets as many ranks as let $\lceil n/N \rceil$ runs share a node (13 runs on 2 × 96 cores: 7 per
+node, 13 ranks each), and all of them start together. The chain prints the runs, ranks and
+memory of each step (`[chain] field: 13 side by side, 3 ranks and 23819M each`); what `srun` and
+CP2K print goes to `srun.log` in each run's directory, and the chain prints its last lines for the
+runs that did not finish. The reaction job (`qdw reaction`) does the same for its species, with a
+share by cores.
 
 ## Running a chain
 

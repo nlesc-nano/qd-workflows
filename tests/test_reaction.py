@@ -97,3 +97,18 @@ def test_speciate_mass_balance_and_both_equilibria():
             assert c["A"] / (c["L"] * c["H"]) == pytest.approx(math.exp(0.10 / kT), rel=1e-6)
             assert c["P"] * c["L"] / (c["D"] * c["H"] ** 2) == pytest.approx(math.exp(0.30 / kT), rel=1e-6)
             assert out["theta"][j] == pytest.approx(c["P"] / 1e-4)
+
+
+def test_isosurface_ignores_core_pockets():
+    # a pseudo-valence density that vanishes at the nucleus (Al, Cd, Pb, ...): the pocket below rho0
+    # around it is no part of the cavity, only the outer surface is
+    x = np.linspace(-4.0, 4.0, 81)
+    r2 = (x[:, None, None] ** 2 + x[None, :, None] ** 2 + x[None, None, :] ** 2) / solvation.BOHR_A ** 2
+    rho = 0.05 * np.exp(-r2 / 8.0) * r2 / (r2 + 1.0)
+    assert rho[40, 40, 40] < solvation.RHO_ISO
+    _, area, vol = solvation.isosurface({"axes": [x, x, x], "data": rho}, spacing=0.1)
+    filled = np.where(r2 < 4.0, np.maximum(rho, 1.0), rho)
+    _, area_f, vol_f = solvation.isosurface({"axes": [x, x, x], "data": filled}, spacing=0.1)
+    assert area.sum() == pytest.approx(area_f.sum())
+    assert len(area) == len(area_f)
+    assert vol == pytest.approx(vol_f)

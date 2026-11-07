@@ -1,0 +1,50 @@
+# Shape library of zinc-blende CdSe for facet energies, edge tensions and CdCl2 binding (python -m qd_workflows.shapes).
+# cif: relative to this file or absolute; the QD_builder library CIF keeps the shapes consistent with the campaign dots.
+material: CdSe
+phase: zinc-blende
+cif: /Users/ivaninfante/Documents/University/escience/QD_builder/examples/cifs/CdSe_zb.cif
+native_elements: [Cd, Se]          # cation, anion; everything else is a ligand
+centres: [Cd, Se]
+positive_q_mode: add
+sizes: {start: 0.5, stop: 3.0, step: 0.25}      # unit cells along the shortest axis
+aspects:                            # cell multipliers per axis
+  - [1, 1, 1]                       # isotropic
+  - [1, 1, 0.5]                     # platelet
+  - [1, 1, 2]                       # rod
+max_atoms: 600
+min_core_atoms: 20
+min_interatomic_distance: 1.8
+
+preset:
+  charges: {Cd: 2, Se: -2, Cl: -1}
+  passivation:
+    ligand: Cl
+    surf_tol: 2.0
+    prepass_mode: role-aware
+    prepass_min_cn_terrace: 3
+    prepass_min_cn_edge: 2
+    prepass_min_cn_vertex: 1
+  symmetry: {proper_rotations_only: true}
+
+selection:                          # python -m qd_workflows.shapes select (these are the defaults, written out)
+  exposed_share: 0.02               # a family counts as exposed above this area share
+  fit:                              # D-optimal on facet areas, edge lengths by type, vertex count
+    tiers: [{max_atoms: 300, n: 60}, {max_atoms: 600, n: 30}]
+    per_shape: 6                    # at most this many dots per exposed-facet combination
+  groups:                           # facet-resolved binding: pure single-family shapes, pure polar pairs (111A+111B)
+    max_atoms: 300
+    n_pure: 5
+    min_pure: 3                     # fewer pure dots than this: a 'dominated' group instead (e.g. {100}: no neutral cubes)
+    dominated_share: 0.6
+    n_dominated: 4
+  strip:                            # stripped to the bare core
+    per_group: 2
+    mixed: 2                        # fit dots with >= mixed_min_families exposed families
+    mixed_min_families: 3
+    atoms: [60, 200]
+
+facets:                             # null: family absent; gammas are normalised to the smallest one present
+  - {hkl: "100", termination: cation_rich, gamma: [null, 1.0, 1.2, 1.5]}
+  - {hkl: "111", termination: cation_rich, gamma: [null, 1.0, 1.2, 1.5]}
+  - {hkl: "-1-1-1", termination: anion_rich, gamma: [null, 1.0, 1.2, 1.5]}
+  - {hkl: "110", gamma: [null, 1.0, 1.2, 1.5]}

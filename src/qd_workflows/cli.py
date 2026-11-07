@@ -16,8 +16,8 @@ def _cp2k(args) -> int:
         window = json.loads(open(args.window).read()) if args.window else None
         info = inputs.prepare(args.xyz, args.step, args.project, args.out, load_cluster(args.cluster),
                               wfn=args.wfn, window=window, charge=args.charge, optimizer=args.optimizer,
-                              data_dir=args.data_dir, time=args.time, qos=args.qos)
-        print(json.dumps({k: info[k] for k in ("project", "step", "n_atoms", "basis_functions",
+                              data_dir=args.data_dir, time=args.time, qos=args.qos, method=args.method)
+        print(json.dumps({k: info[k] for k in ("project", "step", "method", "n_atoms", "basis_functions",
                                                 "occupied_mos", "cell_A", "resources")}, indent=1))
     elif args.action == "chain":
         info = inputs.chain(args.xyz, args.project, args.out, load_cluster(args.cluster), cluster_ref=args.cluster,
@@ -39,13 +39,18 @@ def _cp2k(args) -> int:
     elif args.action == "esp":
         from .cp2k import esp
         if args.esp_action == "prepare":
-            print(" ".join(esp.prepare(args.base, args.out, stripped=args.stripped, monomers=args.monomers)))
+            print(" ".join(esp.prepare(args.base, args.out, stripped=args.stripped, monomers=args.monomers,
+                                       added=args.added)))
         elif args.esp_action == "status":
             print(esp.status(args.dir))
         else:
             data = esp.write(args.dir, args.output)
             print(json.dumps({n: {k: round(v, 4) if isinstance(v, float) else v for k, v in s.items()}
                               for n, s in data["species"].items()}, indent=1))
+    elif args.action == "scf-restart":
+        from .cp2k import esp
+        for d in args.dirs:
+            print(f"{d}: {esp.scf_restart(d)}")
     elif args.action == "label":
         from .xyz import read_xyz
         symbols, _ = read_xyz(args.xyz)
@@ -59,7 +64,8 @@ def _qdex(args) -> int:
     from . import qdex
     if args.action == "prepare":
         info = qdex.prepare(args.record, args.window, args.out, load_cluster(args.cluster), orbitals=args.orbitals,
-                            geom=args.geom, threads=args.threads, max_states=args.max_states)
+                            geom=args.geom, threads=args.threads, max_states=args.max_states,
+                            trap_filter=args.trap_filter)
     elif args.action == "webapp":
         info = qdex.webapp(args.dir, args.window)
         if args.output:
@@ -143,6 +149,128 @@ def _compare(args) -> int:
     return 1 if res["failed"] else 0
 
 
+def _log(args) -> int:
+    from . import runlog
+    if args.action == "event":
+        msg = " ".join(args.message)
+        if args.since:
+            msg += f" ({runlog.hms(__import__('time').time() - float(args.since))})"
+        line = runlog.write(args.stage, msg)
+    elif args.action == "cp2k":
+        line = runlog.write(args.stage, f"{args.label} done: {runlog.cp2k_result(args.dir)}")
+    elif args.action == "window":
+        line = runlog.write(args.stage, f"window: {runlog.window_result(args.file)}")
+    elif args.action == "qdex":
+        line = runlog.write(args.stage, f"{args.label} done: {runlog.qdex_result(args.dir)}")
+    else:
+        runlog.follow(args.slurm_out, args.stage, args.records, args.stop, poll=args.poll)
+        return 0
+    if not runlog.log_path():
+        print(line)
+    return 0
+
+
+def _status(args) -> int:
+    import time
+    from . import runlog
+    while True:
+        text = runlog.status(args.run, n_log=args.lines)
+        if not args.watch:
+            print(text)
+            return 0
+        print("\033[2J\033[H" + text, flush=True)
+        time.sleep(args.watch)
+
+
+def _monomers(args) -> int:
+    from . import monomers
+    lib = args.library if getattr(args, "library", None) else None
+    if not lib and getattr(args, "cluster", None):
+        lib = load_cluster(args.cluster)["cp2k"].get("monomer_library")
+    if args.action == "species":
+        print(json.dumps(monomers.species(args.materials), indent=1))
+    elif args.action == "prepare":
+        res = monomers.prepare_jobs(args.dir, load_cluster(args.cluster), args.cluster, args.materials.split(","),
+                                    qos=args.qos, test_queue=args.test_queue)
+        print(f"{len(res['species'])} monomers -> {res['library']}; submit with {args.dir}/submit.sh")
+    elif args.action == "write":
+        print("\n".join(monomers.write_cp2k(lib, args.xyz, load_cluster(args.cluster))))
+    elif args.action == "todo":
+        print("\n".join(monomers.todo(lib)))
+    elif args.action == "status":
+        print(json.dumps(monomers.status(lib), indent=1))
+    else:
+        rows = monomers.link(args.esp, args.monomers, lib)
+        print(json.dumps(rows, indent=1))
+    return 0
+
+
+def _campaign(args) -> int:
+    from . import campaign
+    if args.action == "status":
+        cl = None
+        if args.cluster:
+            from .cluster import load_cluster
+            cl = load_cluster(args.cluster)
+        res = campaign.status(args.dir, update=args.update, cluster=cl)
+        print(json.dumps(res, indent=1, default=str) if args.json else campaign.text(res))
+    elif args.action == "poll":
+        res = campaign.poll(args.clusters.split(",") if args.clusters else None, update=not args.no_update)
+        print(json.dumps(res, indent=1, default=str) if args.json else campaign.poll_text(res))
+    elif args.action == "legacy-records":
+        from . import legacy
+        res = legacy.make_records(args.dir, args.out, args.search or [], max_atoms=args.max_atoms,
+                                  update_ledger=args.update_ledger, strip_extra=args.strip_extra)
+        print(json.dumps(res, indent=1))
+    else:
+        campaign.add(args.dir, {"id": args.id, "material": args.material, "source": args.source,
+                                "record": args.record, "log": args.log,
+                                "legacy": dict(kv.split("=", 1) for kv in args.legacy) if args.legacy else None})
+        print(f"{args.id} added to {campaign.ledger_path(args.dir)}")
+    return 0
+
+
+def _sites(args) -> int:
+    """qdw sites: the site-kinetics protocol, one step per action (qd_workflows.sitekin)."""
+    from .sitekin import build, inputs, jobs, neb, recipe, reference, sites, states, table
+    if args.action == "job":                              # the cluster block; the steps there read <run>/recipe.yaml
+        r = recipe.load(args.recipe)
+    elif args.action == "recipe":
+        r = None
+    else:
+        r, rpath = recipe.for_run(args.run, args.recipe)
+    sizes = [recipe.tag(float(x)) for x in args.sizes.split(",")] if getattr(args, "sizes", None) else None
+    if args.action == "recipe":
+        print(recipe.template_path().read_text(), end="")
+        return 0
+    if args.action == "job":
+        p = jobs.write(r, args.run, args.steps.split(","), None, args.output,
+                       time=args.time, name=args.name)
+        print(p)
+        return 0
+    engine = None
+    if args.action in jobs.GPU_STEPS:
+        from .sitekin.engine import Engine
+        engine = Engine(r["model"]["path"], r["model"]["head"])
+    if args.action == "build":
+        build.run(r, args.run, sizes, recipe_path=rpath)
+    elif args.action == "reference":
+        reference.run(r, args.run, engine, sizes)
+    elif args.action == "pick":
+        sites.run(r, args.run, sizes)
+    elif args.action == "states":
+        states.run(r, args.run, engine, sizes)
+    elif args.action == "table":
+        table.run(r, args.run)
+    elif args.action == "neb-prepare":
+        neb.prepare(r, args.run, sizes, args.roles.split(",") if args.roles else None)
+    elif args.action == "neb":
+        neb.run(r, args.run, engine, args.dirs or None)
+    elif args.action == "inputs":
+        inputs.run(args.run)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="qdw", description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -157,10 +285,12 @@ def main(argv=None) -> int:
     p.add_argument("--wfn", help="geo_opt restart file read by the later steps")
     p.add_argument("--window", help="window.json from `qdw cp2k window` (trexio step)")
     p.add_argument("--charge", type=int, default=0, help='total charge')
-    p.add_argument("--optimizer", default="auto", help="geo_opt: auto (LBFGS above 1,000 atoms), BFGS or LBFGS")
+    p.add_argument("--optimizer", default="auto", help="geo_opt: auto (BFGS at every size), BFGS or LBFGS")
     p.add_argument("--data-dir", help="local copy of the CP2K data files (default: $QDW_CP2K_DATA, then the cluster path)")
     p.add_argument("--time", help="wall time, overriding the cluster profile (e.g. 00:10:00)")
     p.add_argument("--qos", help="QoS, overriding the cluster profile (e.g. test)")
+    p.add_argument("--method", default="gapw", choices=("gapw", "gpw"),
+                   help="gapw (the templates) or gpw (default REL_CUTOFF; the chains above 600 atoms, file METHOD)")
 
     p = cp.add_parser("chain", help="one job for geo_opt, PDOS, window, TREXIO and trim")
     p.add_argument("xyz", help="MACE-relaxed structure")
@@ -168,7 +298,7 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True, help='output directory of the chain')
     p.add_argument("--cluster", default="default", help='cluster profile')
     p.add_argument("--charge", type=int, default=0, help='total charge')
-    p.add_argument("--optimizer", default="auto", help='geo_opt optimiser: auto (LBFGS above 1,000 atoms), BFGS or LBFGS')
+    p.add_argument("--optimizer", default="auto", help='geo_opt optimiser: auto (BFGS at every size), BFGS or LBFGS')
     p.add_argument("--data-dir", help='local copy of the CP2K data files (default: $QDW_CP2K_DATA, then the cluster path)')
     p.add_argument("--record", help="record.json of the structure; adds QDEX as the last step")
     p.add_argument("--time", help="wall time of the whole chain")
@@ -195,12 +325,16 @@ def main(argv=None) -> int:
     p.add_argument("base", help="the chain's single-point input (field/base/cp2k.inp)")
     p.add_argument("out", help='directory of the esp runs')
     p.add_argument("--stripped", help="fully stripped dot: props/detach_<K>.xyz")
+    p.add_argument("--added", help="fully added dot: props/adsorb_<K>.xyz (adsorption ladder)")
     p.add_argument("--monomers", help="props/monomers.xyz (frames MA, MX)")
     p = ep.add_parser("status", help='"all done" or the runs still to do')
     p.add_argument("dir", help='directory of the esp runs')
     p = ep.add_parser("collect", help="COSMO energy and isosurface area of every run")
     p.add_argument("dir", help='directory of the esp runs')
     p.add_argument("-o", "--output", required=True, help='solvation.json to write')
+
+    p = cp.add_parser("scf-restart", help="runs stopped with 'SCF run NOT converged': restart from their own .wfn (at most 3 times)")
+    p.add_argument("dirs", nargs="+", help="run directories")
 
     p = cp.add_parser("label", help="energy and forces of a sample single point")
     p.add_argument("xyz", help='structure of the single point')
@@ -217,6 +351,8 @@ def main(argv=None) -> int:
     p.add_argument("--geom", default="../relaxed.xyz", help="geometry, relative to --out")
     p.add_argument("--threads", type=int, default=8, help='OpenMP threads for QDEX')
     p.add_argument("--max-states", type=int, help="occupied and virtual MOs in the sBSE, at most (default 1000)")
+    p.add_argument("--trap-filter", action="store_true",
+                   help="leave the transitions from or to surface states (Facet, Localized) out of the sBSE")
     p = qp.add_parser("summary", help="frontier levels, gaps and excitons (spin-free and SOC) as JSON")
     p.add_argument("dir", help="QDEX run directory (qdex_electronic.h5, qdex_excitations.h5)")
     p.add_argument("-o", "--output", help='JSON file to write (default: print)')
@@ -273,6 +409,119 @@ def main(argv=None) -> int:
     p = rp.add_parser("analyse", help="results/: results.json, summary.json, plots, reaction.html")
     p.add_argument("run", help="run directory")
 
+    lp = sub.add_parser("log", help="progress log of a run ($QDW_LOG): one line per event").add_subparsers(
+        dest="action", required=True)
+    p = lp.add_parser("event", help="a line of free text")
+    p.add_argument("stage", help="gpu, chain, cpu, ...")
+    p.add_argument("message", nargs="+", help="what happened")
+    p.add_argument("--since", help="epoch seconds: append the time elapsed since then")
+    p = lp.add_parser("cp2k", help="a CP2K run's key numbers (energy, steps, wall time) from its cp2k.out")
+    p.add_argument("stage", help="stage name")
+    p.add_argument("label", help="step name in the log")
+    p.add_argument("dir", help="directory with cp2k.out")
+    p = lp.add_parser("window", help="the MO window (KS gap, MOs kept)")
+    p.add_argument("stage", help="stage name")
+    p.add_argument("file", help="window.json")
+    p = lp.add_parser("qdex", help="QDEX gaps and lowest excitons from webapp.json")
+    p.add_argument("stage", help="stage name")
+    p.add_argument("label", help="step name in the log")
+    p.add_argument("dir", help="QDEX run directory")
+    p = lp.add_parser("follow", help="log an Orchestr.AI PROPS job's steps as they end (runs until --stop exists)")
+    p.add_argument("slurm_out", help="the job's output file")
+    p.add_argument("--stage", required=True, help="stage name")
+    p.add_argument("--records", nargs="+", required=True, help="record directories of the job")
+    p.add_argument("--stop", required=True, help="file whose creation ends the follower")
+    p.add_argument("--poll", type=float, default=10.0, help="seconds between reads")
+
+    p = sub.add_parser("status", help="queue, progress of each record's steps and the end of the run's log")
+    p.add_argument("run", help="run directory (records in <run>/rec/*, log in $QDW_LOG or <run>/pilot.log)")
+    p.add_argument("--watch", type=float, help="refresh every this many seconds")
+    p.add_argument("--lines", type=int, default=25, help="log lines to show")
+
+    mp = sub.add_parser("monomers", help="monomer library: MA and MX_q computed once per formula (stage 1)").add_subparsers(
+        dest="action", required=True)
+    p = mp.add_parser("species", help="the monomer names of these materials")
+    p.add_argument("materials", nargs="+", help="CdSe InP PbS ...")
+    p = mp.add_parser("prepare", help="gpu.sh (MACE), cpu.sh (CP2K, side by side) and submit.sh")
+    p.add_argument("dir", help="job directory")
+    p.add_argument("--cluster", required=True, help="cluster profile (needs cp2k.monomer_library)")
+    p.add_argument("--materials", required=True, help="comma-separated: CdSe,InP,PbS,...")
+    p.add_argument("--qos", help="Slurm QOS")
+    p.add_argument("--test-queue", action="store_true", help="both jobs on the test partitions (1 h)")
+    p = mp.add_parser("write", help="the library's CP2K inputs from the MACE geometries (inside cpu.sh)")
+    p.add_argument("xyz", help="monomers.xyz of the GPU job")
+    p.add_argument("--cluster", required=True)
+    p.add_argument("--library", help="default: the profile's cp2k.monomer_library")
+    for name, hlp in (("todo", "library runs still to do, one directory per line"), ("status", "finished and missing runs")):
+        p = mp.add_parser(name, help=hlp)
+        p.add_argument("--library")
+        p.add_argument("--cluster")
+    p = mp.add_parser("link", help="link a dot's monomer runs to the library entries (inside the chain)")
+    p.add_argument("--esp", help="the chain's esp directory")
+    p.add_argument("--monomers", required=True, help="props/monomers.xyz of the dot")
+    p.add_argument("--library")
+    p.add_argument("--cluster")
+
+    cp = sub.add_parser("campaign", help="the dots of the structure database: ledger, state, budget").add_subparsers(
+        dest="action", required=True)
+    p = cp.add_parser("status", help="state of every dot (from its files, the queue and the logs), the budget, what changed")
+    p.add_argument("dir", help="campaign directory (with campaign.yaml)")
+    p.add_argument("--json", action="store_true", help="machine-readable (for the watchdog and the agents)")
+    p.add_argument("--update", action="store_true", help="keep this as the snapshot the next call compares with")
+    p.add_argument("--cluster", help="cluster profile for the budget (default: the ledger's `cluster`)")
+    p = cp.add_parser("poll", help="campaign status on every cluster whose profile has a campaign block (over ssh)")
+    p.add_argument("--clusters", help="comma-separated profile names (default: all with a campaign block)")
+    p.add_argument("--json", action="store_true", help="machine-readable")
+    p.add_argument("--no-update", action="store_true", help="look only: keep the snapshots as they are")
+    p = cp.add_parser("legacy-records", help="records (record.json + start.xyz) for the earlier DFT dots from their geometries")
+    p.add_argument("dir", help="campaign directory")
+    p.add_argument("--out", required=True, help="directory for the records, one per dot")
+    p.add_argument("--search", nargs="*", help="geometry paths with {id}, tried when the ledger has no legacy.geo")
+    p.add_argument("--max-atoms", type=int, default=2000)
+    p.add_argument("--strip-extra", action="store_true",
+                   help="drop atoms of elements not in the id's formula (organic ligands/solvent of the DFT run)")
+    p.add_argument("--update-ledger", action="store_true", help="list each new record in the ledger")
+    p = cp.add_parser("add", help="list one more dot in the ledger")
+    p.add_argument("dir", help="campaign directory")
+    p.add_argument("id", help="dot id (the record name)")
+    p.add_argument("--material", help="CdSe, InP, ...")
+    p.add_argument("--source", default="qd_builder", help="qd_builder | legacy | pilot")
+    p.add_argument("--record", help="record directory")
+    p.add_argument("--log", help="the run log of its batch")
+    p.add_argument("--legacy", nargs="*", help="key=path of earlier results (geo=..., qdex=...)")
+
+    sp = sub.add_parser("sites", help="site-kinetics protocol: builder sites, K_X, Delta mu_f, NEB k_dir/k_disp"
+                        ).add_subparsers(dest="action", required=True)
+    steps = {"build": "QD_builder dot per size with the builder's site roles -> dots/",
+             "reference": "relax each dot, no anneal (GPU) -> reference/",
+             "pick": "one site per symmetry-distinct environment of each role, three states -> sites/",
+             "states": "relax every state, partial-Hessian G, free CdCl2 (GPU) -> states/",
+             "table": "dG_bind,X, K_X and Delta mu_f per size, role, environment -> role_table.json",
+             "neb-prepare": "k_disp and k_dir endpoints and marked xyz, one site per role -> neb/",
+             "neb": "the prepared NEBs: loose bands, window climbing image, PHVA at the TS (GPU)",
+             "inputs": "role table + NEB results -> kinetics_inputs.json"}
+    for name, text in steps.items():
+        p = sp.add_parser(name, help=text)
+        p.add_argument("run", help="run directory")
+        p.add_argument("--recipe", help="protocol recipe YAML (default: <run>/recipe.yaml, written by build from "
+                                        "this option or the CdSe/CdCl2 template)")
+        if name in ("build", "reference", "pick", "states", "neb-prepare"):
+            p.add_argument("--sizes", help="only these sizes, e.g. 1.0,2.5 (neb-prepare: default the recipe's neb.sizes)")
+        if name == "neb-prepare":
+            p.add_argument("--roles", help="only these builder roles, comma-separated")
+        if name == "neb":
+            p.add_argument("dirs", nargs="*", help="only these NEB directories (default: every one without a result)")
+    p = sp.add_parser("recipe", help="print the CdSe/CdCl2 template recipe")
+    p.add_argument("--recipe", help=argparse.SUPPRESS)
+    p = sp.add_parser("job", help="batch script for GPU steps (cluster block of the recipe)")
+    p.add_argument("run", help="run directory, as seen on the cluster")
+    p.add_argument("--steps", required=True, help="comma-separated GPU steps: reference, states, neb")
+    p.add_argument("--recipe", help="local recipe YAML for the cluster block (default: the template); the steps "
+                                    "on the cluster read <run>/recipe.yaml")
+    p.add_argument("-o", "--output", required=True, help="script to write")
+    p.add_argument("--time", default="02:00:00", help="wall time")
+    p.add_argument("--name", default="sitekin", help="job name")
+
     p = sub.add_parser("compare", help="compare two props/properties.json (Phase 0 gate)")
     p.add_argument("ref", help='reference properties.json')
     p.add_argument("new", help='properties.json to compare')
@@ -281,7 +530,8 @@ def main(argv=None) -> int:
 
     args = ap.parse_args(argv)
     return {"cp2k": _cp2k, "qdex": _qdex, "props": _props, "reaction": _reaction,
-            "compare": _compare}[args.group](args)
+            "compare": _compare, "sites": _sites, "log": _log, "status": _status, "campaign": _campaign,
+            "monomers": _monomers}[args.group](args)
 
 
 if __name__ == "__main__":
