@@ -67,6 +67,7 @@ OUT_CH = (0.3, 0.5, 0.5)                     # dense outputs: change of ln C_M, 
 M_STEP = 5.0                                 # largest change of the dots' <m> per step (CdSe units), once they hold
 DOT_SEEN = 1e-12                             # this share of the CdSe (the burst: <m> 13 -> 140 in ~0.4 s); M_STEP 1
                                              # took 1.7x the steps (acetate p2 to 20 s: dots within 1.5e-3, alpha 3e-5)
+PRED_UPTAKE = 0.05                           # balance predictor while the states take less than this share of the pool
 STALL_TRIES = 400                            # step attempts between two outputs before a run is stopped as stalled
 M_DOT = 13                                   # a dot: m >= the seed's 13 CdSe (the grid -> network hand-over)
 FAMILIES = ("100", "111A", "111B", "110")
@@ -809,15 +810,17 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             break
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
-        # predictor: the pool's balance, the supply over the step less what the states took at the last step's rate
-        # (one Newton iteration fewer than extrapolating ln C while C_M grows with the supply); else the pool's last
-        # rate of change
+        # predictor: the pool's balance, the supply over the step less what the states take at the last step's rate
+        # (one Newton iteration fewer than extrapolating ln C while C_M grows with the supply), while that uptake moves
+        # the pool by less than PRED_UPTAKE; else the pool's last rate of change (the uptake follows the pool it
+        # depletes, which a fixed rate overshoots on the long steps after the burst)
         x1 = conv(x, math.exp(u[1]), dt, t1)
         f0, f1 = feed.phi(t), feed.phi(t1)
         tk = took + 0.5 * dt * d_took                   # the uptake's mean over the step, its rate extrapolated
         cm = math.exp(u[0]) * f1 / f0 + f1 * (x1 - x - dt * tk[0])
         cx = math.exp(u[1]) * f1 / f0 - f1 * (x1 - x + dt * tk[1])
-        if cm > 0 and cx > 0:
+        if (dudt is None or f1 * dt * abs(tk[0]) < PRED_UPTAKE * cm and f1 * dt * abs(tk[1]) < PRED_UPTAKE * cx) \
+                and cm > 0 and cx > 0:
             v = np.array([math.log(cm), math.log(cx)])
         elif dudt is None:
             v = np.array([math.log(max(math.exp(u[0]) * f1 / f0 + f1 * (x1 - x), f1 * x1 * 1e-12)),
