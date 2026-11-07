@@ -52,6 +52,8 @@ class NetSim:
                     self.nuc.limits[k] = list(ng.LIMITS[k])        # the network's ranges, not the old page's
         self.runs: OrderedDict = OrderedDict()
         self.jobs: dict = {}
+        self.run_lock = threading.Lock()         # one run at a time: two MUMPS factorizations in one process crash it
+                                                 # (MUMPS_LOAD_INIT is not thread-safe), and they would share the cores
         g = np.load(net.folder / "geometry.npz")
         self.geo = (g["symbols"], g["positions"], g["offsets"])
         self.elements = net.meta.get("elements", ("Cd", "Se", "Cl"))   # exports before the carboxylate networks: no list
@@ -92,7 +94,16 @@ class NetSim:
 
         def work():
             try:
-                job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s), stop=lambda: job["stop"])
+                if not self.run_lock.acquire(blocking=False):
+                    job["log"] = "waiting for the run before it to end"
+                    while not self.run_lock.acquire(timeout=0.5):
+                        if job["stop"]:
+                            job["state"], job["error"] = "error", "stopped before it started (another run was going)"
+                            return
+                try:
+                    job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s), stop=lambda: job["stop"])
+                finally:
+                    self.run_lock.release()
                 job["state"] = "done"
             except Exception as exc:                            # reported to the page
                 job["state"], job["error"] = "error", str(exc)
