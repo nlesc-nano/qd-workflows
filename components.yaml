@@ -4,7 +4,7 @@ components:
   QD_builder:
     repo: git@github.com:nlesc-nano/QD_Builder.git
     branch: main
-    commit: 7c510ed   # nucleation.py needs builder.z_type_target (not in 956ade4)
+    commit: 330fc4b   # main with fix/followups (6561a07: the layer/island builds; 1.0 cells -> Cd16Se13Cl6)
   Orchestr.AI:
     repo: https://github.com/nlesc-nano/Orchestr.AI.git
     branch: feature/qd-properties   # from camilo (dba7514)

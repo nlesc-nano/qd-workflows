@@ -118,7 +118,7 @@ def test_single_bond_cations_count_z_type_units():
 
 
 def _record(tmp_path):
-    """The CdSe test start (Cd28Se13Cl30, 1.25 cells, Se centre) as a record folder."""
+    """The CdSe test start (1.0 cells, Se centre: Cd16Se13Cl6 with QD_builder 6561a07 and later) as a record folder."""
     pytest.importorskip("builder.scripts.generate_library")
     import copy
     import yaml
@@ -127,7 +127,7 @@ def _record(tmp_path):
                           "cdse_zb.yaml").read_text())
     if not Path(cfg["cif"]).is_file():
         pytest.skip("QD_builder CIF not on this machine")
-    recipe = copy.deepcopy(cfg["preset"]) | {"size_unit_cells": [1.25] * 3, "construction_origin": {"center_on_species": "Se"}}
+    recipe = copy.deepcopy(cfg["preset"]) | {"size_unit_cells": [1.0] * 3, "construction_origin": {"center_on_species": "Se"}}
     rec = tmp_path / "start"
     rec.mkdir()
     res = _build(cfg["cif"], recipe, "add", tmp_path / "b")
@@ -140,8 +140,9 @@ def _record(tmp_path):
 
 def test_seeds_are_both_ends_of_the_mx_range(tmp_path):
     """Invariants of the two seeds for whatever dot the builder cuts: the full seed is the start's composition (no free
-    host site on it), the X-type seed has k_X = k_full - the single-bond cations and none of them left, same core. On the
-    CdSe start this pilot used (Cd28Se13Cl30) the X-type seed is the symmetric Cd16Se13Cl6."""
+    host site left: the start's core with k at least the start's), the X-type seed has k_X = k_full - the single-bond
+    cations and none of them left, same core. On CdSe (Se13 core) the full seed is Cd28Se13Cl30 and the X-type seed the
+    symmetric Cd16Se13Cl6."""
     from collections import Counter
     from scipy.spatial import cKDTree
     from builder.z_type_target import run_z_type_target  # noqa: F401  (a QD_builder with z_type_target)
@@ -153,12 +154,12 @@ def test_seeds_are_both_ends_of_the_mx_range(tmp_path):
     sx, px = nu._read_xyz(rec / nu.SEED_X)
     d = 2.632
     n1 = nu.single_bond_cations(sf, pf, "Cd", "Se", d)
-    assert (by["down"]["m"], by["down"]["k"]) == (13, s0.count("Cl") // 2)                 # the start's own k
-    assert (by["up"]["m"], by["up"]["k"]) == (13, by["down"]["k"] - n1)
+    assert by["down"]["m"] == s0.count("Se") and by["down"]["k"] >= s0.count("Cl") // 2    # the start's core, full
+    assert (by["up"]["m"], by["up"]["k"]) == (by["down"]["m"], by["down"]["k"] - n1)
     assert by["up"]["ledger"] == {"method": "strip_z_units", "units_removed": n1, "k_full": by["down"]["k"]}
     assert nu.single_bond_cations(sx, px, "Cd", "Se", d) == 0
     assert 2 * sx.count("Cd") == 2 * sx.count("Se") + sx.count("Cl")                       # neutral
-    if Counter(s0) == Counter({"Cd": 28, "Se": 13, "Cl": 30}):
+    if Counter(sf) == Counter({"Cd": 28, "Se": 13, "Cl": 30}):
         t = cKDTree(px)
         cn = Counter((sum(sx[j] == "Se" for j in t.query_ball_point(px[i], 2.9)),
                       sum(sx[j] == "Cl" for j in t.query_ball_point(px[i], 2.9))) for i, e in enumerate(sx) if e == "Cd")
