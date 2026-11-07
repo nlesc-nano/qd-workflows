@@ -42,6 +42,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from . import shape_ladder as sl
+from . import sxl_engine
 
 BOND = 2.686          # A, ideal zinc-blende Cd-Se bond (a sqrt(3)/4, a = 6.203 A)
 CL_BOND = 2.45        # A, Cd-Cl
@@ -404,6 +405,7 @@ class Kinetics:
         self.sites, self.islands = data["sites"], data.get("islands", [])
         self.out = Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
+        sxl_engine.configure()
         self.cache = dt.RelaxCache(SimpleNamespace(props=self.out, settings=settings, record_dir=self.out))
         self.nimg, self.fmax, self.steps = neb_images, fmax, steps
         sp = self.out / "state.json"

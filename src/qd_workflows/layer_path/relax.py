@@ -26,6 +26,7 @@ import numpy as np
 import yaml
 
 from . import lattice as L
+from .. import sxl_engine
 
 
 def stage(net, results, wave, n_batches, staged="staged.json"):
@@ -61,6 +62,7 @@ def relax_states(root, model, out, pattern="*.xyz"):
     root, out = Path(root), Path(out)
     st = Settings(model=model, head="omat_pbe", dtype="float64", hessian="fd", detach_quick=False, detach_screen=False,
                   detach_rigid_refresh=False, detach_frames=False)
+    sxl = sxl_engine.configure()
     cache = dt.RelaxCache(SimpleNamespace(props=root, settings=st, record_dir=root))
     files = sorted(p for p in root.glob(pattern) if not p.stem.endswith("_relaxed"))
     structs = [(list(s), x) for s, x in map(L.read_xyz, files)]
@@ -80,7 +82,8 @@ def relax_states(root, model, out, pattern="*.xyz"):
         print(f"{p.stem}: E = {e:.5f} eV  converged {ok}  imaginary {rows[p.stem]['n_imaginary']}  "
               f"lowest {f.min():.1f} cm-1  ({time.time() - t0:.0f} s)", flush=True)
         out.write_text(json.dumps({"settings": {"model": model, "head": st.head, "dtype": st.dtype, "hessian": st.hessian,
-                                                "relaxer": st.relaxer(), "polish_fmax": dt.POLISH_FMAX},
+                                                "relaxer": st.relaxer(), "polish_fmax": dt.POLISH_FMAX,
+                                                "engine": sxl or {"engine": "mace-torch"}},
                                    "states": rows}))
     cache.close()
     print("done", flush=True)

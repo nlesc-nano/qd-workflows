@@ -10,6 +10,8 @@ import os
 
 import numpy as np
 
+from .. import sxl_engine
+
 KB, NA = 8.617333262e-5, 6.02214076e23
 CM_PER_SQRT_EV_A2_AMU = 521.47090            # sqrt(eV / (A^2 amu)) in cm^-1
 
@@ -39,6 +41,7 @@ class Engine:
 
     def __init__(self, model: str, head: str = "omat_pbe", device: str = "cuda", max_atoms: int = 8000):
         install_oeq()
+        sxl_engine.configure()
         import orchestr_ai.qd.batch_relax as br
         from orchestr_ai.qd.engines import mace_calculator
         import torch

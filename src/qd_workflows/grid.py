@@ -35,6 +35,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from . import sxl_engine
+
 INF = 1e9
 BEAM = 3              # structures kept per node
 DELTA = 0.05          # eV above the node's best (~2 kT at 300 K)
@@ -179,6 +181,7 @@ class Grid:
         nb0 = _bonds(list(sym0), np.asarray(pts0, float), _cutoffs(sym0, self.charges, self.native, self.bulk_bond))
         self.cn_bulk = max(sum(1 for j in nb0[i] if self.charges.get(sym0[j], 0) > 0)
                            for i, s in enumerate(sym0) if s == self.u["A"])
+        sxl_engine.configure()
         self.cache = dt.RelaxCache(SimpleNamespace(props=self.out, settings=settings, record_dir=self.record_dir))
         # Symmetry numbers are not tracked during the search (each node's structures get theirs at the
         # end): a one-element rotation list makes every configuration_sigma 1, without point-group work.

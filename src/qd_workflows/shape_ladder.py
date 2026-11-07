@@ -37,6 +37,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from . import sxl_engine
+
 BOND = 3.05        # A: Cd-Se and Cd-Cl bonds
 LINK = 3.3         # A: atoms closer than this belong to one piece (connectivity check)
 TOL = 1.0          # A: a unit's Cd this close to a fitted facet plane lies on that facet (covers the Cd just below
@@ -244,6 +246,7 @@ class Ladder:
         self.out.mkdir(parents=True, exist_ok=True)
         self.sites, self.candidates = sites, candidates
         self.rng = np.random.default_rng(seed)
+        sxl_engine.configure()
         self.cache = dt.RelaxCache(SimpleNamespace(props=self.out, settings=settings, record_dir=self.out))
         self.E_MX = self._mx_energy()
         sp = self.out / "state.json"

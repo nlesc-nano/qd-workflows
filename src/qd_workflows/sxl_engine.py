@@ -1,6 +1,8 @@
 """
 Symmetrix-XL as the MACE engine of the batched relaxations (orchestr_ai.qd.batch_relax.BatchMACE), with D3(BJ) from a
-chunked, bounded-memory copy of torch-dftd. Opt-in: QDW_SXL=1 (qd_workflows.ligands.configure calls install()).
+chunked, bounded-memory copy of torch-dftd. Opt-in: QDW_SXL=1; configure() installs it for the relaxers of this
+repository (grid, lattice_grid, shape_ladder, facet_kinetics, sitekin, layer_path relax), MACE alone as they run it
+(D3 only with QDW_SXL_D3=1); the carboxylate scripts' ligands.configure calls install() with their D3.
 
 Same model, same numbers: MACE-MH-1 omat_pbe in float64 through Symmetrix-XL's ASE calculator (same checkpoint
 exported to its compact JSON; against mace-torch e3nn -1.5e-7 eV/atom, max |dF| 2e-4 eV/A, from its radial splines),
@@ -23,7 +25,7 @@ pairs in row blocks and differentiates each block before the next:
 2.5 GB at 4,632 atoms, 6 GB at 6,957, 3.3 GB at 13,914.
 
 Environment: QDW_SXL=1 switches the engine; QDW_SXL_JSON = the exported model (symmetrix_extract_mace --model M
---head omat_pbe --output JSON); QDW_SXL_VACUUM (default 40 Å).
+--head omat_pbe --output JSON); QDW_SXL_D3=1 adds D3 in configure(); QDW_SXL_VACUUM (default 40 Å).
 """
 from __future__ import annotations
 
@@ -235,6 +237,15 @@ def install(d3: bool = True, json_path: str | None = None, device: str = "cuda")
     br.BatchMACE = SxlBatch
     if not getattr(br.relax_many, "_sxl", False):
         br.relax_many = _one_at_a_time(br.relax_many)
+
+
+def configure() -> dict | None:
+    """QDW_SXL=1: install() for this process, the model from QDW_SXL_JSON, D3 only with QDW_SXL_D3=1 (the relaxers of
+    this repository run MACE without D3); returns provenance() for the results' settings. Otherwise None."""
+    if not enabled():
+        return None
+    install(d3=os.environ.get("QDW_SXL_D3", "0") == "1", json_path=os.environ.get("QDW_SXL_JSON"))
+    return provenance()
 
 
 def provenance() -> dict:

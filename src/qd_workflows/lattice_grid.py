@@ -45,6 +45,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from . import sxl_engine
 from .grid import BEAM, DELTA, SAVE_EVERY, _formula
 from .xyz import read_xyz, write_xyz
 
@@ -254,6 +255,7 @@ class LatticeGrid:
         self.record_dir, self.out = Path(record_dir).resolve(), Path(out_dir).resolve()
         (self.out / "nodes").mkdir(parents=True, exist_ok=True)
         self.lat = Lattice(self.record_dir, cif)
+        sxl_engine.configure()
         self.cache = dt.RelaxCache(SimpleNamespace(props=self.out, settings=settings, record_dir=self.record_dir))
         self._save_cache, self._saved, self._saved_n = self.cache._save, 0.0, self.cache.n_new
         self.cache._save = self._save_cache_throttled
