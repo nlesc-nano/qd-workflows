@@ -29,6 +29,27 @@ Rows:
                 up (k_max(m - 1)) and one ladder down (to k = 0) fill the row.
 Each step relaxes all candidates of the step together, polishes those within POLISH_WINDOW of the best
 and keeps the configurations within `delta` of the best, at most `beam`, as the parents of the next step.
+With screening (screen > 0 steps) every candidate first gets a short batched relaxation of `screen` optimiser
+steps, and only the `screen_keep` lowest per target node are fully relaxed and polished.
+
+Capacity (capacity=True): every +MX_q and -MA step also keeps, as the protected path 'capacity', its product with the
+most free Z-type host sites (QD_builder's), whatever its energy. Which configuration can still take MX_q units is a
+property of the lattice configuration, not of the energy: kept by energy alone, the nodes at m <= 9 of CdSe ran out
+of host sites 1-3 units below the grid that also had the lattice start (a lattice-only test with one such state per
+node reached that grid's k_max in every row). The capacity state is a parent of the next steps; it enters grid.json
+(and so the Hessians) only when it is within delta of its node's best. With capacity, the top of a descended row is
+climbed (+MX_q from every kept state, capacity states included, one node after the other) from CLIMB_BELOW nodes below
+it and on past it, not laddered from the top node alone: the capacity of the top node itself can be spent.
+
+Carboxylate X (settings.ligand, the nucleation ligand block; qd_workflows.ligands): the lattice configurations keep the
+Cl placeholders, every relaxation starts from the structure dressed with the carboxylate (QD_builder's X-type exchange,
+fixed atom order: each placeholder replaced by its molecule's atoms), Config_.relaxed holds the dressed coordinates
+(symbols: rsyms), a removal deletes whole molecules, a +MX_q unit's X are exchanged against the parent's relaxed shell.
+
+Seeded rows (run_seeded): instead of one builder dot, several seeds of the top row (QD_builder z_type_target at both
+ends of the MX_q range), each laddered one way (up or down) as its own path: a ladder continues from its own
+products, and a node keeps the best state of every path besides those within delta, so no seed wipes out
+another's path. After each row a hook (the nucleation row anneal) may add lower states before the descent.
 
     python -m qd_workflows.lattice_grid run <record dir> --out <dir> --model <mace model> [--cif CdSe_zb.cif]
 """
@@ -46,10 +67,30 @@ from types import SimpleNamespace
 import numpy as np
 
 from . import sxl_engine
-from .grid import BEAM, DELTA, SAVE_EVERY, _formula
+from .grid import BEAM, CLIMB_BELOW, DELTA, SAVE_EVERY, SCREEN_KEEP, _formula
 from .xyz import read_xyz, write_xyz
 
 BOND_TOL = 1.1        # x the bulk nearest-neighbour distance: bonds of a lattice configuration
+
+EVALS = {"structures": 0, "atoms": 0}   # MACE force evaluations of every batched relaxation (count_evals)
+
+
+def count_evals():
+    """Count the force evaluations of Orchestr.AI's batched relaxer (a structure relaxed in n steps is evaluated
+    n + 1 times) in EVALS: structure evaluations and atom evaluations (structure x its atoms). Installed once."""
+    from orchestr_ai.qd import batch_relax as br
+    if getattr(br.relax_many, "_counted", False):
+        return
+    inner = br.relax_many
+
+    def relax_many(structures, evaluator, **kw):
+        res = inner(structures, evaluator, **kw)
+        for (s, _p), r in zip(structures, res):
+            EVALS["structures"] += r.steps + 1
+            EVALS["atoms"] += (r.steps + 1) * len(s)
+        return res
+    relax_many._counted = True
+    br.relax_many = relax_many
 
 
 class Lattice:
@@ -238,24 +279,65 @@ def _without(syms, pts, removed):
     return [syms[i] for i in keep], np.asarray(pts, float)[keep]
 
 
+CAPACITY = "capacity"
+
+
 class Config_:
     """A lattice configuration with its relaxed structure and energy."""
 
-    def __init__(self, syms, lat, relaxed, energy, fp, src):
+    def __init__(self, syms, lat, relaxed, energy, fp, src, path=None):
         self.syms, self.lat, self.relaxed, self.energy, self.fp, self.src = syms, lat, relaxed, energy, fp, src
+        self.path = path                         # seed path (run_seeded) or anneal; None: not protected
+
+
+def prune(states, delta, beam):
+    """A node's states: the best of every path (seed ladders, anneal), then the others within delta of the best, at
+    most beam in all (the path bests always stay, so a node can hold more than beam when more paths reach it)."""
+    states = sorted(states, key=lambda x: x.energy)
+    keep, paths = [], set()
+    for x in states:
+        if x.path is not None and x.path not in paths:
+            paths.add(x.path)
+            keep.append(x)
+    for x in states:
+        if len(keep) >= beam:
+            break
+        if x not in keep and x.energy <= states[0].energy + delta:
+            keep.append(x)
+    return sorted(keep, key=lambda x: x.energy)
+
+
+def shortlist(energies, keep):
+    """Screening: {target: [(candidate, screened energy)]} -> the `keep` lowest candidates of every target."""
+    return {t: [c for c, _e in sorted(items, key=lambda x: x[1])[:keep]] for t, items in energies.items()}
 
 
 class LatticeGrid:
-    def __init__(self, record_dir, out_dir, settings, cif, beam=BEAM, delta=DELTA, m_min=1, log=print, start="lattice"):
+    dress = None                                 # carboxylate X (ligands.Dressing), set from settings.ligand
+
+    def __init__(self, record_dir, out_dir, settings, cif, beam=BEAM, delta=DELTA, m_min=1, log=print, start="lattice",
+                 screen=0, screen_keep=SCREEN_KEEP, capacity=False):
         from orchestr_ai.qd.steps import detachment as dt
         self.dt, self.s, self.beam, self.delta, self.m_min, self.log = dt, settings, beam, delta, m_min, log
         if start not in ("lattice", "relaxed"):
             raise ValueError(f"start: lattice or relaxed, not {start!r}")
         self.start = start
+        self.screen, self.screen_keep, self.n_screened = int(screen), int(screen_keep), 0
+        self.seed_nodes = set()                  # (m, k) of the builder dots (seed)
+        self.capacity, self._sites = bool(capacity), {}   # keep the most Z-capable product of +MX_q / -MA steps
+        count_evals()
         self.record_dir, self.out = Path(record_dir).resolve(), Path(out_dir).resolve()
         (self.out / "nodes").mkdir(parents=True, exist_ok=True)
         self.lat = Lattice(self.record_dir, cif)
-        sxl_engine.configure()
+        self.dress = None                        # carboxylate X (settings.ligand): placeholders -> molecules
+        lig = getattr(settings, "ligand", None)
+        if lig:
+            from .ligands import Dressing
+            recipe = json.loads((self.record_dir / "record.json").read_text())["origin"]["recipe"]
+            self.dress = Dressing(cif, self.lat.charges, placeholder=self.lat.ligand, surf_tol=self.lat.surf_tol,
+                                  facets=recipe.get("facets"), **lig)
+        else:                                    # a ligand block's engine is set by ligands.configure (its D3)
+            sxl_engine.configure()
         self.cache = dt.RelaxCache(SimpleNamespace(props=self.out, settings=settings, record_dir=self.record_dir))
         self._save_cache, self._saved, self._saved_n = self.cache._save, 0.0, self.cache.n_new
         self.cache._save = self._save_cache_throttled
@@ -274,6 +356,10 @@ class LatticeGrid:
             self._save_cache()
             self._saved, self._saved_n = time.time(), self.cache.n_new
 
+    def rsyms(self, syms):
+        """Symbols of the relaxed structure of a lattice configuration (dressed with the carboxylate, if any)."""
+        return self.dress.expand(syms) if self.dress else list(syms)
+
     def mk(self, syms):
         return syms.count(self.lat.anion), syms.count(self.lat.ligand) // self.lat.q
 
@@ -284,32 +370,72 @@ class LatticeGrid:
         the parent's relaxed coordinates with the removed atoms deleted, or with the new atoms at their lattice sites
         moved by the displacement of their host anion (QD_builder's growth from relaxed coordinates); the lattice
         configuration stays the bookkeeping of the moves."""
+        lattice = (lambda: self.dress.dress(syms, pts)[1]) if self.dress else (lambda: pts)
         if self.start == "lattice":
-            return pts, None
+            return lattice(), None
         rel = np.asarray(st.relaxed, float)
         if "host" in info:                                  # +MX_q: appended at the end of the parent's atoms
             n = len(st.syms)
-            shift = rel[info["host"]] - np.asarray(st.lat, float)[info["host"]]
+            host = self.dress.offsets(st.syms)[info["host"]][0] if self.dress else info["host"]
+            shift = rel[host] - np.asarray(st.lat, float)[info["host"]]
             new = np.asarray(pts, float)[n:] + shift
+            if self.dress:
+                from .ligands import DressError
+                try:
+                    grown = self.dress.grow(self.rsyms(st.syms), rel, list(syms)[n:], new)
+                except DressError:
+                    grown = None
+                return (grown[1], "relaxed") if grown is not None else (lattice(), "lattice (clash)")
             if np.linalg.norm(new[:, None] - rel[None], axis=-1).min() < self.CLASH_A:
                 return pts, "lattice (clash)"
             return np.vstack([rel, new]), "relaxed"
         removed = {info["M"], *([info["A"]] if "A" in info else []), *info.get("X", [])}
-        keep = [i for i in range(len(st.syms)) if i not in removed]
+        gone = set(self.dress.slices(st.syms, removed)) if self.dress else removed
+        keep = [i for i in range(len(rel)) if i not in gone]
         return rel[keep], "relaxed"
 
+    def sites(self, fp, syms, lat):
+        """Free Z-type host sites of a lattice configuration (QD_builder's), cached by fingerprint."""
+        if fp not in self._sites:
+            self._sites[fp] = len(self.lat.z_sites(list(syms), np.asarray(lat, float))[0])
+        return self._sites[fp]
+
+    def _screen(self, items):
+        """[(positions, energy)] after a short batched relaxation (self.screen optimiser steps) of every (symbols,
+        start); kept in the relaxation cache under their own key, so a rerun does not repeat them."""
+        from orchestr_ai.qd import batch_relax as br
+        keys = [f"screen-{self.screen}|{self.cache.tag}|{self.dt.geometry_key(s, p)}" for s, p in items]
+        todo = {}
+        for k, (s, p) in zip(keys, items):
+            if k not in self.cache.data and k not in todo:
+                todo[k] = (list(s), np.asarray(p, float))
+        if todo:
+            calc = self.dt.mace_calculator(self.s.head, self.s.model, self.s.device, self.s.dtype)
+            res = br.relax_many(list(todo.values()), br.BatchMACE(calc, self.s.relax_batch_atoms),
+                                max_steps=self.screen)
+            for k, r in zip(todo, res):
+                self.cache.data[k] = {"energy": float(r.energy), "positions": np.asarray(r.positions).round(6).tolist()}
+            self.dt._free_device_memory(self.s)
+            self.n_screened += len(todo)
+            self._save_cache()
+        return [(np.asarray(self.cache.data[k]["positions"], float), float(self.cache.data[k]["energy"])) for k in keys]
+
     # -- steps: every move of every parent, relaxed together --
-    def step(self, parents, moves, name, target):
-        return self.step_many([(parents, moves, name, target)])[0]
+    def step(self, parents, moves, name, target, path=None):
+        return self.step_many([(parents, moves, name, target, path)])[0]
 
     def step_many(self, jobs):
-        """jobs: [(parents, moves, name, target node)]. The products of every job are relaxed in one batch and
-        polished (POLISH_WINDOW of each job's best) in another; each target keeps its configurations within delta
-        of its best, at most beam. Returns each target's kept states ([] when the job had no product)."""
+        """jobs: [(parents, moves, name, target node[, path])]. The products of every job are relaxed in one batch
+        and polished (POLISH_WINDOW of each job's best) in another; each target keeps its configurations within delta
+        of its best, at most beam (prune). With screening, every product first gets `screen` optimiser steps (one
+        batch) and only the `screen_keep` lowest of each target go on. Returns, per job, the target's kept states
+        ([] when the job had no product); a job with a path gets its own kept products instead (a seed's ladder
+        follows its own path)."""
         from orchestr_ai.qd.records import fingerprint
-        t, n0 = time.time(), self.cache.n_new
+        t, n0, ev0 = time.time(), self.cache.n_new, dict(EVALS)
+        jobs = [(*j, None)[:5] for j in jobs]
         per_job = []
-        for parents, moves, name, target in jobs:
+        for parents, moves, name, target, _path in jobs:
             products = {}
             for st in parents:
                 for info, syms, pts in moves(st.syms, st.lat):
@@ -319,7 +445,11 @@ class LatticeGrid:
                     if fp in products:
                         continue
                     src = {"move": name, "from": [*self.mk(st.syms)], "parent": st.fp, **info}
-                    start, how = self._start(st, info, syms, pts)
+                    try:
+                        start, how = self._start(st, info, syms, pts)
+                    except RuntimeError as exc:              # ligands.DressError: no clean dressed start
+                        self.log(f"[lattice-grid] {name} from {self.mk(st.syms)}: product skipped ({exc})")
+                        continue
                     if how is not None:
                         src["start"] = how
                     products[fp] = (syms, pts, src, start)
@@ -327,7 +457,18 @@ class LatticeGrid:
         flat = [(ji, f) for ji, products in enumerate(per_job) for f in products]
         if not flat:
             return [[] for _ in jobs]
-        res = self.cache.relax_many([(per_job[ji][f][0], per_job[ji][f][3]) for ji, f in flat], self.s)
+        n_cand = [len(products) for products in per_job]
+        starts = {jf: per_job[jf[0]][jf[1]][3] for jf in flat}
+        if self.screen > 0:
+            scr = self._screen([(self.rsyms(per_job[ji][f][0]), starts[(ji, f)]) for ji, f in flat])
+            by_target = {}
+            for jf, (pos, e_s) in zip(flat, scr):
+                by_target.setdefault(tuple(jobs[jf[0]][3]), []).append((jf, e_s))
+                starts[jf] = pos                                 # the full relaxation goes on from the screened geometry
+            go_on = {jf for v in shortlist(by_target, self.screen_keep).values() for jf in v}
+            flat = [jf for jf in flat if jf in go_on]
+            per_job = [{f: v for f, v in products.items() if (ji, f) in go_on} for ji, products in enumerate(per_job)]
+        res = self.cache.relax_many([(self.rsyms(per_job[ji][f][0]), starts[(ji, f)]) for ji, f in flat], self.s)
         e = {jf: r[1] for jf, r in zip(flat, res)}
         relaxed = {jf: r[0] for jf, r in zip(flat, res)}
         best = {}
@@ -339,8 +480,9 @@ class LatticeGrid:
         for jf, r in zip(window, pol):
             e[jf], relaxed[jf] = r[1], r[0]
         seconds, n_new = round(time.time() - t, 1), self.cache.n_new - n0
+        evals = {k: EVALS[k] - ev0[k] for k in EVALS}
         out = []
-        for ji, ((parents, _moves, name, target), products) in enumerate(zip(jobs, per_job)):
+        for ji, ((parents, _moves, name, target, path), products) in enumerate(zip(jobs, per_job)):
             if not products:
                 out.append([])
                 continue
@@ -349,36 +491,60 @@ class LatticeGrid:
             node = self.nodes.setdefault(tuple(target), {"states": [], "ensemble": {}, "steps": []})
             for f in products:
                 node["ensemble"][f] = min(node["ensemble"].get(f, e[(ji, f)]), e[(ji, f)])
-            pool = {st.fp: st for st in node["states"]}
-            for f in keep:
-                if f not in pool or e[(ji, f)] < pool[f].energy:
-                    pool[f] = Config_(products[f][0], products[f][1], relaxed[(ji, f)].get_positions(), e[(ji, f)], f,
-                                      products[f][2])
-            node["states"] = sorted(pool.values(), key=lambda x: x.energy)
-            node["states"] = [x for x in node["states"] if x.energy <= node["states"][0].energy + self.delta][:self.beam]
+            mine = [Config_(products[f][0], products[f][1], relaxed[(ji, f)].get_positions(), e[(ji, f)], f,
+                            products[f][2], path) for f in keep]
+            pool = {(st.fp, st.path): st for st in node["states"]}
+            for x in mine:
+                if (x.fp, x.path) not in pool or x.energy < pool[(x.fp, x.path)].energy:
+                    pool[(x.fp, x.path)] = x
+            if self.capacity and _moves is not self.lat.remove_mx:
+                f = max(products, key=lambda f: (self.sites(f, *products[f][:2]), -e[(ji, f)]))
+                cap = Config_(products[f][0], products[f][1], relaxed[(ji, f)].get_positions(), e[(ji, f)], f,
+                              {**products[f][2], "z_sites": self.sites(f, *products[f][:2])}, CAPACITY)
+                old = [st for st in pool.values() if st.path == CAPACITY]
+                if not old or (cap.src["z_sites"], -cap.energy) > (old[0].src.get("z_sites", -1), -old[0].energy):
+                    pool = {key: st for key, st in pool.items() if st.path != CAPACITY}
+                    pool[(cap.fp, CAPACITY)] = cap
+                if path:
+                    mine.append(cap)
+            node["states"] = prune(pool.values(), self.delta, self.beam)
             rec = {"step": f"{name} -> m={target[0]} k={target[1]}", "parents": len(parents),
-                   "candidates": len(products), "polished": sum(1 for j, _f in window if j == ji),
-                   "batch": {"jobs": len(jobs), "relaxations_new": n_new, "seconds": seconds},
+                   "candidates": n_cand[ji], "relaxed": len(products),
+                   "polished": sum(1 for j, _f in window if j == ji), **({"path": path} if path else {}),
+                   "batch": {"jobs": len(jobs), "relaxations_new": n_new, "seconds": seconds,
+                             "force_evals": evals["structures"], "atom_force_evals": evals["atoms"]},
                    "elapsed_s": round(time.time() - self.t0, 1)}
             node["steps"].append(rec)
             self.timings.append(rec)
-            self.log(f"[lattice-grid] {rec['step']}: {len(products)} candidates from {len(parents)} parents, best "
-                     f"{e[(ji, order[0])]:.4f} eV")
-            out.append(node["states"])
-        self.log(f"[lattice-grid] batch of {len(jobs)} step(s): {len(flat)} candidates, {n_new} new relaxations, "
-                 f"{seconds} s")
+            self.log(f"[lattice-grid] {rec['step']}: {n_cand[ji]} candidates ({len(products)} relaxed) from "
+                     f"{len(parents)} parents, best {e[(ji, order[0])]:.4f} eV" + (f" [{path}]" if path else ""))
+            out.append(mine if path else node["states"])
+        self.log(f"[lattice-grid] batch of {len(jobs)} step(s): {sum(n_cand)} candidates, {len(flat)} relaxed, "
+                 f"{n_new} new relaxations, {evals['structures']} force evaluations, {seconds} s")
         self._save_cache_throttled(force=True)
         self.save()
         return out
 
-    def ladder_up(self, m, k_top):
-        """From the node (m, k_top): +MX_q one at a time until no site is left. Returns k_max(m)."""
-        cur, k = self.nodes[(m, k_top)]["states"], k_top
+    def ladder_up(self, m, k_top, cur=None, path=None):
+        """From the node (m, k_top) (or the states `cur` there): +MX_q one at a time until no site is left. Returns
+        k_max(m)."""
+        cur, k = cur or self.nodes[(m, k_top)]["states"], k_top
         while True:
-            kids = self.step(cur, self.lat.add_mx, f"+{self.mx}", (m, k + 1))
+            kids = self.step(cur, self.lat.add_mx, f"+{self.mx}", (m, k + 1), path)
             if not kids:
                 return k
             cur, k = kids, k + 1
+
+    def ladder_down(self, m, k_top, cur=None, path=None):
+        """From the node (m, k_top) (or the states `cur` there): -MX_q one at a time down to k = 0 or until no removal
+        is allowed. Returns the lowest k reached."""
+        cur, k = cur or self.nodes[(m, k_top)]["states"], k_top
+        while k > 0:
+            kids = self.step(cur, self.lat.remove_mx, f"-{self.mx}", (m, k - 1), path)
+            if not kids:
+                break
+            cur, k = kids, k - 1
+        return k
 
     def neighbour_pass(self, m, ks):
         """One batched pass along a freshly descended row: every node (m, k) also gets +MX_q from the best structure
@@ -402,15 +568,22 @@ class LatticeGrid:
         self.log(f"[lattice-grid] neighbour pass m={m}: lower at k = {sorted(better)} (eV gained: {better})"
                  + (f"; filled k = {filled}" if filled else ""))
 
+    def climb(self, m, k_from):
+        """+MX_q from every kept state of each node (m, k), k = k_from, k_from + 1, ..., the products joining (m, k + 1),
+        until a step past the row's top gives nothing. Returns k_max(m)."""
+        k = k_from
+        while True:
+            top = max(kk for (mm, kk) in self.nodes if mm == m and self.nodes[(mm, kk)]["states"])
+            cur = self.nodes.get((m, k), {}).get("states")
+            kids = self.step(cur, self.lat.add_mx, f"+{self.mx}", (m, k + 1)) if cur else []
+            if not kids and k >= top:
+                return top
+            k += 1
+
     def ladders(self, m, k_top):
         """From the node (m, k_top): one ladder up until no site is left, one ladder down to k = 0."""
         k_max = self.ladder_up(m, k_top)
-        cur, k = self.nodes[(m, k_top)]["states"], k_top
-        while k > 0:
-            kids = self.step(cur, self.lat.remove_mx, f"-{self.mx}", (m, k - 1))
-            if not kids:
-                break
-            cur, k = kids, k - 1
+        k = self.ladder_down(m, k_top)
         self.log(f"[lattice-grid] row m={m}: k = {k}..{k_max} (top {k_top})")
         return k_max
 
@@ -425,19 +598,70 @@ class LatticeGrid:
         the top of row m - 1 fills the sites the removals opened (k_max can grow; it shrinks where no removal is
         allowed). descent='top': only the fully passivated node loses one MA, and the row is filled by one ladder up
         and one ladder down from there."""
+        m, k = self.seed("start.xyz")
+        k_max = self.ladders(m, k)
+        self.descend(m, k_max, m_stop, descent)
+
+    def seed(self, file, path=None):
+        """The builder dot `file` (in the record folder), relaxed and polished, as a state of its node. Returns (m, k)."""
         from orchestr_ai.qd.records import fingerprint
-        syms, pts = read_xyz(self.record_dir / "start.xyz")
+        syms, pts = read_xyz(self.record_dir / file)
         syms = list(syms)
-        (atoms, e, _ok), = self.cache.relax_many([(syms, pts)], self.s)
+        start = self.dress.dress(syms, pts)[1] if self.dress else pts
+        (atoms, e, _ok), = self.cache.relax_many([(self.rsyms(syms), start)], self.s)
         (atoms, e, _ok), = self.cache.relax_many([(atoms.get_chemical_symbols(), atoms.get_positions())], self.s,
                                                  polish=True)
         m, k = self.mk(syms)
         fp = fingerprint(syms, pts)
-        self.nodes[(m, k)] = {"states": [Config_(syms, np.asarray(pts), atoms.get_positions(), e, fp,
-                                                 {"move": "builder", "file": "start.xyz"})],
-                              "ensemble": {fp: e}, "steps": []}
-        self.log(f"[lattice-grid] builder dot m={m} k={k}: E = {e:.4f} eV")
-        k_max = self.ladders(m, k)
+        self.seed_nodes.add((m, k))
+        node = self.nodes.setdefault((m, k), {"states": [], "ensemble": {}, "steps": []})
+        node["states"] = prune(node["states"] + [Config_(syms, np.asarray(pts), atoms.get_positions(), e, fp,
+                                                         {"move": "builder", "file": file}, path)],
+                               self.delta, self.beam)
+        node["ensemble"][fp] = min(node["ensemble"].get(fp, e), e)
+        self.log(f"[lattice-grid] builder dot {file} m={m} k={k}: E = {e:.4f} eV")
+        return m, k
+
+    def add_state(self, m, k, parent, positions, energy, src, path="anneal"):
+        """A lower minimum of (m, k) found off the lattice (the row anneal): it keeps its parent's lattice configuration
+        (same atoms in the same order) for the moves, its own coordinates as the relaxed start of the next row."""
+        from orchestr_ai.qd.records import fingerprint
+        node = self.nodes[(m, k)]
+        fp = fingerprint(self.rsyms(parent.syms), positions)
+        x = Config_(parent.syms, parent.lat, np.asarray(positions, float), float(energy), fp,
+                    {**src, "parent": parent.fp}, path)
+        node["states"] = prune([s for s in node["states"] if (s.fp, s.path) != (fp, path)] + [x], self.delta, self.beam)
+        node["ensemble"][fp] = min(node["ensemble"].get(fp, energy), energy)
+
+    def run_seeded(self, seeds, m_stop=None, row_hook=None):
+        """seeds: [(file in the record folder, 'up' | 'down' | 'both')], all of one m: each seed relaxed and laddered one way as
+        its own path (one pass each), then row_hook(self, m) (the row anneal), then the column descent with the hook
+        after every row. Every finished row (anneal included) is checkpointed (rows.json): a rerun loads it and goes on
+        with the next row instead of replaying the grid from the seeds."""
+        done = self.load_rows()
+        if done:
+            m, k_max = done
+            self.log(f"[lattice-grid] checkpoint: rows down to m={m} done, {len(self.nodes)} nodes; descending from there")
+            self.descend(m, k_max, m_stop, "column", row_hook)
+            return
+        ms = set()
+        for file, way in seeds:
+            m, k = self.seed(file, path=file)
+            ms.add(m)
+            cur = [x for x in self.nodes[(m, k)]["states"] if x.path == file]
+            ends = [f(m, k, cur=cur, path=file) for w, f in (("up", self.ladder_up), ("down", self.ladder_down))
+                    if way in (w, "both")]
+            self.log(f"[lattice-grid] seed {file}: ladder {way} m={m} k={k} -> {ends}")
+        if len(ms) != 1:
+            raise ValueError(f"seeds of one row only, not m = {sorted(ms)}")
+        if row_hook:
+            row_hook(self, m)
+        self.save()
+        k_max = max(k for (mm, k) in self.nodes if mm == m)
+        self.save_rows(m, k_max)
+        self.descend(m, k_max, m_stop, "column", row_hook)
+
+    def descend(self, m, k_max, m_stop=None, descent="column", row_hook=None):
         m_stop = self.m_min if m_stop is None else m_stop
         ma = f"-{self.lat.cation}{self.lat.anion}"
         while m > m_stop:
@@ -448,6 +672,7 @@ class LatticeGrid:
                     break
                 m -= 1
                 k_max = self.ladders(m, k_max)
+                self.save_rows(m, k_max)
                 continue
             row = sorted(k for (mm, k) in self.nodes if mm == m and self.nodes[(mm, k)]["states"])
             kids = self.step_many([(self.nodes[(m, k)]["states"], self.lat.remove_ma, ma, (m - 1, k)) for k in row])
@@ -457,9 +682,43 @@ class LatticeGrid:
                 break
             m -= 1
             self.neighbour_pass(m, got)
-            k_max = self.ladder_up(m, max(got))
+            k_max = (self.climb(m, max(min(got), max(got) - CLIMB_BELOW)) if self.capacity
+                     else self.ladder_up(m, max(got)))
             self.log(f"[lattice-grid] row m={m}: k = {min(got)}..{k_max} (descended: {got})")
+            if row_hook:
+                row_hook(self, m)
+            self.save_rows(m, k_max)
         self.save(final=True)
+
+    CHECKPOINT = "rows.json"
+
+    def save_rows(self, m, k_max):
+        """Checkpoint after a finished row m: every node's kept states (lattice configuration, relaxed coordinates,
+        energy, source, path), ensemble and steps, and the seed nodes."""
+        nodes = {f"{mm},{k}": {"states": [{"syms": list(x.syms), "lat": np.asarray(x.lat, float).round(6).tolist(),
+                                          "relaxed": np.asarray(x.relaxed, float).round(6).tolist(),
+                                          "energy": x.energy, "fp": x.fp, "src": x.src, "path": x.path}
+                                         for x in node["states"]],
+                              "ensemble": node["ensemble"], "steps": node["steps"]}
+                 for (mm, k), node in sorted(self.nodes.items())}
+        tmp = self.out / (self.CHECKPOINT + ".tmp")
+        tmp.write_text(json.dumps({"m": m, "k_max": k_max, "seed_nodes": sorted(self.seed_nodes), "nodes": nodes}))
+        os.replace(tmp, self.out / self.CHECKPOINT)
+
+    def load_rows(self):
+        """(m, k_max) of the last checkpointed row, with the nodes and seed nodes restored; None without a checkpoint."""
+        f = self.out / self.CHECKPOINT
+        if not f.is_file():
+            return None
+        d = json.loads(f.read_text())
+        self.nodes = {}
+        for key, node in d["nodes"].items():
+            mm, k = (int(x) for x in key.split(","))
+            self.nodes[(mm, k)] = {"states": [Config_(x["syms"], np.asarray(x["lat"]), np.asarray(x["relaxed"]),
+                                                      x["energy"], x["fp"], x["src"], x["path"]) for x in node["states"]],
+                                   "ensemble": node["ensemble"], "steps": node["steps"]}
+        self.seed_nodes = {tuple(x) for x in d["seed_nodes"]}
+        return d["m"], d["k_max"]
 
     def save(self, final=False):
         nodes = []
@@ -467,15 +726,20 @@ class LatticeGrid:
             if not node["states"]:
                 continue
             best = node["states"][0]
+            shown = [x for x in node["states"] if x.path != CAPACITY or x.energy <= best.energy + self.delta]
             nodes.append({"m": m, "k": k, "n_atoms": len(best.syms), "formula": _formula(best.syms),
+                          **({"n_atoms_dressed": len(self.rsyms(best.syms)),
+                              "ligand": self.dress.name} if self.dress else {}),
                           "E_eV": round(best.energy, 6),
-                          "states": [{"E_eV": round(x.energy, 6), "fingerprint": x.fp, **x.src} for x in node["states"]],
+                          "states": [{"E_eV": round(x.energy, 6), "fingerprint": x.fp, **x.src,
+                                      **({"path": x.path} if x.path else {})} for x in shown],
                           "n_configurations": len(node["ensemble"]),
                           "ensemble_E_eV": sorted(round(v, 6) for v in node["ensemble"].values()),
                           "steps": node["steps"]})
-            for i, x in enumerate(node["states"]):
+            for i, x in enumerate(shown):
                 tag = f"m{m:02d}_k{k:02d}{'' if i == 0 else f'_{i}'}"
-                write_xyz(self.out / "nodes" / f"{tag}.xyz", x.syms, x.relaxed, f"m={m} k={k} E={x.energy:.6f} eV relaxed")
+                write_xyz(self.out / "nodes" / f"{tag}.xyz", self.rsyms(x.syms), x.relaxed,
+                          f"m={m} k={k} E={x.energy:.6f} eV relaxed" + (f" ({self.dress.name})" if self.dress else ""))
                 write_xyz(self.out / "nodes" / f"{tag}_lattice.xyz", x.syms, x.lat, f"m={m} k={k} lattice configuration")
         rows = {}
         for n in nodes:
@@ -486,9 +750,12 @@ class LatticeGrid:
                             "model": Path(self.s.model).name, "relaxer": self.s.relaxer(),
                             "polish_fmax": self.dt.POLISH_FMAX, "polish_window_eV": self.dt.POLISH_WINDOW,
                             "surf_tol_A": self.lat.surf_tol, "bond_tol": BOND_TOL, "d_nn_A": self.lat.d_nn,
-                            "start": self.start},
+                            "start": self.start, "screen_steps": self.screen, "screen_keep": self.screen_keep,
+                            "capacity": self.capacity, "ligand": getattr(self.s, "ligand", None)},
                "rows": {str(m): {"k_min": min(ks), "k_max": max(ks), "n": len(ks)} for m, ks in sorted(rows.items())},
-               "relaxations_new": self.cache.n_new, "pieces": self.pieces, "nodes": nodes}
+               "relaxations_new": self.cache.n_new, "screened_new": self.n_screened,
+               "force_evals": {"structures": EVALS["structures"], "atoms": EVALS["atoms"]},
+               "pieces": self.pieces, "nodes": nodes}
         tmp = self.out / "grid.json.tmp"
         tmp.write_text(json.dumps(out, indent=1))
         os.replace(tmp, self.out / "grid.json")
@@ -530,6 +797,9 @@ def main(argv=None) -> int:
                    help="column: every (m, k) loses one MA; top: only the fully passivated node, then ladders")
     p.add_argument("--start", choices=("lattice", "relaxed"), default="lattice",
                    help="relax each product from its lattice positions, or from its parent's relaxed coordinates")
+    p.add_argument("--screen", type=int, default=0,
+                   help="optimiser steps of the screening relaxation of every candidate (0: every candidate fully relaxed)")
+    p.add_argument("--screen-keep", type=int, default=SCREEN_KEEP, help="candidates per node fully relaxed after screening")
     a = ap.parse_args(argv)
     if a.cmd == "prepare":
         from .cluster import load_cluster
@@ -541,7 +811,7 @@ def main(argv=None) -> int:
     s = Settings(model=a.model, head=a.head, detach_quick=False, detach_screen=False, detach_rigid_refresh=False,
                  detach_frames=False, hessian="analytic")
     g = LatticeGrid(a.record, a.out, s, _find_cif(a.record, a.cif), beam=a.beam, delta=a.delta, m_min=a.m_min,
-                    log=lambda x: print(x, flush=True), start=a.start)
+                    log=lambda x: print(x, flush=True), start=a.start, screen=a.screen, screen_keep=a.screen_keep)
 
     def stop(signum, _frame):
         g._save_cache_throttled(force=True)

@@ -32,6 +32,8 @@ nucleation:                         # defaults written out (qd_workflows.nucleat
                                     # relaxed, one anneal of every node at the end
     screen_steps: 0                 # > 0: short batched relaxation of every candidate (lost minima on CdSe m = 13) ...
     screen_keep: 3                  # ... then the best 3 per node fully relaxed and polished
+    capacity: true                  # keep each step's most Z-capable product too (row tops reach the full k range)
+    anneal_all_m: 10                # rows m <= 10 anneal every node
     anneal_starts: 2                # MD starts per annealed node: its best, then the best of the other seed path
     anneal_window: 0.15             # eV: row anneal (and Hessians) for the nodes this close to the row's lowest
                                     #   Omega without vibrations (= 0.1 eV with them) ...

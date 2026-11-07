@@ -81,13 +81,13 @@ $$
   states (isomers).
 - **Dots** are states with $m \ge 13$; **clusters** are states with $m < 13$.
 
-!!! warning "Code that is not committed"
-    Several stages ran from code that is not in any git branch:
+!!! note "Code that ran outside git, now committed"
+    Several stages ran from code that was not in any git branch at the time:
 
-    - the grid construction (`nucleation.py`, the seeded `lattice_grid.py`, `grid.py`): uncommitted in the
-      `cdse-grid` worktree;
-    - the carboxylate code (`ligands.py` and its `nucleation.py`): untracked, in the `cdse-carboxylate-plan` worktree
-      and on LUMI `qdw/code`;
+    - the grid construction and the carboxylate code (`nucleation.py`, the seeded `lattice_grid.py`, `grid.py`,
+      `grid_thermo.py`'s partial-Hessian thermo, `ligands.py`): committed from LUMI `qdw/code` (the same as the
+      `cdse-carboxylate-plan` pilot copy, plus the Symmetrix-XL switch in `ligands.configure`); the pilot's
+      `pool_grids.py` and `complete_grid.py` scripts stay in that worktree;
     - the layer-path scripts (`build2.py`, `treepaths.py`, `layer_steps.py`, `islands.py`, `stage*.py`, `ladders.py`,
       …) ran from session folders; they are now the module `qd_workflows.layer_path`
       (`python -m qd_workflows.layer_path <command>`), with the same keys and builder recipes.

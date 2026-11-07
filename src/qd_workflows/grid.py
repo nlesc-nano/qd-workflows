@@ -43,6 +43,10 @@ DELTA = 0.05          # eV above the node's best (~2 kT at 300 K)
 EXTRA = 4             # children asked from each search beyond `beam`, so fragmented ones can be dropped
 MAX_PASSES = 60       # row sweeps (the top of a row grows by one per pass)
 SAVE_EVERY = 60.0     # s between checkpoints of the relaxation cache
+SCREEN_STEPS = 20     # lattice_grid screening (opt-in): optimiser steps of the short batched relaxation of every candidate ...
+SCREEN_KEEP = 3       # ... after which only this many per target node are fully relaxed and polished (0 steps: all are)
+CLIMB_BELOW = 3       # lattice_grid capacity: the top of a descended row is climbed from this many nodes below it (CdSe
+                      # m = 10: climbing from 2 below reached k = 15, from the top alone k = 13)
 CHANGE_TOL = 0.003    # eV: a node changes only if its best drops by more (relaxation noise of one minimum
                       # reached from two parents is 0.1-1 meV after polishing; below this the incumbent stays)
 

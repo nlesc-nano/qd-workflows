@@ -4,8 +4,8 @@ Where every piece of code, data and run lives.
 
 | what | where |
 |---|---|
-| grid construction code (CdCl2) | worktree `cdse-grid`: `src/qd_workflows/nucleation.py` (untracked), `lattice_grid.py`, `grid.py`, `templates/nucleation/cdse_zb.yaml` (modified) |
-| carboxylate grid code | worktree `cdse-carboxylate-plan-501d58`: `docs/plans/cdse_carboxylate/pilot/code/qd_workflows/` (`ligands.py`, `nucleation.py`), `pool_grids.py`, `complete_grid.py`, `plan.html` |
+| grid construction code (CdCl2) | `src/qd_workflows/nucleation.py`, `lattice_grid.py`, `grid.py`, `templates/nucleation/cdse_zb.yaml` (`python -m qd_workflows.nucleation`; QD_builder main 7c510ed or later) |
+| carboxylate grid code | `src/qd_workflows/ligands.py` (ligand block of `nucleation.json`), `grid_thermo.py` (partial Hessian); scripts `pool_grids.py`, `complete_grid.py`, `plan.html` in worktree `cdse-carboxylate-plan-501d58` `docs/plans/cdse_carboxylate/pilot/` |
 | thermo, solvation, pool | `src/qd_workflows/grid_thermo.py`, `grid_solvation.py`, `reaction/solvation.py`; docs `theory/thermochemistry.md`, `theory/solvation.md` |
 | CdCl2 grid run | `cdse-grid/cd16_lattice_grid/nucleation_builder_main/full_run2/` (`thermo_merged.json`, `grid/grid.json`, `complexes/`) |
 | acetate grid run | LUMI `/scratch/project_465003437/qdw/wd_full_acetate_pool/`; local `thermo_acetate_pool.json` in `network_growth_data/cdse_acetate_p2/` |

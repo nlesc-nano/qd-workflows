@@ -45,8 +45,17 @@ def _gas(symbols, pts, energy, freqs, temperatures):
     from ase import Atoms
     from orchestr_ai.qd.references import ideal_gas_g, rotational_symmetry_number
     sigma = rotational_symmetry_number(symbols, pts)
-    g = ideal_gas_g(Atoms(list(symbols), positions=np.asarray(pts, float)), energy, np.asarray(freqs, float),
-                    temperatures, sigma)
+    atoms = Atoms(list(symbols), positions=np.asarray(pts, float))
+    freqs = np.asarray(freqs, float)
+    if len(freqs) and len(freqs) < 3 * len(symbols) - 6:
+        # partial Hessian (carboxylate inner region, ligands.frequencies): translation, rotation and pV of the whole
+        # species, plus the quasi-RRHO F_vib of the inner modes (the full path's sum, with fewer modes)
+        from orchestr_ai.qd.steps.hessian import thermo, thermo_modes
+        g0 = ideal_gas_g(atoms, energy, np.zeros(0), temperatures, sigma)
+        fv = thermo(thermo_modes(freqs), temperatures)["F_vib_eV"]
+        g = [a + b for a, b in zip(g0, fv)]
+    else:
+        g = ideal_gas_g(atoms, energy, freqs, temperatures, sigma)
     return sigma, [round(float(x), 6) for x in g]
 
 
@@ -112,7 +121,10 @@ def hessians(grid_dir, settings, refs=None, temperatures=TEMPERATURES, log=print
         for i, st in enumerate(n["states"]):
             tag = f"m{n['m']:02d}_k{n['k']:02d}{'' if i == 0 else f'_{i}'}"
             syms, pts = _read_xyz(grid_dir / "nodes" / f"{tag}.xyz")
-            freqs = np.asarray(cache.frequencies(syms, pts, settings)) if vibrations else np.zeros(0)
+            if vibrations and getattr(settings, "ligand", None):      # carboxylate X: partial Hessian (ligands)
+                freqs = np.asarray(_partial_frequencies(cache, syms, pts, settings))
+            else:
+                freqs = np.asarray(cache.frequencies(syms, pts, settings)) if vibrations else np.zeros(0)
             sigma, gt = _gas(syms, pts, st["E_eV"], freqs, temperatures)
             states.append({"file": f"nodes/{tag}.xyz", "E_eV": st["E_eV"], "fingerprint": st["fingerprint"],
                            "sigma": sigma, "n_imaginary": int((freqs < -10.0).sum()),
@@ -127,6 +139,17 @@ def hessians(grid_dir, settings, refs=None, temperatures=TEMPERATURES, log=print
     references = _monomers(refs, settings.head, ref_names, temperatures, vibrations) if refs else {}
     _write(out_path, grid_dir, temperatures, nodes, references, len(nodes) == len(g["nodes"]), g, vibrations)
     return out_path
+
+
+def _partial_frequencies(cache, syms, pts, settings):
+    """Frequencies of the inner region (qd_workflows.ligands.frequencies), cached in the relaxation cache."""
+    from orchestr_ai.qd.steps import detachment as dt
+    from .ligands import frequencies
+    key = f"pfreq|{cache.tag}|{settings.ligand.get('inner', 'cbeta')}|{dt.geometry_key(syms, pts)}"
+    if key not in cache.data:
+        cache.data[key] = np.asarray(frequencies(syms, pts, settings)).round(4).tolist()
+        cache._save()
+    return cache.data[key]
 
 
 def _write(path, grid_dir, temperatures, nodes, references, complete, g, vibrations=True):
