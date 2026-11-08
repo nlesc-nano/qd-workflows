@@ -150,7 +150,7 @@ class NetSim:
     def saved_list(self):
         """The saved runs: name, file and size (the label and conditions come with load_saved)."""
         self._scan_saved()
-        return {"runs": [{"name": k, "file": str(v), "MB": round(Path(v).stat().st_size / 2 ** 20, 1)}
+        return {"sources": [str(x) for x in self.saved_src], "runs": [{"name": k, "file": str(v), "MB": round(Path(v).stat().st_size / 2 ** 20, 1)}
                          for k, v in self.saved.items()]}
 
     def load_saved(self, name):

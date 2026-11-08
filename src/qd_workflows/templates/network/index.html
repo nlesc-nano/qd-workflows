@@ -154,7 +154,7 @@ button:disabled { opacity: .55; cursor: progress; }
         <div class="hint">Off: every layer attaches as soon as it is downhill (attachment-limited growth).</div></div>
       <button class="primary" id="runBtn">Run the growth</button> <button id="stopBtn" disabled>Stop</button>
       <div class="ctl" id="savedCtl" style="margin-top:10px" hidden><label>saved run <select id="savedSel" aria-label="saved run"></select></label>
-        <button id="savedBtn">Load</button><div class="hint">a run made elsewhere on this network (e.g. a long one on the cluster); loading it sets the conditions to its own</div></div>
+        <button id="savedBtn">Load</button><div class="hint" id="savedHint"></div></div>
       <div class="status" id="runStatus"></div>
       <h3>Look at Ω at</h3>
       <div class="ctl"><label>time from the start <span class="num"><input id="tnow" value="10" aria-label="time from the start"><i>s</i></span></label>
@@ -886,11 +886,15 @@ function showRun() {
 // saved runs: the list at start-up, and one loaded with its own conditions in the controls
 async function savedRuns() {
   try {
-    const { runs } = await api("/api/saved");
-    $("savedCtl").hidden = !runs.length;
+    const { runs, sources } = await api("/api/saved");
+    $("savedCtl").hidden = !sources.length;                    // a server started with --saved: always shown
     const cur = $("savedSel").value;
-    $("savedSel").innerHTML = runs.map((r) => `<option value="${r.name}">${r.name} (${r.MB} MB)</option>`).join("");
+    $("savedSel").innerHTML = runs.length ? runs.map((r) => `<option value="${r.name}">${r.name} (${r.MB} MB)</option>`).join("")
+      : `<option value="">none yet</option>`;
     if (runs.some((r) => r.name === cur)) $("savedSel").value = cur;
+    $("savedSel").disabled = $("savedBtn").disabled = !runs.length;
+    $("savedHint").textContent = runs.length ? "a run made elsewhere on this network (e.g. a long one on the cluster); loading it sets the conditions to its own"
+      : `no saved run yet in ${sources.join(", ")}: a .pkl copied there shows up here within 30 s`;
   } catch (e) { $("savedCtl").hidden = true; }
 }
 function setConditions(c) {
@@ -911,7 +915,7 @@ async function loadSaved() {
     $("runStatus").textContent = `saved run ${sv.label || sv.name}` + (sv.made ? `, made ${sv.made}` : "") + `: ${s.steps} implicit steps, ${s.lu} sparse solves, ${s.wall_s.toFixed(0)} s where it ran; loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
     solventHint(); requestNuc(); showRun();
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
-  $("savedBtn").disabled = $("runBtn").disabled = false;
+  $("runBtn").disabled = false; $("savedBtn").disabled = !$("savedSel").value;
 }
 
 function marker(i) {
