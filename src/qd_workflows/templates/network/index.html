@@ -888,7 +888,9 @@ async function savedRuns() {
   try {
     const { runs } = await api("/api/saved");
     $("savedCtl").hidden = !runs.length;
+    const cur = $("savedSel").value;
     $("savedSel").innerHTML = runs.map((r) => `<option value="${r.name}">${r.name} (${r.MB} MB)</option>`).join("");
+    if (runs.some((r) => r.name === cur)) $("savedSel").value = cur;
   } catch (e) { $("savedCtl").hidden = true; }
 }
 function setConditions(c) {
@@ -1243,6 +1245,7 @@ document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r
 document.querySelectorAll('input[name="profsrc"]').forEach((r) => r.addEventListener("change", requestProfile));
 $("runBtn").addEventListener("click", run);
 $("savedBtn").addEventListener("click", loadSaved);
+setInterval(() => { if (!document.hidden && !$("savedSel").matches(":focus")) savedRuns(); }, 30000);   // runs copied in later
 $("stopBtn").addEventListener("click", () => { if (JOB) { api(`/api/stop?id=${JOB}`, {}); $("stopBtn").disabled = true; } });
 let tTimer = null;
 $("tbar").addEventListener("input", () => { PLAY = false; clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });

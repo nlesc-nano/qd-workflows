@@ -51,13 +51,8 @@ class NetSim:
         of network_growth.simulate on this network, e.g. a long LUMI run), files or folders of *.pkl, which the page
         can load and show as if it had run them."""
         self.net = net
-        self.saved = {}                                          # name -> path
-        for x in saved:
-            x = Path(x)
-            for f in (sorted(x.glob("*.pkl")) if x.is_dir() else [x]):
-                if not f.exists():
-                    raise FileNotFoundError(f"saved run {f} not found")
-                self.saved[f.stem] = f
+        self.saved_src = [Path(x) for x in saved]               # files and folders, read again at every listing
+        self._scan_saved()
         self.nuc = None
         if params is not None:
             from .simulator import Simulator
@@ -143,8 +138,18 @@ class NetSim:
     def run(self, c, log=None, stop=None):
         return self._register(ng.simulate(self.net, c, log=log, stop=stop))
 
+    def _scan_saved(self):
+        """name -> path of the saved runs: the files given and the *.pkl in the folders given, as they are now (a run
+        copied into a folder after the server started is listed too)."""
+        self.saved = {}
+        for x in self.saved_src:
+            for f in (sorted(x.glob("*.pkl")) if x.is_dir() else [x]):
+                if f.exists():
+                    self.saved[f.stem] = f
+
     def saved_list(self):
         """The saved runs: name, file and size (the label and conditions come with load_saved)."""
+        self._scan_saved()
         return {"runs": [{"name": k, "file": str(v), "MB": round(Path(v).stat().st_size / 2 ** 20, 1)}
                          for k, v in self.saved.items()]}
 
@@ -152,6 +157,7 @@ class NetSim:
         """Unpickle a saved run (network_growth.simulate's output, with its populations N), check that it was made
         on this network (same number of states), and register it like a run made here."""
         import pickle
+        self._scan_saved()
         if name not in self.saved:
             raise KeyError(f"no saved run {name!r}; there are {sorted(self.saved)}")
         with open(self.saved[name], "rb") as fh:
