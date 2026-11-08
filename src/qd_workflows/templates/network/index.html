@@ -153,6 +153,8 @@ button:disabled { opacity: .55; cursor: progress; }
       <div class="ctl"><label class="tog"><input type="checkbox" id="islands" checked> Island barriers on layer steps</label>
         <div class="hint">Off: every layer attaches as soon as it is downhill (attachment-limited growth).</div></div>
       <button class="primary" id="runBtn">Run the growth</button> <button id="stopBtn" disabled>Stop</button>
+      <div class="ctl" id="savedCtl" style="margin-top:10px" hidden><label>saved run <select id="savedSel" aria-label="saved run"></select></label>
+        <button id="savedBtn">Load</button><div class="hint">a run made elsewhere on this network (e.g. a long one on the cluster); loading it sets the conditions to its own</div></div>
       <div class="status" id="runStatus"></div>
       <h3>Look at Ω at</h3>
       <div class="ctl"><label>time from the start <span class="num"><input id="tnow" value="10" aria-label="time from the start"><i>s</i></span></label>
@@ -863,17 +865,51 @@ async function run() {
     }
     const s = RUN.stats;
     $("runStatus").textContent = `${s.steps} implicit steps, ${s.lu} sparse solves, ${s.wall_s.toFixed(1)} s on the server (${((performance.now() - t0) / 1000).toFixed(1)} s in all)`;
-    if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
-    $("runWhen").textContent = `T ${c.T} K, ${c.solvent}, c_P0 ${c.c_P0} M, ${XL} ${c.c_MX0} M` +
-      (c.inject ? `, syringe ${c.c_syringe_M} M at ${c.rate_mL_h} mL/h for ${c.inj_duration_s} s into ${c.V0_mL} mL` : "") + (c.islands ? "" : ", no island barriers");
-    $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
-    $("playBtn").disabled = false;
-    $("outNote").textContent = `${RUN.series.t.length} outputs: ${RUN.cond.n_out} log-spaced, the others where C_M, the number of dots or ⟨m⟩ move fast`;
-    drawRun(); setTime(RUN.series.t.length - 1); buildMovie(RUN.path_i);
-    if (L0) drawNucleation(L0);
-    $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
+    showRun();
   } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
   $("runBtn").disabled = false; $("stopBtn").disabled = true; JOB = null;
+}
+// a finished run (made here or loaded): the run's panels, the time bar at its end, the movie, step 1's run curves
+function showRun() {
+  const s = RUN.stats, c = RUN.cond;
+  EPSTATE = null;
+  if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
+  $("runWhen").textContent = (RUN.saved ? `saved run ${RUN.saved.label || RUN.saved.name}: ` : "") + `T ${c.T} K, ${c.solvent}, c_P0 ${c.c_P0} M, ${XL} ${c.c_MX0} M` +
+    (c.inject ? `, syringe ${c.c_syringe_M} M at ${c.rate_mL_h} mL/h for ${c.inj_duration_s} s into ${c.V0_mL} mL` : "") + (c.islands ? "" : ", no island barriers");
+  $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
+  $("playBtn").disabled = false;
+  $("outNote").textContent = `${RUN.series.t.length} outputs: ${RUN.cond.n_out} log-spaced, the others where C_M, the number of dots or ⟨m⟩ move fast`;
+  drawRun(); setTime(RUN.series.t.length - 1); buildMovie(RUN.path_i);
+  if (L0) drawNucleation(L0);
+  $("prof_run").disabled = false; $("prof_run").checked = true; requestProfile();
+}
+// saved runs: the list at start-up, and one loaded with its own conditions in the controls
+async function savedRuns() {
+  try {
+    const { runs } = await api("/api/saved");
+    $("savedCtl").hidden = !runs.length;
+    $("savedSel").innerHTML = runs.map((r) => `<option value="${r.name}">${r.name} (${r.MB} MB)</option>`).join("");
+  } catch (e) { $("savedCtl").hidden = true; }
+}
+function setConditions(c) {
+  for (const [k] of [...CTRL, ...INJ]) if (c[k] !== undefined && $("in_" + k)) { $("in_" + k).value = c[k]; $("in_" + k).classList.remove("bad"); }
+  if ([...$("in_solvent").options].some((o) => o.value === c.solvent)) $("in_solvent").value = c.solvent;
+  $("inject").checked = !!c.inject; $("injCtl").hidden = !c.inject;
+  $("islands").checked = c.islands !== false;
+}
+async function loadSaved() {
+  const name = $("savedSel").value;
+  if (!name) return;
+  $("savedBtn").disabled = $("runBtn").disabled = true; $("runStatus").className = "status"; $("runStatus").textContent = `loading ${name}…`;
+  const t0 = performance.now();
+  try {
+    RUN = await api(`/api/load_saved?name=${encodeURIComponent(name)}`);
+    setConditions(RUN.cond);
+    const s = RUN.stats, sv = RUN.saved;
+    $("runStatus").textContent = `saved run ${sv.label || sv.name}` + (sv.made ? `, made ${sv.made}` : "") + `: ${s.steps} implicit steps, ${s.lu} sparse solves, ${s.wall_s.toFixed(0)} s where it ran; loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+    solventHint(); requestNuc(); showRun();
+  } catch (e) { $("runStatus").className = "status err"; $("runStatus").textContent = e.message; }
+  $("savedBtn").disabled = $("runBtn").disabled = false;
 }
 
 function marker(i) {
@@ -1206,6 +1242,7 @@ $("tnow").addEventListener("change", () => syncT(false));
 document.querySelectorAll('input[name="mapsrc"], input[name="kmap"]').forEach((r) => r.addEventListener("change", () => L0 && drawNucleation(L0)));
 document.querySelectorAll('input[name="profsrc"]').forEach((r) => r.addEventListener("change", requestProfile));
 $("runBtn").addEventListener("click", run);
+$("savedBtn").addEventListener("click", loadSaved);
 $("stopBtn").addEventListener("click", () => { if (JOB) { api(`/api/stop?id=${JOB}`, {}); $("stopBtn").disabled = true; } });
 let tTimer = null;
 $("tbar").addEventListener("input", () => { PLAY = false; clearTimeout(tTimer); tTimer = setTimeout(() => setTime(+$("tbar").value), 60); });
@@ -1246,7 +1283,7 @@ $("movBar").addEventListener("input", () => { if (MOV) { MOV.play = false; movFr
 document.querySelectorAll("[data-fps]").forEach(b => b.addEventListener("click", () => {
   MOV_FPS = +b.dataset.fps; document.querySelectorAll("[data-fps]").forEach(x => x.classList.toggle("on", x === b));
 }));
-(async () => { D = await api("/api/defaults"); buildControls(); onConds(); })();
+(async () => { D = await api("/api/defaults"); buildControls(); onConds(); savedRuns(); })();
 </script>
 </body>
 </html>

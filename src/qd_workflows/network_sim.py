@@ -7,7 +7,11 @@ precursor alone, simulator.Simulator.omega_live) and the grand-potential map of 
 model, and plots the pool, the dots, the size distribution, the growth of each facet family, the island barriers and
 the most populated structures at any time.
 
-    python -m qd_workflows.network_sim --network DIR --thermo thermo_merged.json --params cdse_zb.yaml [--port 8773]
+    python -m qd_workflows.network_sim --network DIR --thermo thermo_merged.json --params cdse_zb.yaml [--port 8773] \
+        [--saved run.pkl | --saved DIR_OF_PKL ...]
+
+A saved run (--saved) is network_growth.simulate's output dict pickled with its populations N, made on the same
+network (e.g. a long run on a cluster); the page lists them under the Run button and shows a loaded one as its own.
 
 Run it in an environment with FastAPI, uvicorn and scipy.
 """
@@ -41,10 +45,19 @@ def diameter_nm(m):
 
 
 class NetSim:
-    def __init__(self, net: ng.Network, params: dict | None = None):
+    def __init__(self, net: ng.Network, params: dict | None = None, saved=()):
         """params: the full growth template; with it, step 1 (the nucleation simulator's grid Omega, nucleus at the
-        seed's m) on the same thermo, solvation and pool as the network."""
+        seed's m) on the same thermo, solvation and pool as the network. saved: runs made elsewhere (pickled outputs
+        of network_growth.simulate on this network, e.g. a long LUMI run), files or folders of *.pkl, which the page
+        can load and show as if it had run them."""
         self.net = net
+        self.saved = {}                                          # name -> path
+        for x in saved:
+            x = Path(x)
+            for f in (sorted(x.glob("*.pkl")) if x.is_dir() else [x]):
+                if not f.exists():
+                    raise FileNotFoundError(f"saved run {f} not found")
+                self.saved[f.stem] = f
         self.nuc = None
         if params is not None:
             from .simulator import Simulator
@@ -128,7 +141,33 @@ class NetSim:
         return out
 
     def run(self, c, log=None, stop=None):
-        r = ng.simulate(self.net, c, log=log, stop=stop)
+        return self._register(ng.simulate(self.net, c, log=log, stop=stop))
+
+    def saved_list(self):
+        """The saved runs: name, file and size (the label and conditions come with load_saved)."""
+        return {"runs": [{"name": k, "file": str(v), "MB": round(Path(v).stat().st_size / 2 ** 20, 1)}
+                         for k, v in self.saved.items()]}
+
+    def load_saved(self, name):
+        """Unpickle a saved run (network_growth.simulate's output, with its populations N), check that it was made
+        on this network (same number of states), and register it like a run made here."""
+        import pickle
+        if name not in self.saved:
+            raise KeyError(f"no saved run {name!r}; there are {sorted(self.saved)}")
+        with open(self.saved[name], "rb") as fh:
+            r = pickle.load(fh)
+        n = len(r["N"][0]) if r.get("N") else 0
+        if n != self.net.n:
+            raise ValueError(f"saved run {name} has {n} states per output, this network {self.net.n}: it was made on "
+                             f"another network ({r.get('saved', {}).get('network', 'unknown')})")
+        r["cond"] = ng.conditions(r["cond"])
+        res = self._register(r)
+        res["saved"] = {"name": name, "file": str(self.saved[name]), **(r.get("saved") or {})}
+        return res
+
+    def _register(self, r):
+        """Keep a run's output (the last MAX_RUNS) and build what the page draws from it."""
+        c = r["cond"]
         rid = uuid.uuid4().hex[:10]
         self.runs[rid] = r
         while len(self.runs) > MAX_RUNS:
@@ -581,6 +620,14 @@ def make_app(sim: NetSim):
     def stop(id: str):
         return guard(sim.stop, id)
 
+    @app.get("/api/saved")
+    def saved():
+        return sim.saved_list()
+
+    @app.get("/api/load_saved")
+    def load_saved(name: str):
+        return guard(sim.load_saved, name)
+
     @app.get("/api/job")
     def job(id: str):
         return guard(sim.job, id)
@@ -631,10 +678,12 @@ def main(argv=None) -> int:
     ap.add_argument("--params", required=True, help="growth template with the solvation block")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8773)
+    ap.add_argument("--saved", action="append", default=[],
+                    help="a pickled run of network_growth.simulate on this network, or a folder of *.pkl (repeatable)")
     a = ap.parse_args(argv)
     import uvicorn
     import yaml
-    sim = NetSim(ng.load(a.network, a.thermo, a.params), yaml.safe_load(Path(a.params).read_text()))
+    sim = NetSim(ng.load(a.network, a.thermo, a.params), yaml.safe_load(Path(a.params).read_text()), a.saved)
     uvicorn.run(make_app(sim), host=a.host, port=a.port, log_level="warning")
     return 0
 
