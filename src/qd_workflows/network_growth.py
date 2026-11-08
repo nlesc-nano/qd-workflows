@@ -200,6 +200,20 @@ class Network:
         self.label = [f"grid ({m}, {k})" for m, k in grid] + [st[r]["formula"] for r in extra]
         self.reg_id = np.array([-1] * self.n_grid + [st[r]["id"] for r in extra])
         self.seed = state_of_row[meta["seed"]]
+        # ---- the builder's Wulff dots (wulff.json of network_export wulff: lineage node -> registry dot id): every
+        # state on the Se framework of one is that Wulff dot with another shell (its lineage node); -1 for the others
+        # (layer states, islands, grid clusters)
+        self.wulff = np.full(self.n, -1)
+        if (folder / "wulff.json").exists():
+            row_of = {s["id"]: r for r, s in enumerate(st)}
+            node_fw = {}
+            for node, dot in sorted(json.loads((folder / "wulff.json").read_text())["lineage"].items(),
+                                    key=lambda kv: int(kv[0])):
+                if dot in row_of:
+                    node_fw.setdefault(st[row_of[dot]]["fw"], int(node))
+            for r, s in enumerate(st):
+                if s["fw"] in node_fw:
+                    self.wulff[state_of_row[r]] = node_fw[s["fw"]]
         mono_k = sorted(k for (m, k) in best if m == 1)
         self.mono_k = mono_k
         # ---- steps: the network's (re-pointed onto grid nodes), then the grid's Becker-Doering steps, then the
@@ -267,7 +281,7 @@ class Network:
         new[keep] = np.arange(int(keep.sum()))
         sub.full = np.where(keep)[0]
         sub.n = int(keep.sum())
-        for name in ("m", "k", "S", "row", "reg_id", "grows"):
+        for name in ("m", "k", "S", "row", "reg_id", "grows", "wulff"):
             setattr(sub, name, getattr(self, name)[keep])
         sub.label = [lab for lab, q in zip(self.label, keep) if q]
         sub.seed = int(new[self.seed])

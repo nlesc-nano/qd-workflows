@@ -111,7 +111,16 @@ button:disabled { opacity: .55; cursor: progress; }
 .pickrow button.on { border-color: var(--accent); color: var(--accent); }
 #viewer, #movie { position: relative; width: 100%; height: 340px; border-radius: 8px; overflow: hidden;
   background: var(--surface-0); border: 1px solid var(--border); }
-#viewer .empty, #movie .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
+#cEpath { position: relative; }
+.epkey { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--text-secondary); margin: 2px 4px 4px; }
+.epkey span { display: inline-flex; align-items: center; gap: 5px; }
+.epkey i { display: inline-block; width: 9px; height: 9px; }
+.epkey i.w { background: var(--series-2); transform: rotate(45deg) scale(0.85); }
+.epkey i.m { background: var(--series-1); border-radius: 50%; }
+.epkey i.g { border: 1.5px solid var(--series-1); border-radius: 50%; box-sizing: border-box; }
+.epkey i.p { background: var(--text-muted); }
+.epkey i.t { height: 0; border-top: 1.5px solid var(--text-muted); width: 10px; }
+#viewer .empty, #movie .empty, #cEpath .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px; }
 .what { font-size: 13px; margin: 8px 0; min-height: 1.4em; }
 .atoms { display: inline-flex; gap: 10px; margin-right: 6px; }
 .atoms span { display: inline-flex; align-items: center; gap: 4px; }
@@ -284,6 +293,23 @@ button:disabled { opacity: .55; cursor: progress; }
         gain, right then): from that dot down the steps with net flux to the smaller state at that time, the chain with
         the largest narrowest flux, back to the pool when the flux reaches it. Every frame on the scale of the largest,
         centred; drag to turn it, the turn is kept from frame to frame.</div>
+    </section>
+    <section class="card">
+      <h2>7 · Free energy path <small id="epWhen"></small></h2>
+      <div class="pickrow">show <button id="epPath" class="on">growth path</button><button id="epAll">every populated state</button></div>
+      <div class="pickrow">x <button id="epXn" class="on">node</button><button id="epXm">m (<span class="sMA">CdSe</span>)</button></div>
+      <div class="epkey" aria-label="key"><span><i class="w"></i>Wulff dot (builder)</span><span><i class="m"></i>intermediate</span><span><i class="g"></i>grid cluster (m ≤ 13)</span><span><i class="p"></i>the pool</span><span><i class="t"></i>step top</span></div>
+      <div class="chart tall" id="cEpath"><div class="empty">Run the growth to see its free energy path.</div></div>
+      <div class="cap" id="epCap"></div>
+      <div class="cap">ΔΩ = Ω − Ω(1) at the pool of the bar's time (Ω(1): the pool, as in step 1), so the path is the
+        free energy the growth climbs at that pool. <b>Growth path</b>: the chain of step 6's growth movie, from the pool
+        through the nucleus to the most populated dot at the bar's time (or the dot picked in step 6), node by node;
+        the thin line passes over each step's top, max(Ω<sub>a</sub> + w, Ω<sub>b</sub>, Ω<sub>a</sub> + w + B), with
+        w the arrival term (−kT ln c of what attaches) and B the island barrier. <b>Every populated state</b>: each
+        state whose N reached 10<sup>−6</sup> of the run's largest N at some output, in the order the run reached it
+        (the marker's size: its peak N). <b>Wulff dot</b>: a node of QD_builder's Wulff lineage (any shell of its Se
+        framework, the network's wulff.json); <b>intermediate</b>: the layer states, islands and isomers between
+        them; <b>grid</b>: the nucleation grid's clusters (m ≤ 13). Click a node for its structure in step 5.</div>
     </section>
   </div>
 </main>
@@ -832,7 +858,7 @@ async function run() {
       await new Promise(res => setTimeout(res, 1000));
       const j = await api(`/api/job?id=${job}`);
       if (j.state === "error") throw new Error(j.error);
-      if (j.state === "done") { RUN = j.result; break; }
+      if (j.state === "done") { RUN = j.result; EPSTATE = null; break; }
       $("runStatus").textContent = `running, ${((performance.now() - t0) / 1000).toFixed(0)} s\n${j.log}`;
     }
     const s = RUN.stats;
@@ -904,7 +930,7 @@ async function setTime(i) {
   barrierTable(s.barriers[i]);
   topTable(RUN.top[i]);
   $("dlTop").disabled = !RUN.top[i].length;
-  if (!PLAY) movTable(i);
+  if (!PLAY) { movTable(i); epath(i, null); }
   if (MOV && MOV.mode === "time" && !MOV.play) movFrame(Math.max(0, MOV.idx.findLastIndex(j => j <= i)));
   try { drawMap(await api("/api/map", { run_id: RUN.run_id, i }), `t = ${fmt(t)} s of the run`); } catch (e) { $("mapCap").textContent = e.message; }
 }
@@ -990,6 +1016,7 @@ async function frameXyz(f) {
 }
 async function buildMovie(i, state = null, mode = "growth") {
   if (MOV) MOV.play = false;
+  if (mode === "growth" && state !== null && state !== EPSTATE) epath(i, state);
   MOV = null; $("movPlay").disabled = $("movBar").disabled = $("movRec").disabled = true;
   $("movWhat").textContent = `Following the ${mode} path at t = ${fmt(RUN.series.t[i])} s…`;
   try {
@@ -1053,6 +1080,79 @@ function movFrame(i) {
   else step = how === "start" ? "the dissolving dot" : how === "to the pool" ? `back to the pool, net ${fmt(f)} M/s` : `down a ${how} step, net ${fmt(f)} M/s`;
   $("movWhat").innerHTML = `<b>${state < 0 ? `the pool's ${MA}(${XL})<sub>${k}</sub>` : lab}</b>: m = ${m}, k = ${k}${d}; ${step}; ${state < 0 ? "c" : "N"} = ${fmt(N)} M`;
 }
+// ---------------- step 7: the free energy path
+let EP = null, EPVIEW = "path", EPX = "n", EPSTATE = null, epTok = 0;
+async function epath(i, state = EPSTATE) {
+  if (!RUN) return;
+  EPSTATE = state;
+  const tok = ++epTok;
+  $("epCap").textContent = `ΔΩ at t = ${fmt(RUN.series.t[i])} s…`;
+  try {
+    const e = await api(`/api/energy_path?run_id=${RUN.run_id}&i=${i}` + (state === null ? "" : `&state=${state}`));
+    if (tok !== epTok) return;
+    EP = e; drawEpath();
+  } catch (err) { if (tok === epTok) $("epCap").textContent = err.message; }
+}
+const EPKIND = () => ({
+  wulff: { name: "Wulff dot (builder)", color: css("--series-2"), symbol: "diamond", size: 10 },
+  intermediate: { name: "intermediate", color: css("--series-1"), symbol: "circle", size: 6 },
+  grid: { name: "grid cluster (m ≤ 13)", color: css("--series-1"), symbol: "circle-open", size: 7 },
+  pool: { name: "the pool", color: css("--text-muted"), symbol: "square", size: 8 },
+});
+function drawEpath() {
+  const e = EP, K = EPKIND(), byM = EPX === "m", traces = [];
+  const hov = (q) => `<b>${q[1]}</b><br>m ${q[2]}, k ${q[3]}<br>ΔΩ ${q[4].toFixed(2)} eV<br>${q[5] === "wulff" ? `Wulff dot, lineage node ${q[6]}` : q[5] === "grid" ? "nucleation grid cluster" : q[5] === "pool" ? "the pool's complexes" : "intermediate"}`;
+  let n = 0;
+  if (EPVIEW === "path") {
+    const p = e.path;
+    if (!p.length) { Plotly.purge("cEpath"); $("cEpath").innerHTML = `<div class="empty">nothing formed by t = ${fmt(e.t)} s</div>`; $("epCap").textContent = ""; return; }
+    const lx = [], ly = [], tx = [], ty = [], tt = [];
+    p.forEach((q, j) => {
+      const x = byM ? q[2] : j;
+      if (j && q[7] !== null) {
+        const xp = byM ? 0.5 * (p[j - 1][2] + q[2]) : j - 0.5;
+        lx.push(xp); ly.push(q[7]); tx.push(xp); ty.push(q[7]);
+        tt.push(`top of the ${q[8]} step ${p[j - 1][1]} → ${q[1]}<br>ΔΩ‡ ${q[7].toFixed(2)} eV, ${(q[7] - Math.max(p[j - 1][4], q[4])).toFixed(2)} eV over its higher end`);
+      }
+      lx.push(x); ly.push(q[4]);
+    });
+    traces.push({ type: "scatter", mode: "lines", x: lx, y: ly, line: { color: css("--text-muted"), width: 1 }, hoverinfo: "skip", showlegend: false });
+    traces.push({ type: "scatter", mode: "markers", x: tx, y: ty, name: "step top", marker: { symbol: "line-ew-open", size: 8, color: css("--text-muted") }, text: tt, hovertemplate: "%{text}<extra></extra>" });
+    for (const kd of ["pool", "grid", "intermediate", "wulff"]) {
+      const sel = p.map((q, j) => [q, j]).filter(([q]) => q[5] === kd);
+      if (!sel.length) continue;
+      traces.push({ type: "scatter", mode: "markers", name: K[kd].name, x: sel.map(([q, j]) => byM ? q[2] : j), y: sel.map(([q]) => q[4]),
+        customdata: sel.map(([q]) => q[0]), text: sel.map(([q]) => hov(q)), hovertemplate: "%{text}<extra></extra>",
+        marker: { symbol: K[kd].symbol, size: K[kd].size, color: K[kd].color, line: { width: kd === "wulff" ? 1 : 0, color: css("--surface-1") } } });
+    }
+    n = p.length;
+    const nw = p.filter(q => q[5] === "wulff").length, last = p.at(-1);
+    $("epWhen").textContent = `t = ${fmt(e.t)} s, to ${last[1]}`;
+    $("epCap").textContent = `${n} nodes from the pool to ${last[1]} (m ${last[2]}): ${nw} Wulff dots, ${p.filter(q => q[5] === "intermediate").length} intermediates, ${p.filter(q => q[5] === "grid").length} grid clusters; highest top ${fmt(Math.max(...p.map(q => q[7] ?? -Infinity)))} eV, end ΔΩ ${last[4].toFixed(2)} eV.`;
+  } else {
+    const p = e.populated;
+    if (!p.length) { Plotly.purge("cEpath"); $("cEpath").innerHTML = `<div class="empty">no state populated yet</div>`; return; }
+    const big = Math.max(...p.map(q => q[7]));
+    for (const kd of ["grid", "intermediate", "wulff"]) {
+      const sel = p.map((q, j) => [q, j]).filter(([q]) => q[5] === kd);
+      if (!sel.length) continue;
+      traces.push({ type: "scatter", mode: "markers", name: K[kd].name, x: sel.map(([q, j]) => byM ? q[2] : j), y: sel.map(([q]) => q[4]),
+        customdata: sel.map(([q]) => q[0]), text: sel.map(([q]) => `${hov(q)}<br>peak N ${fmt(q[7])} M, first at ${fmt(q[8])} s`), hovertemplate: "%{text}<extra></extra>",
+        marker: { symbol: K[kd].symbol, color: K[kd].color, opacity: kd === "wulff" ? 1 : 0.75,
+          size: sel.map(([q]) => (kd === "wulff" ? 4 : 2) + 1.4 * Math.max(0, 6 + Math.log10(q[7] / big))), line: { width: kd === "wulff" ? 1 : 0, color: css("--surface-1") } } });
+    }
+    n = p.length;
+    $("epWhen").textContent = `t = ${fmt(e.t)} s, ${n} states`;
+    $("epCap").textContent = `${n} states populated over the run (N ≥ 10⁻⁶ of the largest): ${p.filter(q => q[5] === "wulff").length} Wulff dots, ${p.filter(q => q[5] === "intermediate").length} intermediates, ${p.filter(q => q[5] === "grid").length} grid clusters` + (n >= 4000 ? " (the 4000 most populated)" : "") + ".";
+  }
+  if (!e.wulff_known) $("epCap").textContent += " This network has no wulff.json: no node is marked as a Wulff dot.";
+  const L = base({ margin: { l: 52, r: 10, t: 8, b: 36 },
+    xaxis: { title: { text: byM ? `m (${MA})` : (EPVIEW === "path" ? "node along the path" : "state, in the order the run reached it"), standoff: 4 } },
+    yaxis: { title: { text: "ΔΩ (eV)", standoff: 4 } } });
+  if ($("cEpath").querySelector(".empty")) $("cEpath").innerHTML = "";
+  Plotly.react("cEpath", traces, L, CFG);
+  onClick("cEpath", (ev) => { const q = ev.points[0]; if (q && q.customdata !== undefined && q.customdata >= 0) show(q.customdata); });
+}
 async function movTable(i) {
   const top = RUN.top[i], t = fmt(RUN.series.t[i]);
   let h = `<tr class="pick" data-mode="time" data-s="-1"><td colspan="5"><b>▶ the dots over time</b> (the most populated, one frame per output; follows the time bar)</td></tr>` +
@@ -1113,6 +1213,12 @@ $("playBtn").addEventListener("click", playRun);
 for (const [id, ty] of [["axLog", "log"], ["axLin", "linear"]]) $(id).addEventListener("click", () => {
   tAxis.type = ty; $("axLog").classList.toggle("on", ty === "log"); $("axLin").classList.toggle("on", ty === "linear");
   if (RUN) { drawRun(); for (const c of ["cPool", "cAlpha", "cDots", "cSize", "cPSD", "cFacet", "cShare"]) Plotly.relayout(c, marker(IDX)); }
+});
+for (const [id, v] of [["epPath", "path"], ["epAll", "all"]]) $(id).addEventListener("click", () => {
+  EPVIEW = v; for (const b of ["epPath", "epAll"]) $(b).classList.toggle("on", b === id); if (EP) drawEpath();
+});
+for (const [id, v] of [["epXn", "n"], ["epXm", "m"]]) $(id).addEventListener("click", () => {
+  EPX = v; for (const b of ["epXn", "epXm"]) $(b).classList.toggle("on", b === id); if (EP) drawEpath();
 });
 $("movPlay").addEventListener("click", () => playMovie(false));
 $("movRec").addEventListener("click", () => playMovie(true));

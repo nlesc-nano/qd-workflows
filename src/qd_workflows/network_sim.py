@@ -32,6 +32,8 @@ MAX_RUNS = 6
 PATH_MAX = 500                           # states on a run's path (the growth movie)
 KIND_NAME = {v: k for k, v in ng.KIND.items()}
 DISSOLVE_MIN_N = 1e-4                    # dissolving dots: N >= this share of the most populated dot's
+POP_MIN = 1e-6                           # free energy panel: populated = N reached this share of the run's largest N
+POP_MAX = 4000                           # at most this many populated states (the most populated)
 
 
 def diameter_nm(m):
@@ -73,7 +75,9 @@ class NetSim:
                 "network": {"states": int(net.n), "grid_nodes": int(net.n_grid), "steps": int(len(net.a)),
                             "kinds": kinds, "island_curves": len(net.isl), "m_max": int(net.m.max()),
                             "d_max_nm": float(diameter_nm(net.m.max())), "seed": net.label[net.seed],
-                            "compositions": len(self.comp_keys)},
+                            "compositions": len(self.comp_keys),
+                            "wulff_states": int((net.wulff >= 0).sum()),
+                            "wulff_dots": int(len(set(net.wulff[net.wulff >= 0].tolist())))},
                 "species": net.species, "solvents": solvents.table(),
                 "nucleation": self.nuc is not None,
                 "no_thermo": sorted([m, k] for m, k in self.nuc.no_thermo) if self.nuc else []}
@@ -363,7 +367,7 @@ class NetSim:
 
     def path(self, run_id, i, state=None, mode="growth"):
         """A path of the run at output i, frames: state, label, m, k, the step into it (its net transfer in M, or its
-        net flux in M/s), the step's kind, N (M) at output i.
+        net flux in M/s), the step's kind, N (M) at output i, the step's index (-1: none).
         growth: from the pool to state (default the most populated dot, or state before there are dots), the chain
         of steps along which the most material has moved so far, i.e. whose narrowest step has the largest net
         transfer (the flux integrated over the run; steps to the larger state, isomerisations either way, the
@@ -377,7 +381,8 @@ class NetSim:
         N = np.asarray(r["N"][i], float)
         t = float(r["t"][i])
         up, down = self._edges()
-        frame = lambda x, f, how: [x, net.label[x], int(net.m[x]), int(net.k[x]), float(f), how, float(N[x])]  # noqa: E731
+        frame = lambda x, f, how, e=-1: [x, net.label[x], int(net.m[x]), int(net.k[x]), float(f), how, float(N[x]),  # noqa: E731
+                                         int(e)]
         if mode == "dissolution":
             J, js = net.fluxes(self._rates_at(run_id, i), N)
             if state is None:
@@ -399,7 +404,7 @@ class NetSim:
             cur = end
             while cur != state and len(frames) < PATH_MAX:
                 prev, e, f = par[cur]
-                frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])]))
+                frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])], e))
                 cur = prev
             frames.append(frame(state, 0.0, "start"))
             frames = frames[::-1]
@@ -428,10 +433,68 @@ class NetSim:
         frames, cur = [], state
         while cur in par and len(frames) < PATH_MAX:
             prev, e, f = par[cur]
-            frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])]))
+            frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])], e))
             cur = prev
         frames.append(frame(cur, start[cur], "nucleus"))
         return {"t": t, "i": i, "mode": mode, "frames": frames[::-1]}
+
+    def energy_path(self, run_id, i, state=None):
+        """The free energy along the run at the pool of output i, relative to Omega(1) (the pool, as profile()):
+        path: the growth path to state (path(), growth: the pool, the nucleus, then every state it climbs through), each
+        node's Omega and the top of the step into it (Network.rates: max(Omega_a + w, Omega_b, Omega_a + w + B); the
+        nucleus: max(Omega of one complex + w of the other, Omega_nucleus)); populated: every state whose N reached
+        POP_MIN of the run's largest N at some output, in the order the run reached them (first output above that,
+        then m), with its peak N. Each node: grid (nucleation grid), the builder's Wulff dot (lineage node, every shell
+        of its Se framework) or an intermediate (layer state, island, shell variant between Wulff dots)."""
+        net = self.net
+        i = int(i)
+        r = self.runs[run_id]
+        c, pl, _N, t = self._pool_at({"run_id": run_id, "i": i})
+        rr = self._rates_at(run_id, i)
+        om = rr["Omega"]
+        kt = ng.KB_EV * c["T"]
+        _g, th, _pa = net.G(c["T"], c["eps"])
+        om1 = np.array([th["G"][(1, n)] - pl["mu_MA"] - n * pl["mu_MX"] for n in net.mono_k])
+        ref = float(om1.min() - kt * np.log(np.exp(-(om1 - om1.min()) / kt).sum()))
+        oa, ob = om[net.a], om[net.b]
+        top = np.maximum(np.maximum(oa + rr["w"], ob), oa + rr["w"] + rr["B"])
+
+        def kind(x):
+            return "wulff" if net.wulff[x] >= 0 else ("grid" if x < net.n_grid else "intermediate")
+
+        def node(x):
+            return [int(x), net.label[x], int(net.m[x]), int(net.k[x]), float(om[x] - ref), kind(x), int(net.wulff[x])]
+
+        p = self.path(run_id, i, state, "growth")
+        path = []
+        if p["frames"]:
+            fr = p["frames"]
+            j = fr[0][0]                                                  # the nucleus: from two pool complexes
+            x_n = pl["speciation"]
+            tops = []
+            for n1, n2, jj in net.src.tolist():
+                if jj != j:
+                    continue
+                c1, c2 = pl["c_MA"] * x_n.get(n1, 0.0), pl["c_MA"] * x_n.get(n2, 0.0)
+                if c1 > 0 and c2 > 0:
+                    tops.append(max(-kt * math.log(c1) - kt * math.log(c2), float(om[j])))
+            path.append([-1, "the pool", 1, 0, 0.0, "pool", -1, None, None])
+            path.append(node(j) + [float(min(tops) - ref) if tops else None, "nucleus"])
+            for f in fr[1:]:
+                e = f[7]                                                  # tops are the same both ways
+                path.append(node(f[0]) + [float(top[e] - ref) if e >= 0 else None, f[5]])
+        N = np.asarray(r["N"], float)                                     # outputs x states
+        peak = N.max(axis=0)
+        lim = POP_MIN * float(peak.max()) if peak.max() > 0 else np.inf
+        pop = np.where(peak >= lim)[0]
+        first = np.argmax(N[:, pop] >= lim, axis=0)
+        if len(pop) > POP_MAX:                                            # the most populated, in their order
+            keep = np.argsort(-peak[pop])[:POP_MAX]
+            pop, first = pop[keep], first[keep]
+        order = np.lexsort((net.m[pop], first))
+        populated = [node(x) + [float(peak[x]), float(r["t"][q])] for x, q in zip(pop[order], first[order])]
+        return {"t": float(t), "i": i, "ref": ref, "path": path, "populated": populated, "pop_min": POP_MIN,
+                "wulff_known": bool((net.wulff >= 0).any())}
 
     def dissolving(self, run_id, i, n=8):
         """The dots shrinking most at output i: the CdSe they lose per second to smaller states (steps that add CdSe,
@@ -541,6 +604,10 @@ def make_app(sim: NetSim):
     @app.get("/api/path")
     def path(run_id: str, i: int, state: int | None = None, mode: str = "growth"):
         return guard(sim.path, run_id, i, state, mode)
+
+    @app.get("/api/energy_path")
+    def energy_path(run_id: str, i: int, state: int | None = None):
+        return guard(sim.energy_path, run_id, i, state)
 
     @app.get("/api/dissolving")
     def dissolving(run_id: str, i: int):

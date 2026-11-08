@@ -11,6 +11,7 @@ Reads the tree registry and its products and writes one self-contained folder:
                    (ideal gas at 1 M, no solvation; the rotational symmetry number included) and the vdW surface S
                    (A^2), so that G(T, eps) = interp(T, G_gas) + per_area(eps) S, as for the grid's clusters
     geometry.npz   symbols (codes into network.json's elements) and positions of every state (the structure panel)
+    wulff.json     the registry's lineage: per node, the id of its Wulff dot (QD_builder's Wulff construction)
     layer_overlap.json   per parent: the summed areas of its layer steps on each facet (normal) and family against
                    the area all of them together cover (alternative sheets on one facet overlap)
 
@@ -33,6 +34,9 @@ dCd, dCl, dir, sheet, same_slab_next), ladders.json ("parent|family" -> rungs b,
         --thermo thermo_merged.json --params templates/growth/cdse_zb.yaml --out DIR [--nproc 5]
     python -m qd_workflows.network_export areas --network DIR --registry registry.json --steps layer_steps.json \
         --params templates/growth/cdse_zb.yaml [--nproc 5]       (add area_A2 to an export made without it)
+    python -m qd_workflows.network_export wulff --network DIR --registry registry.json
+        (wulff.json: the registry's lineage, node -> its Wulff dot's id, for an export made without it; any JSON
+        with the registry's "lineage" block will do)
 """
 from __future__ import annotations
 
@@ -415,6 +419,7 @@ def export(a) -> dict:
             "temperatures": temps, "seed": row[seed], "seed_id": seed, "vdw_scale": P["vdw_scale"], "elements": ELEMENTS,
             "states": states, "steps": st_out, "islands": islands}
     (out / "network.json").write_text(json.dumps(meta, separators=(",", ":")))
+    write_wulff(out, reg, a.registry)
     np.savez_compressed(out / "arrays.npz", G_gas=G, S=S, sigma=sig)
     sym, pos, off = [], [], [0]
     for i in ids:
@@ -428,6 +433,14 @@ def export(a) -> dict:
     print(f"[export] {out}: {len(states)} states (m {min(s['m'] for s in states)}-{max(s['m'] for s in states)}), "
           f"{len(st_out)} steps {dict(kinds)}, {len(islands)} island rows", flush=True)
     return meta
+
+
+def write_wulff(out, reg, source) -> int:
+    """wulff.json: the lineage's Wulff dots (QD_builder's Wulff constructions, the tree's nodes), node -> registry dot
+    id; network_growth marks every state on one's Se framework as that Wulff dot."""
+    lin = {str(k): int(v["dot"]) for k, v in reg["lineage"].items() if v.get("dot") is not None}
+    Path(out, "wulff.json").write_text(json.dumps({"source": str(source), "lineage": lin}))
+    return len(lin)
 
 
 def add_areas(a) -> None:
@@ -466,6 +479,14 @@ def main(argv=None) -> int:
         ap.add_argument("--params", required=True, help="growth template with the solvation block (vdw_scale)")
         ap.add_argument("--nproc", type=int, default=5)
         add_areas(ap.parse_args(argv[1:]))
+        return 0
+    if argv[:1] == ["wulff"]:
+        ap = argparse.ArgumentParser(prog="python -m qd_workflows.network_export wulff")
+        ap.add_argument("--network", required=True, help="the export folder")
+        ap.add_argument("--registry", required=True, help="registry.json (or any JSON with its lineage block)")
+        a = ap.parse_args(argv[1:])
+        n = write_wulff(a.network, json.loads(Path(a.registry).read_text()), a.registry)
+        print(f"[export] {a.network}/wulff.json: {n} lineage Wulff dots", flush=True)
         return 0
     ap = argparse.ArgumentParser(prog="python -m qd_workflows.network_export")
     ap.add_argument("--registry", required=True)
