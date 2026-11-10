@@ -7,7 +7,11 @@ precursor alone, simulator.Simulator.omega_live) and the grand-potential map of 
 model, and plots the pool, the dots, the size distribution, the growth of each facet family, the island barriers and
 the most populated structures at any time.
 
-    python -m qd_workflows.network_sim --network DIR --thermo thermo_merged.json --params cdse_zb.yaml [--port 8773]
+    python -m qd_workflows.network_sim --network DIR --thermo thermo_merged.json --params cdse_zb.yaml [--port 8773] \
+        [--saved run.pkl | --saved DIR_OF_PKL ...]
+
+A saved run (--saved) is network_growth.simulate's output dict pickled with its populations N, made on the same
+network (e.g. a long run on a cluster); the page lists them under the Run button and shows a loaded one as its own.
 
 Run it in an environment with FastAPI, uvicorn and scipy.
 """
@@ -32,6 +36,8 @@ MAX_RUNS = 6
 PATH_MAX = 500                           # states on a run's path (the growth movie)
 KIND_NAME = {v: k for k, v in ng.KIND.items()}
 DISSOLVE_MIN_N = 1e-4                    # dissolving dots: N >= this share of the most populated dot's
+POP_MIN = 1e-6                           # free energy panel: populated = N reached this share of the run's largest N
+POP_MAX = 4000                           # at most this many populated states (the most populated)
 
 
 def diameter_nm(m):
@@ -39,19 +45,25 @@ def diameter_nm(m):
 
 
 class NetSim:
-    def __init__(self, net: ng.Network, params: dict | None = None):
+    def __init__(self, net: ng.Network, params: dict | None = None, saved=()):
         """params: the full growth template; with it, step 1 (the nucleation simulator's grid Omega, nucleus at the
-        seed's m) on the same thermo, solvation and pool as the network."""
+        seed's m) on the same thermo, solvation and pool as the network. saved: runs made elsewhere (pickled outputs
+        of network_growth.simulate on this network, e.g. a long LUMI run), files or folders of *.pkl, which the page
+        can load and show as if it had run them."""
         self.net = net
+        self.saved_src = [Path(x) for x in saved]               # files and folders, read again at every listing
+        self._scan_saved()
         self.nuc = None
         if params is not None:
             from .simulator import Simulator
             self.nuc = Simulator(net.thermo, params, {}, thermo_dir=net.thermo_dir, nucleation_only=True, m0=ng.M_DOT)
-            for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps"):
+            for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps", "gamma_MX"):
                 if k in ng.LIMITS:
                     self.nuc.limits[k] = list(ng.LIMITS[k])        # the network's ranges, not the old page's
         self.runs: OrderedDict = OrderedDict()
         self.jobs: dict = {}
+        self.run_lock = threading.Lock()         # one run at a time: two MUMPS factorizations in one process crash it
+                                                 # (MUMPS_LOAD_INIT is not thread-safe), and they would share the cores
         g = np.load(net.folder / "geometry.npz")
         self.geo = (g["symbols"], g["positions"], g["offsets"])
         self.elements = net.meta.get("elements", ("Cd", "Se", "Cl"))   # exports before the carboxylate networks: no list
@@ -67,11 +79,18 @@ class NetSim:
     def defaults(self):
         net = self.net
         kinds = {name: int((net.kind == v).sum()) for name, v in ng.KIND.items()}
-        return {"conditions": {k: v for k, v in ng.DEFAULTS.items()}, "limits": ng.LIMITS,
+        cond = dict(ng.DEFAULTS)
+        carbox = net.species.get("X") != "Cl"
+        if carbox:                                   # a carboxylate network stands in for oleate by default
+            cond["gamma_MX"] = round(ng.oleate_gamma_mx(float(cond["T"])), 4)
+        return {"conditions": cond, "limits": ng.LIMITS,
+                "oleate": {"dG_tail_eV": ng.OLEATE_DG_TAIL_EV, "default": carbox},
                 "network": {"states": int(net.n), "grid_nodes": int(net.n_grid), "steps": int(len(net.a)),
                             "kinds": kinds, "island_curves": len(net.isl), "m_max": int(net.m.max()),
                             "d_max_nm": float(diameter_nm(net.m.max())), "seed": net.label[net.seed],
-                            "compositions": len(self.comp_keys)},
+                            "compositions": len(self.comp_keys),
+                            "wulff_states": int((net.wulff >= 0).sum()),
+                            "wulff_dots": int(len(set(net.wulff[net.wulff >= 0].tolist())))},
                 "species": net.species, "solvents": solvents.table(),
                 "nucleation": self.nuc is not None,
                 "no_thermo": sorted([m, k] for m, k in self.nuc.no_thermo) if self.nuc else []}
@@ -92,7 +111,16 @@ class NetSim:
 
         def work():
             try:
-                job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s), stop=lambda: job["stop"])
+                if not self.run_lock.acquire(blocking=False):
+                    job["log"] = "waiting for the run before it to end"
+                    while not self.run_lock.acquire(timeout=0.5):
+                        if job["stop"]:
+                            job["state"], job["error"] = "error", "stopped before it started (another run was going)"
+                            return
+                try:
+                    job["result"] = self.run(c, log=lambda s: job.__setitem__("log", s), stop=lambda: job["stop"])
+                finally:
+                    self.run_lock.release()
                 job["state"] = "done"
             except Exception as exc:                            # reported to the page
                 job["state"], job["error"] = "error", str(exc)
@@ -113,7 +141,44 @@ class NetSim:
         return out
 
     def run(self, c, log=None, stop=None):
-        r = ng.simulate(self.net, c, log=log, stop=stop)
+        return self._register(ng.simulate(self.net, c, log=log, stop=stop))
+
+    def _scan_saved(self):
+        """name -> path of the saved runs: the files given and the *.pkl in the folders given, as they are now (a run
+        copied into a folder after the server started is listed too)."""
+        self.saved = {}
+        for x in self.saved_src:
+            for f in (sorted(x.glob("*.pkl")) if x.is_dir() else [x]):
+                if f.exists():
+                    self.saved[f.stem] = f
+
+    def saved_list(self):
+        """The saved runs: name, file and size (the label and conditions come with load_saved)."""
+        self._scan_saved()
+        return {"sources": [str(x) for x in self.saved_src], "runs": [{"name": k, "file": str(v), "MB": round(Path(v).stat().st_size / 2 ** 20, 1)}
+                         for k, v in self.saved.items()]}
+
+    def load_saved(self, name):
+        """Unpickle a saved run (network_growth.simulate's output, with its populations N), check that it was made
+        on this network (same number of states), and register it like a run made here."""
+        import pickle
+        self._scan_saved()
+        if name not in self.saved:
+            raise KeyError(f"no saved run {name!r}; there are {sorted(self.saved)}")
+        with open(self.saved[name], "rb") as fh:
+            r = pickle.load(fh)
+        n = len(r["N"][0]) if r.get("N") else 0
+        if n != self.net.n:
+            raise ValueError(f"saved run {name} has {n} states per output, this network {self.net.n}: it was made on "
+                             f"another network ({r.get('saved', {}).get('network', 'unknown')})")
+        r["cond"] = ng.conditions(r["cond"])
+        res = self._register(r)
+        res["saved"] = {"name": name, "file": str(self.saved[name]), **(r.get("saved") or {})}
+        return res
+
+    def _register(self, r):
+        """Keep a run's output (the last MAX_RUNS) and build what the page draws from it."""
+        c = r["cond"]
         rid = uuid.uuid4().hex[:10]
         self.runs[rid] = r
         while len(self.runs) > MAX_RUNS:
@@ -143,7 +208,7 @@ class NetSim:
     # ---------------- step 1: the nucleation simulator's grid Omega
     @staticmethod
     def _nuc_cond(c):
-        out = {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps")}
+        out = {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps", "gamma_MX")}
         if c["inject"]:                                          # the nucleation simulator's syringe: the same flask
             out.update({k: c[k] for k in ("c_syringe_M", "rate_mL_h", "V0_mL", "inj_duration_s")},
                        inject=True, c_P0_flask=c["c_P0"])
@@ -167,7 +232,8 @@ class NetSim:
                "dOmega": []}
         cols = []
         for t, cm, cx in zip(r["t"], r["c_MA"], r["c_X_left"]):
-            o = self.nuc._omega_at(float(c["T"]), float(cm), float(cx), ng.M_DOT, float(c["eps"]), {})
+            o = self.nuc._omega_at(float(c["T"]), float(cm), float(cx), ng.M_DOT, float(c["eps"]),
+                                   {"gamma_MX": float(c.get("gamma_MX", 1.0))})
             if o is None:
                 continue
             rows = [q for q in o["per_m"] if q["m"] <= o["m0"]]
@@ -194,13 +260,13 @@ class NetSim:
             i = int(body["i"])
             c = r["cond"]
             _g, th, _pa = net.G(c["T"], c["eps"])
-            pl, N, t = ng._pool(th, r["c_MA"][i], r["c_X_left"][i]), r["N"][i].astype(float), r["t"][i]
+            pl, N, t = ng._pool(th, r["c_MA"][i], r["c_X_left"][i], c["gamma_MX"]), r["N"][i].astype(float), r["t"][i]
         else:
             c = self._cond(body.get("conditions"))
             t = float(body.get("t", 10.0))
             cm, cx, _a = ng.precursor_only(c, t)
             _g, th, _pa = net.G(c["T"], c["eps"])
-            pl, N = ng._pool(th, cm, cx), None
+            pl, N = ng._pool(th, cm, cx, c["gamma_MX"]), None
         kt = ng.KB_EV * c["T"]
         g = _g
         om = g - net.m * pl["mu_MA"] - net.k * pl["mu_MX"]
@@ -240,7 +306,7 @@ class NetSim:
             i = int(body["i"])
             c = r["cond"]
             _g, th, _pa = self.net.G(c["T"], c["eps"])
-            return c, ng._pool(th, r["c_MA"][i], r["c_X_left"][i]), r["N"][i], r["t"][i]
+            return c, ng._pool(th, r["c_MA"][i], r["c_X_left"][i], c["gamma_MX"]), r["N"][i], r["t"][i]
         c = self._cond(body.get("conditions"))
         if body.get("t") is not None:
             t = float(body["t"])
@@ -252,7 +318,7 @@ class NetSim:
         if not 0 < alpha < 1 or cm <= 0:
             raise ValueError("the conversion must be in (0, 1)")
         _g, th, _pa = self.net.G(c["T"], c["eps"])
-        pl = ng._pool(th, cm, cx)
+        pl = ng._pool(th, cm, cx, c["gamma_MX"])
         pl["alpha"] = alpha
         return c, pl, None, t
 
@@ -352,7 +418,7 @@ class NetSim:
 
     def path(self, run_id, i, state=None, mode="growth"):
         """A path of the run at output i, frames: state, label, m, k, the step into it (its net transfer in M, or its
-        net flux in M/s), the step's kind, N (M) at output i.
+        net flux in M/s), the step's kind, N (M) at output i, the step's index (-1: none).
         growth: from the pool to state (default the most populated dot, or state before there are dots), the chain
         of steps along which the most material has moved so far, i.e. whose narrowest step has the largest net
         transfer (the flux integrated over the run; steps to the larger state, isomerisations either way, the
@@ -366,7 +432,8 @@ class NetSim:
         N = np.asarray(r["N"][i], float)
         t = float(r["t"][i])
         up, down = self._edges()
-        frame = lambda x, f, how: [x, net.label[x], int(net.m[x]), int(net.k[x]), float(f), how, float(N[x])]  # noqa: E731
+        frame = lambda x, f, how, e=-1: [x, net.label[x], int(net.m[x]), int(net.k[x]), float(f), how, float(N[x]),  # noqa: E731
+                                         int(e)]
         if mode == "dissolution":
             J, js = net.fluxes(self._rates_at(run_id, i), N)
             if state is None:
@@ -388,7 +455,7 @@ class NetSim:
             cur = end
             while cur != state and len(frames) < PATH_MAX:
                 prev, e, f = par[cur]
-                frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])]))
+                frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])], e))
                 cur = prev
             frames.append(frame(state, 0.0, "start"))
             frames = frames[::-1]
@@ -417,10 +484,68 @@ class NetSim:
         frames, cur = [], state
         while cur in par and len(frames) < PATH_MAX:
             prev, e, f = par[cur]
-            frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])]))
+            frames.append(frame(cur, f, KIND_NAME[int(net.kind[e])], e))
             cur = prev
         frames.append(frame(cur, start[cur], "nucleus"))
         return {"t": t, "i": i, "mode": mode, "frames": frames[::-1]}
+
+    def energy_path(self, run_id, i, state=None):
+        """The free energy along the run at the pool of output i, relative to Omega(1) (the pool, as profile()):
+        path: the growth path to state (path(), growth: the pool, the nucleus, then every state it climbs through), each
+        node's Omega and the top of the step into it (Network.rates: max(Omega_a + w, Omega_b, Omega_a + w + B); the
+        nucleus: max(Omega of one complex + w of the other, Omega_nucleus)); populated: every state whose N reached
+        POP_MIN of the run's largest N at some output, in the order the run reached them (first output above that,
+        then m), with its peak N. Each node: grid (nucleation grid), the builder's Wulff dot (lineage node, every shell
+        of its Se framework) or an intermediate (layer state, island, shell variant between Wulff dots)."""
+        net = self.net
+        i = int(i)
+        r = self.runs[run_id]
+        c, pl, _N, t = self._pool_at({"run_id": run_id, "i": i})
+        rr = self._rates_at(run_id, i)
+        om = rr["Omega"]
+        kt = ng.KB_EV * c["T"]
+        _g, th, _pa = net.G(c["T"], c["eps"])
+        om1 = np.array([th["G"][(1, n)] - pl["mu_MA"] - n * pl["mu_MX"] for n in net.mono_k])
+        ref = float(om1.min() - kt * np.log(np.exp(-(om1 - om1.min()) / kt).sum()))
+        oa, ob = om[net.a], om[net.b]
+        top = np.maximum(np.maximum(oa + rr["w"], ob), oa + rr["w"] + rr["B"])
+
+        def kind(x):
+            return "wulff" if net.wulff[x] >= 0 else ("grid" if x < net.n_grid else "intermediate")
+
+        def node(x):
+            return [int(x), net.label[x], int(net.m[x]), int(net.k[x]), float(om[x] - ref), kind(x), int(net.wulff[x])]
+
+        p = self.path(run_id, i, state, "growth")
+        path = []
+        if p["frames"]:
+            fr = p["frames"]
+            j = fr[0][0]                                                  # the nucleus: from two pool complexes
+            x_n = pl["speciation"]
+            tops = []
+            for n1, n2, jj in net.src.tolist():
+                if jj != j:
+                    continue
+                c1, c2 = pl["c_MA"] * x_n.get(n1, 0.0), pl["c_MA"] * x_n.get(n2, 0.0)
+                if c1 > 0 and c2 > 0:
+                    tops.append(max(-kt * math.log(c1) - kt * math.log(c2), float(om[j])))
+            path.append([-1, "the pool", 1, 0, 0.0, "pool", -1, None, None])
+            path.append(node(j) + [float(min(tops) - ref) if tops else None, "nucleus"])
+            for f in fr[1:]:
+                e = f[7]                                                  # tops are the same both ways
+                path.append(node(f[0]) + [float(top[e] - ref) if e >= 0 else None, f[5]])
+        N = np.asarray(r["N"], float)                                     # outputs x states
+        peak = N.max(axis=0)
+        lim = POP_MIN * float(peak.max()) if peak.max() > 0 else np.inf
+        pop = np.where(peak >= lim)[0]
+        first = np.argmax(N[:, pop] >= lim, axis=0)
+        if len(pop) > POP_MAX:                                            # the most populated, in their order
+            keep = np.argsort(-peak[pop])[:POP_MAX]
+            pop, first = pop[keep], first[keep]
+        order = np.lexsort((net.m[pop], first))
+        populated = [node(x) + [float(peak[x]), float(r["t"][q])] for x, q in zip(pop[order], first[order])]
+        return {"t": float(t), "i": i, "ref": ref, "path": path, "populated": populated, "pop_min": POP_MIN,
+                "wulff_known": bool((net.wulff >= 0).any())}
 
     def dissolving(self, run_id, i, n=8):
         """The dots shrinking most at output i: the CdSe they lose per second to smaller states (steps that add CdSe,
@@ -507,6 +632,14 @@ def make_app(sim: NetSim):
     def stop(id: str):
         return guard(sim.stop, id)
 
+    @app.get("/api/saved")
+    def saved():
+        return sim.saved_list()
+
+    @app.get("/api/load_saved")
+    def load_saved(name: str):
+        return guard(sim.load_saved, name)
+
     @app.get("/api/job")
     def job(id: str):
         return guard(sim.job, id)
@@ -531,6 +664,10 @@ def make_app(sim: NetSim):
     def path(run_id: str, i: int, state: int | None = None, mode: str = "growth"):
         return guard(sim.path, run_id, i, state, mode)
 
+    @app.get("/api/energy_path")
+    def energy_path(run_id: str, i: int, state: int | None = None):
+        return guard(sim.energy_path, run_id, i, state)
+
     @app.get("/api/dissolving")
     def dissolving(run_id: str, i: int):
         return guard(sim.dissolving, run_id, i)
@@ -553,10 +690,12 @@ def main(argv=None) -> int:
     ap.add_argument("--params", required=True, help="growth template with the solvation block")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8773)
+    ap.add_argument("--saved", action="append", default=[],
+                    help="a pickled run of network_growth.simulate on this network, or a folder of *.pkl (repeatable)")
     a = ap.parse_args(argv)
     import uvicorn
     import yaml
-    sim = NetSim(ng.load(a.network, a.thermo, a.params), yaml.safe_load(Path(a.params).read_text()))
+    sim = NetSim(ng.load(a.network, a.thermo, a.params), yaml.safe_load(Path(a.params).read_text()), a.saved)
     uvicorn.run(make_app(sim), host=a.host, port=a.port, log_level="warning")
     return 0
 

@@ -7,7 +7,10 @@ grid; the population N_i (mol/L) moves over the steps between states with rates 
     Omega_i(t) = G_i(T, eps) - m_i mu_MA(t) - k_i mu_MX(t)          (m = CdSe units, k = CdCl2 units)
 
 where mu_MA, mu_MX come from the solution (grid_thermo.pool: the CdSe(CdCl2)_n complexes share the CdCl2 left with
-the free CdCl2). Each step a -> b (b the larger) has one top, and both directions climb to it:
+the free CdCl2), mu_MX = g_MX + kT ln(gamma_MX c_MX,free / c0). gamma_MX scales the salt's activity without changing
+its amount: every bound MX (dots, islands, complexes) binds kT ln(1/gamma_MX) more weakly, while the balance and the
+collision rates stay in concentrations. Oleate on an acetate network: gamma_MX = exp(-2 c / kT), c the chain
+correction per tail (oleate_gamma_mx; docs/plans/oleate_chain). Each step a -> b (b the larger) has one top, and both directions climb to it:
 
     Omega_top = max(Omega_a + w_s, Omega_b, Omega_a + w_s + B_ab),   w_s = -kT ln(c_s / c0)
     k_ab = nu_ab exp(-(Omega_top - Omega_a) / kT),    k_ba = nu_ab exp(-(Omega_top - Omega_b) / kT)
@@ -67,16 +70,28 @@ OUT_CH = (0.3, 0.5, 0.5)                     # dense outputs: change of ln C_M, 
 M_STEP = 5.0                                 # largest change of the dots' <m> per step (CdSe units), once they hold
 DOT_SEEN = 1e-12                             # this share of the CdSe (the burst: <m> 13 -> 140 in ~0.4 s); M_STEP 1
                                              # took 1.7x the steps (acetate p2 to 20 s: dots within 1.5e-3, alpha 3e-5)
+PRED_UPTAKE = 0.05                           # balance predictor while the states take less than this share of the pool
 STALL_TRIES = 400                            # step attempts between two outputs before a run is stopped as stalled
 M_DOT = 13                                   # a dot: m >= the seed's 13 CdSe (the grid -> network hand-over)
 FAMILIES = ("100", "111A", "111B", "110")
 M_BINS = (0, 30, 60, 100, 150, 10 ** 6)      # parent size bins of the median island curves (CdSe units)
 SP_NONE, SP_MA, SP_MX = 0, 1, 2              # arriving species of a step; 3 + n: the complex CdSe(CdCl2)_n
 KIND = {"iso": 0, "shell": 1, "attach": 2, "layer": 3, "grid": 4, "nucleus": 5}
+OLEATE_DG_TAIL_EV = 0.0156                   # oleate chain correction per tail vs acetate, from the free Cd(L)2: ghost-tail
+                                             # growth on 12 acetate-network dots, dense lambda grid, weighted mean (SD
+                                             # 0.010 between dots; islands give no facet-specific term)
+
+
+def oleate_gamma_mx(T: float = 500.0) -> float:
+    """gamma_MX that turns an acetate network into the oleate one: exp(-2 c / kT), c = OLEATE_DG_TAIL_EV (0.49 at 500 K)."""
+    return math.exp(-2.0 * OLEATE_DG_TAIL_EV / (KB_EV * T))
+
 
 DEFAULTS = {
     "T": 500.0, "solvent": "1-octadecene",   # sets eps and eta_mPas (at T) from solvents.SOLVENTS; "custom": as given
     "eps": 2.0, "c_P0": 0.025, "c_MX0": 0.03, "k_conv_500K": 1.0, "Ea_conv": 0.0,
+    "gamma_MX": 1.0,                         # activity coefficient of the free MX (1: ideal; oleate_gamma_mx(T) for
+                                             # oleate on an acetate network): scales its activity, not its amount
     "t_start": 1e-3, "t_end": 600.0, "n_out": 60,
     "s_nu": 1.0,                             # the one kinetic scale: collision prefactor x s_nu
     "eta_mPas": 0.5,                         # solvent viscosity (mPa s), Stokes-Einstein
@@ -92,7 +107,7 @@ DEFAULTS = {
     "frontier_stop": 0.5,                    # stop once this fraction of the dots sits on states without a growth
                                              # step (the network's edge), the dots holding >= 1% of the CdSe; 1: never
 }
-LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (0.0, 0.5), "c_MX0": (1e-4, 1.0),
+LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (0.0, 0.5), "c_MX0": (1e-4, 1.0), "gamma_MX": (0.01, 100.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
           "eta_mPas": (0.05, 20.0), "n_out": (5, 200), "prune_eV": (0.0, 20.0),
           "max_wall_s": (1.0, 86400.0), "frontier_stop": (0.01, 1.0), "c_syringe_M": (1e-3, 1.0),
@@ -199,6 +214,20 @@ class Network:
         self.label = [f"grid ({m}, {k})" for m, k in grid] + [st[r]["formula"] for r in extra]
         self.reg_id = np.array([-1] * self.n_grid + [st[r]["id"] for r in extra])
         self.seed = state_of_row[meta["seed"]]
+        # ---- the builder's Wulff dots (wulff.json of network_export wulff: lineage node -> registry dot id): every
+        # state on the Se framework of one is that Wulff dot with another shell (its lineage node); -1 for the others
+        # (layer states, islands, grid clusters)
+        self.wulff = np.full(self.n, -1)
+        if (folder / "wulff.json").exists():
+            row_of = {s["id"]: r for r, s in enumerate(st)}
+            node_fw = {}
+            for node, dot in sorted(json.loads((folder / "wulff.json").read_text())["lineage"].items(),
+                                    key=lambda kv: int(kv[0])):
+                if dot in row_of:
+                    node_fw.setdefault(st[row_of[dot]]["fw"], int(node))
+            for r, s in enumerate(st):
+                if s["fw"] in node_fw:
+                    self.wulff[state_of_row[r]] = node_fw[s["fw"]]
         mono_k = sorted(k for (m, k) in best if m == 1)
         self.mono_k = mono_k
         # ---- steps: the network's (re-pointed onto grid nodes), then the grid's Becker-Doering steps, then the
@@ -266,7 +295,7 @@ class Network:
         new[keep] = np.arange(int(keep.sum()))
         sub.full = np.where(keep)[0]
         sub.n = int(keep.sum())
-        for name in ("m", "k", "S", "row", "reg_id", "grows"):
+        for name in ("m", "k", "S", "row", "reg_id", "grows", "wulff"):
             setattr(sub, name, getattr(self, name)[keep])
         sub.label = [lab for lab, q in zip(self.label, keep) if q]
         sub.seed = int(new[self.seed])
@@ -282,7 +311,7 @@ class Network:
         sub._g_cache = {}
         return sub
 
-    def prune(self, T, eps, c_mx_hi, c_mx_lo, window):
+    def prune(self, T, eps, c_mx_hi, c_mx_lo, window, gamma_mx=1.0):
         """States to keep for a run whose CdCl2 left goes from c_mx_hi down to c_mx_lo: every grid node, the seed, and
         each dot within `window` eV of the lowest state of its size at some point of that range. Within one size
         mu_CdSe cancels, so the order depends on mu_CdCl2 only, which is checked at both ends and the middle."""
@@ -291,7 +320,7 @@ class Network:
         keep[:self.n_grid] = True
         keep[self.seed] = True
         for c in (c_mx_hi, math.sqrt(c_mx_hi * c_mx_lo), c_mx_lo):
-            om = g - self.k * _pool(th, 1e-4, c)["mu_MX"]
+            om = g - self.k * _pool(th, 1e-4, c, gamma_mx)["mu_MX"]
             low = np.full(int(self.m.max()) + 1, np.inf)
             np.minimum.at(low, self.m, om)
             keep |= om - low[self.m] <= window
@@ -575,8 +604,8 @@ class _Solver:
         return self.lu.solve(b) if self.lu is not None else self.mumps.solve(b)
 
 
-def _pool(th, c_m, c_x):
-    pl = pool(th, c_m, c_x)
+def _pool(th, c_m, c_x, gamma_mx=1.0):
+    pl = pool(th, c_m, c_x, gamma_mx=gamma_mx)
     pl["c_MA"] = c_m
     pl["c_X_left"] = c_x
     return pl
@@ -656,7 +685,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         raise ValueError("no precursor: c_P0 = 0 without a syringe")
     if float(c["prune_eV"]) > 0:
         keep = net.prune(float(c["T"]), float(c["eps"]), float(c["c_MX0"]),
-                         max(float(c["c_MX0"]) - feed.total, 1e-6), float(c["prune_eV"]))
+                         max(float(c["c_MX0"]) - feed.total, 1e-6), float(c["prune_eV"]), float(c["gamma_MX"]))
         sub = net.subset(keep)
         r = simulate(sub, {**c, "prune_eV": 0.0}, log, stop)
         r["cond"] = c
@@ -669,6 +698,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         return r
     T, eps = float(c["T"]), float(c["eps"])
     c_mx0 = float(c["c_MX0"])
+    g_mx = float(c["gamma_MX"])
     k_conv = k_conv_at(T, float(c["k_conv_500K"]), float(c["Ea_conv"]))
     t0, t_end = float(c["t_start"]), float(c["t_end"])
     t_out = list(np.geomspace(t0, t_end, int(c["n_out"])))
@@ -709,7 +739,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     dot = net.m >= M_DOT
 
     def assemble(u_):
-        pl = _pool(th, math.exp(u_[0]), math.exp(u_[1]))
+        pl = _pool(th, math.exp(u_[0]), math.exp(u_[1]), g_mx)
         r = net.rates(T, eps, pl, nu, nu_src, isl)
         return pl, r, *net.matrix(r)
 
@@ -772,7 +802,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         out["barriers"].append(r["table"])
         out["N"].append(N_.astype(np.float32))
 
-    pl0 = _pool(th, math.exp(u[0]), math.exp(u[1]))
+    pl0 = _pool(th, math.exp(u[0]), math.exp(u[1]), g_mx)
     acc = (pl0, net.rates(T, eps, pl0, nu, nu_src, isl))   # the last accepted step's pool and rates
     record(t, N, *acc)
     t_out.pop(0)
@@ -809,15 +839,17 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
             break
         dt = min(dt, t_out[0] - t)
         t1 = t + dt
-        # predictor: the pool's balance, the supply over the step less what the states took at the last step's rate
-        # (one Newton iteration fewer than extrapolating ln C while C_M grows with the supply); else the pool's last
-        # rate of change
+        # predictor: the pool's balance, the supply over the step less what the states take at the last step's rate
+        # (one Newton iteration fewer than extrapolating ln C while C_M grows with the supply), while that uptake moves
+        # the pool by less than PRED_UPTAKE; else the pool's last rate of change (the uptake follows the pool it
+        # depletes, which a fixed rate overshoots on the long steps after the burst)
         x1 = conv(x, math.exp(u[1]), dt, t1)
         f0, f1 = feed.phi(t), feed.phi(t1)
         tk = took + 0.5 * dt * d_took                   # the uptake's mean over the step, its rate extrapolated
         cm = math.exp(u[0]) * f1 / f0 + f1 * (x1 - x - dt * tk[0])
         cx = math.exp(u[1]) * f1 / f0 - f1 * (x1 - x + dt * tk[1])
-        if cm > 0 and cx > 0:
+        if (dudt is None or f1 * dt * abs(tk[0]) < PRED_UPTAKE * cm and f1 * dt * abs(tk[1]) < PRED_UPTAKE * cx) \
+                and cm > 0 and cx > 0:
             v = np.array([math.log(cm), math.log(cx)])
         elif dudt is None:
             v = np.array([math.log(max(math.exp(u[0]) * f1 / f0 + f1 * (x1 - x), f1 * x1 * 1e-12)),
@@ -950,7 +982,7 @@ def main(argv=None) -> int:
         _g, th, _pa = net.G(a.T, cond["eps"])
         for alpha in (0.05, 0.2, 0.5):
             x = alpha * a.c_P0
-            pl = _pool(th, x, a.c_MX0 - x)
+            pl = _pool(th, x, a.c_MX0 - x, cond["gamma_MX"])
             print(f"alpha {alpha}: mu_MA {pl['mu_MA']:.3f}, mu_MX {pl['mu_MX']:.3f} eV; stationary residual "
                   f"{stationary_residual(net, a.T, cond['eps'], pl):.2e}")
         return 0
