@@ -260,13 +260,13 @@ class NetSim:
             i = int(body["i"])
             c = r["cond"]
             _g, th, _pa = net.G(c["T"], c["eps"])
-            pl, N, t = ng._pool(th, r["c_MA"][i], r["c_X_left"][i]), r["N"][i].astype(float), r["t"][i]
+            pl, N, t = ng._pool(th, r["c_MA"][i], r["c_X_left"][i], c["gamma_MX"]), r["N"][i].astype(float), r["t"][i]
         else:
             c = self._cond(body.get("conditions"))
             t = float(body.get("t", 10.0))
             cm, cx, _a = ng.precursor_only(c, t)
             _g, th, _pa = net.G(c["T"], c["eps"])
-            pl, N = ng._pool(th, cm, cx), None
+            pl, N = ng._pool(th, cm, cx, c["gamma_MX"]), None
         kt = ng.KB_EV * c["T"]
         g = _g
         om = g - net.m * pl["mu_MA"] - net.k * pl["mu_MX"]
@@ -306,7 +306,7 @@ class NetSim:
             i = int(body["i"])
             c = r["cond"]
             _g, th, _pa = self.net.G(c["T"], c["eps"])
-            return c, ng._pool(th, r["c_MA"][i], r["c_X_left"][i]), r["N"][i], r["t"][i]
+            return c, ng._pool(th, r["c_MA"][i], r["c_X_left"][i], c["gamma_MX"]), r["N"][i], r["t"][i]
         c = self._cond(body.get("conditions"))
         if body.get("t") is not None:
             t = float(body["t"])
@@ -318,7 +318,7 @@ class NetSim:
         if not 0 < alpha < 1 or cm <= 0:
             raise ValueError("the conversion must be in (0, 1)")
         _g, th, _pa = self.net.G(c["T"], c["eps"])
-        pl = ng._pool(th, cm, cx)
+        pl = ng._pool(th, cm, cx, c["gamma_MX"])
         pl["alpha"] = alpha
         return c, pl, None, t
 
