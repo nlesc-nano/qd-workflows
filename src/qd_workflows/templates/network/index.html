@@ -321,6 +321,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const FAM = ["100", "111A", "111B", "110"], FLAB = { "100": "{100}", "111A": "{111}A", "111B": "{111}B", "110": "{110}" };
 const CTRL = [
   ["T", "T", "K"], ["c_P0", "{A} precursor c_P0", "M"], ["c_MX0", "{MX} c_MX0", "M"],
+  ["gamma_MX", "{MX} activity scale γ", "×"],
   ["k_conv_500K", "k_conv (500 K)", "1/(M s)"], ["Ea_conv", "E_a of the conversion", "eV"], ["t_end", "time", "s"],
   ["prune_eV", "fast: skip dots above their size's best by (0 = exact; can cut growth paths)", "eV"],
   ["max_wall_s", "stop the run after", "s wall"],
@@ -374,7 +375,8 @@ function buildControls() {
     D.solvents.map((v) => `<option value="${v.name}"${v.name === D.conditions.solvent ? " selected" : ""}>${v.name}</option>`).join("") +
     `</select></label><div class="hint" id="solvHint"></div></div>`;
   $("controls").innerHTML = CTRL.slice(0, 1).concat([null], CTRL.slice(1)).map((r) => r === null ? solv :
-    `<div class="ctl"><label>${lab(r[1])} <span class="num"><input id="in_${r[0]}" value="${D.conditions[r[0]]}" aria-label="${lab(r[1])}"><i>${r[2]}</i></span></label>${r[0] === "c_P0" ? '<div class="hint" id="h_c_P0"></div>' : ""}</div>`).join("");
+    `<div class="ctl"><label>${lab(r[1])} <span class="num"><input id="in_${r[0]}" value="${D.conditions[r[0]]}" aria-label="${lab(r[1])}"><i>${r[2]}</i></span></label>${r[0] === "c_P0" ? '<div class="hint" id="h_c_P0"></div>' : ""}${r[0] === "gamma_MX" ? gammaCtl() : ""}</div>`).join("");
+  wireGamma();
   for (const [k] of CTRL) $("in_" + k).addEventListener("change", onConds);
   $("in_solvent").addEventListener("change", onConds);
   $("injCtl").innerHTML = INJ.map(([k, l, unit]) => `<div class="ctl"><label>${lab(l)} <span class="num"><input id="in_${k}" value="${D.conditions[k]}" aria-label="${lab(l)}"><i>${unit}</i></span></label></div>`).join("") +
@@ -388,6 +390,32 @@ function buildControls() {
   $("netInfo").innerHTML = `${n.states.toLocaleString()} states (${n.grid_nodes} grid nodes, seed ${n.seed}) in ${n.compositions.toLocaleString()} compositions; ` +
     `${n.steps.toLocaleString()} steps: ${n.kinds.layer.toLocaleString()} layer, ${n.kinds.attach.toLocaleString()} attach, ${n.kinds.shell.toLocaleString()} shell, ` +
     `${n.kinds.iso.toLocaleString()} isomer, ${n.kinds.grid.toLocaleString()} grid; ${n.island_curves} island curves.`;
+}
+
+// gamma_MX: the free salt's activity at the same amount (mu_MX = g + kT ln(gamma c)); oleate on an acetate network
+// is exp(-2 c / kT), c = the chain correction per tail
+const oleGamma = () => Math.exp(-2 * D.oleate.dG_tail_eV / (KB * (parseFloat($("in_T").value) || 500)));
+function gammaCtl() {
+  return `<input type="range" id="sl_gamma_MX" min="-2" max="2" step="0.01" aria-label="${XL} activity scale (log)">` +
+    `<div class="pickrow"><button id="gOle">oleate</button><button id="gOne">ideal (1)</button></div><div class="hint" id="h_gamma_MX"></div>`;
+}
+function gammaSync() {
+  const v = parseFloat($("in_gamma_MX").value);
+  if (isFinite(v) && v > 0) $("sl_gamma_MX").value = Math.log10(v);
+  const og = oleGamma(), d = isFinite(v) && v > 0 ? -KB * (parseFloat($("in_T").value) || 500) * Math.log(v) : NaN;
+  $("h_gamma_MX").textContent = `scales the ${XL} activity, not its amount: every bound ${XL} binds ${isFinite(d) ? (d >= 0 ? "+" : "") + d.toFixed(3) : "–"} eV ` +
+    `more weakly. Oleate on an acetate network: ${og.toFixed(3)} at this T (${(2 * D.oleate.dG_tail_eV).toFixed(3)} eV per ${XL}).`;
+  $("gOle").classList.toggle("on", Math.abs(v - og) < 5e-3); $("gOne").classList.toggle("on", v === 1);
+}
+function wireGamma() {
+  const set = (v) => { $("in_gamma_MX").value = +v.toPrecision(3); gammaSync(); onConds(); };
+  $("sl_gamma_MX").addEventListener("input", (e) => { $("in_gamma_MX").value = +Math.pow(10, +e.target.value).toPrecision(3); gammaSync(); });
+  $("sl_gamma_MX").addEventListener("change", onConds);
+  $("in_gamma_MX").addEventListener("input", gammaSync);
+  $("gOle").addEventListener("click", () => set(oleGamma()));
+  $("gOne").addEventListener("click", () => set(1));
+  $("in_T").addEventListener("change", gammaSync);
+  gammaSync();
 }
 
 // the syringe's volume and precursor
@@ -875,6 +903,7 @@ function showRun() {
   EPSTATE = null;
   if (s.stopped) { $("runStatus").className = "status err"; $("runStatus").textContent += `\nended early, results up to t = ${fmt(RUN.series.t.at(-1))} s: ${s.stopped}`; }
   $("runWhen").textContent = (RUN.saved ? `saved run ${RUN.saved.label || RUN.saved.name}: ` : "") + `T ${c.T} K, ${c.solvent}, c_P0 ${c.c_P0} M, ${XL} ${c.c_MX0} M` +
+    (c.gamma_MX !== undefined && c.gamma_MX !== 1 ? ` (activity ×${c.gamma_MX})` : "") +
     (c.inject ? `, syringe ${c.c_syringe_M} M at ${c.rate_mL_h} mL/h for ${c.inj_duration_s} s into ${c.V0_mL} mL` : "") + (c.islands ? "" : ", no island barriers");
   $("tbar").max = RUN.series.t.length - 1; $("tbar").disabled = false; $("tbar").value = RUN.series.t.length - 1;
   $("playBtn").disabled = false;
@@ -902,6 +931,8 @@ function setConditions(c) {
   if ([...$("in_solvent").options].some((o) => o.value === c.solvent)) $("in_solvent").value = c.solvent;
   $("inject").checked = !!c.inject; $("injCtl").hidden = !c.inject;
   $("islands").checked = c.islands !== false;
+  if (c.gamma_MX === undefined && $("in_gamma_MX")) $("in_gamma_MX").value = 1;     // a saved run from before gamma_MX
+  if ($("sl_gamma_MX")) gammaSync();
 }
 async function loadSaved() {
   const name = $("savedSel").value;

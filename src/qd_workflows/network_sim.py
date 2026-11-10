@@ -57,7 +57,7 @@ class NetSim:
         if params is not None:
             from .simulator import Simulator
             self.nuc = Simulator(net.thermo, params, {}, thermo_dir=net.thermo_dir, nucleation_only=True, m0=ng.M_DOT)
-            for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps"):
+            for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps", "gamma_MX"):
                 if k in ng.LIMITS:
                     self.nuc.limits[k] = list(ng.LIMITS[k])        # the network's ranges, not the old page's
         self.runs: OrderedDict = OrderedDict()
@@ -79,7 +79,12 @@ class NetSim:
     def defaults(self):
         net = self.net
         kinds = {name: int((net.kind == v).sum()) for name, v in ng.KIND.items()}
-        return {"conditions": {k: v for k, v in ng.DEFAULTS.items()}, "limits": ng.LIMITS,
+        cond = dict(ng.DEFAULTS)
+        carbox = net.species.get("X") != "Cl"
+        if carbox:                                   # a carboxylate network stands in for oleate by default
+            cond["gamma_MX"] = round(ng.oleate_gamma_mx(float(cond["T"])), 4)
+        return {"conditions": cond, "limits": ng.LIMITS,
+                "oleate": {"dG_tail_eV": ng.OLEATE_DG_TAIL_EV, "default": carbox},
                 "network": {"states": int(net.n), "grid_nodes": int(net.n_grid), "steps": int(len(net.a)),
                             "kinds": kinds, "island_curves": len(net.isl), "m_max": int(net.m.max()),
                             "d_max_nm": float(diameter_nm(net.m.max())), "seed": net.label[net.seed],
@@ -203,7 +208,7 @@ class NetSim:
     # ---------------- step 1: the nucleation simulator's grid Omega
     @staticmethod
     def _nuc_cond(c):
-        out = {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps")}
+        out = {k: c[k] for k in ("T", "c_P0", "c_MX0", "k_conv_500K", "Ea_conv", "eps", "gamma_MX")}
         if c["inject"]:                                          # the nucleation simulator's syringe: the same flask
             out.update({k: c[k] for k in ("c_syringe_M", "rate_mL_h", "V0_mL", "inj_duration_s")},
                        inject=True, c_P0_flask=c["c_P0"])
@@ -227,7 +232,8 @@ class NetSim:
                "dOmega": []}
         cols = []
         for t, cm, cx in zip(r["t"], r["c_MA"], r["c_X_left"]):
-            o = self.nuc._omega_at(float(c["T"]), float(cm), float(cx), ng.M_DOT, float(c["eps"]), {})
+            o = self.nuc._omega_at(float(c["T"]), float(cm), float(cx), ng.M_DOT, float(c["eps"]),
+                                   {"gamma_MX": float(c.get("gamma_MX", 1.0))})
             if o is None:
                 continue
             rows = [q for q in o["per_m"] if q["m"] <= o["m0"]]

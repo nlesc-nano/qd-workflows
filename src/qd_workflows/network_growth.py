@@ -7,7 +7,10 @@ grid; the population N_i (mol/L) moves over the steps between states with rates 
     Omega_i(t) = G_i(T, eps) - m_i mu_MA(t) - k_i mu_MX(t)          (m = CdSe units, k = CdCl2 units)
 
 where mu_MA, mu_MX come from the solution (grid_thermo.pool: the CdSe(CdCl2)_n complexes share the CdCl2 left with
-the free CdCl2). Each step a -> b (b the larger) has one top, and both directions climb to it:
+the free CdCl2), mu_MX = g_MX + kT ln(gamma_MX c_MX,free / c0). gamma_MX scales the salt's activity without changing
+its amount: every bound MX (dots, islands, complexes) binds kT ln(1/gamma_MX) more weakly, while the balance and the
+collision rates stay in concentrations. Oleate on an acetate network: gamma_MX = exp(-2 c / kT), c the chain
+correction per tail (oleate_gamma_mx; docs/plans/oleate_chain). Each step a -> b (b the larger) has one top, and both directions climb to it:
 
     Omega_top = max(Omega_a + w_s, Omega_b, Omega_a + w_s + B_ab),   w_s = -kT ln(c_s / c0)
     k_ab = nu_ab exp(-(Omega_top - Omega_a) / kT),    k_ba = nu_ab exp(-(Omega_top - Omega_b) / kT)
@@ -74,10 +77,21 @@ FAMILIES = ("100", "111A", "111B", "110")
 M_BINS = (0, 30, 60, 100, 150, 10 ** 6)      # parent size bins of the median island curves (CdSe units)
 SP_NONE, SP_MA, SP_MX = 0, 1, 2              # arriving species of a step; 3 + n: the complex CdSe(CdCl2)_n
 KIND = {"iso": 0, "shell": 1, "attach": 2, "layer": 3, "grid": 4, "nucleus": 5}
+OLEATE_DG_TAIL_EV = 0.0156                   # oleate chain correction per tail vs acetate, from the free Cd(L)2: ghost-tail
+                                             # growth on 12 acetate-network dots, dense lambda grid, weighted mean (SD
+                                             # 0.010 between dots; islands give no facet-specific term)
+
+
+def oleate_gamma_mx(T: float = 500.0) -> float:
+    """gamma_MX that turns an acetate network into the oleate one: exp(-2 c / kT), c = OLEATE_DG_TAIL_EV (0.49 at 500 K)."""
+    return math.exp(-2.0 * OLEATE_DG_TAIL_EV / (KB_EV * T))
+
 
 DEFAULTS = {
     "T": 500.0, "solvent": "1-octadecene",   # sets eps and eta_mPas (at T) from solvents.SOLVENTS; "custom": as given
     "eps": 2.0, "c_P0": 0.025, "c_MX0": 0.03, "k_conv_500K": 1.0, "Ea_conv": 0.0,
+    "gamma_MX": 1.0,                         # activity coefficient of the free MX (1: ideal; oleate_gamma_mx(T) for
+                                             # oleate on an acetate network): scales its activity, not its amount
     "t_start": 1e-3, "t_end": 600.0, "n_out": 60,
     "s_nu": 1.0,                             # the one kinetic scale: collision prefactor x s_nu
     "eta_mPas": 0.5,                         # solvent viscosity (mPa s), Stokes-Einstein
@@ -93,7 +107,7 @@ DEFAULTS = {
     "frontier_stop": 0.5,                    # stop once this fraction of the dots sits on states without a growth
                                              # step (the network's edge), the dots holding >= 1% of the CdSe; 1: never
 }
-LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (0.0, 0.5), "c_MX0": (1e-4, 1.0),
+LIMITS = {"T": (400.0, 650.0), "eps": (1.0, 10.0), "c_P0": (0.0, 0.5), "c_MX0": (1e-4, 1.0), "gamma_MX": (0.01, 100.0),
           "k_conv_500K": (1e-4, 1e3), "Ea_conv": (0.0, 2.0), "t_end": (1.0, 7200.0), "s_nu": (1e-6, 1e3),
           "eta_mPas": (0.05, 20.0), "n_out": (5, 200), "prune_eV": (0.0, 20.0),
           "max_wall_s": (1.0, 86400.0), "frontier_stop": (0.01, 1.0), "c_syringe_M": (1e-3, 1.0),
@@ -297,7 +311,7 @@ class Network:
         sub._g_cache = {}
         return sub
 
-    def prune(self, T, eps, c_mx_hi, c_mx_lo, window):
+    def prune(self, T, eps, c_mx_hi, c_mx_lo, window, gamma_mx=1.0):
         """States to keep for a run whose CdCl2 left goes from c_mx_hi down to c_mx_lo: every grid node, the seed, and
         each dot within `window` eV of the lowest state of its size at some point of that range. Within one size
         mu_CdSe cancels, so the order depends on mu_CdCl2 only, which is checked at both ends and the middle."""
@@ -306,7 +320,7 @@ class Network:
         keep[:self.n_grid] = True
         keep[self.seed] = True
         for c in (c_mx_hi, math.sqrt(c_mx_hi * c_mx_lo), c_mx_lo):
-            om = g - self.k * _pool(th, 1e-4, c)["mu_MX"]
+            om = g - self.k * _pool(th, 1e-4, c, gamma_mx)["mu_MX"]
             low = np.full(int(self.m.max()) + 1, np.inf)
             np.minimum.at(low, self.m, om)
             keep |= om - low[self.m] <= window
@@ -590,8 +604,8 @@ class _Solver:
         return self.lu.solve(b) if self.lu is not None else self.mumps.solve(b)
 
 
-def _pool(th, c_m, c_x):
-    pl = pool(th, c_m, c_x)
+def _pool(th, c_m, c_x, gamma_mx=1.0):
+    pl = pool(th, c_m, c_x, gamma_mx=gamma_mx)
     pl["c_MA"] = c_m
     pl["c_X_left"] = c_x
     return pl
@@ -671,7 +685,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         raise ValueError("no precursor: c_P0 = 0 without a syringe")
     if float(c["prune_eV"]) > 0:
         keep = net.prune(float(c["T"]), float(c["eps"]), float(c["c_MX0"]),
-                         max(float(c["c_MX0"]) - feed.total, 1e-6), float(c["prune_eV"]))
+                         max(float(c["c_MX0"]) - feed.total, 1e-6), float(c["prune_eV"]), float(c["gamma_MX"]))
         sub = net.subset(keep)
         r = simulate(sub, {**c, "prune_eV": 0.0}, log, stop)
         r["cond"] = c
@@ -684,6 +698,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         return r
     T, eps = float(c["T"]), float(c["eps"])
     c_mx0 = float(c["c_MX0"])
+    g_mx = float(c["gamma_MX"])
     k_conv = k_conv_at(T, float(c["k_conv_500K"]), float(c["Ea_conv"]))
     t0, t_end = float(c["t_start"]), float(c["t_end"])
     t_out = list(np.geomspace(t0, t_end, int(c["n_out"])))
@@ -724,7 +739,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
     dot = net.m >= M_DOT
 
     def assemble(u_):
-        pl = _pool(th, math.exp(u_[0]), math.exp(u_[1]))
+        pl = _pool(th, math.exp(u_[0]), math.exp(u_[1]), g_mx)
         r = net.rates(T, eps, pl, nu, nu_src, isl)
         return pl, r, *net.matrix(r)
 
@@ -787,7 +802,7 @@ def simulate(net: Network, cond: dict | None = None, log=None, stop=None) -> dic
         out["barriers"].append(r["table"])
         out["N"].append(N_.astype(np.float32))
 
-    pl0 = _pool(th, math.exp(u[0]), math.exp(u[1]))
+    pl0 = _pool(th, math.exp(u[0]), math.exp(u[1]), g_mx)
     acc = (pl0, net.rates(T, eps, pl0, nu, nu_src, isl))   # the last accepted step's pool and rates
     record(t, N, *acc)
     t_out.pop(0)
@@ -967,7 +982,7 @@ def main(argv=None) -> int:
         _g, th, _pa = net.G(a.T, cond["eps"])
         for alpha in (0.05, 0.2, 0.5):
             x = alpha * a.c_P0
-            pl = _pool(th, x, a.c_MX0 - x)
+            pl = _pool(th, x, a.c_MX0 - x, cond["gamma_MX"])
             print(f"alpha {alpha}: mu_MA {pl['mu_MA']:.3f}, mu_MX {pl['mu_MX']:.3f} eV; stationary residual "
                   f"{stationary_residual(net, a.T, cond['eps'], pl):.2e}")
         return 0
