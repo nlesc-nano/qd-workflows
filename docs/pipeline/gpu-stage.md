@@ -112,7 +112,16 @@ Structure ensembles for DFT labelling and fine-tuning:
   (Wigner) distribution of the MACE normal modes,
   $Q_j \sim \mathcal N\!\left(0, \frac{\hbar}{2\omega_j}\coth\frac{\hbar\omega_j}{2k_BT}\right)$; modes
   below 20 cm⁻¹ are left out and modes below 50 cm⁻¹ are sampled with the width of a 50 cm⁻¹
-  mode (a straight-line displacement along a rotation-like mode stretches bonds).
+  mode (a straight-line displacement along a rotation-like mode stretches bonds). Covalent
+  ligands (acetate, oleate, amines) are then restored: their atoms are moved as little as
+  possible until every non-metal bond and 1–3 distance has its first-order value,
+  $d_{ij} = d_{ij}^0 + \mathbf e_{ij}\cdot(\Delta\mathbf x_j - \Delta\mathbf x_i)$, which removes the
+  second-order bond stretching of methyl torsions and carboxylate librations and keeps the
+  rotations (on Cd₁₀Se₆(OAc)₈ the mean MACE energy of the frames drops to the harmonic value;
+  before, C–H was stretched by up to 2.7 Å). Metal, core and halide atoms do not move, so
+  Cl-capped dots are unchanged. Frames in which two ligand atoms that are not bonded at the
+  minimum come closer than 0.75 × the sum of their covalent radii (about 1 in 100 at 600 K)
+  are drawn again (`wigner_restore_ligands`, on by default).
 - **md** (`--md`, a subset of the library): short canonical MD (velocity Verlet, 2 fs, 5 ps)
   with the CSVR thermostat of Bussi, Donadio and Parrinello (coupling time 100 fs; Langevin
   BAOAB with `md_thermostat: langevin`) for two replicas, 300 K and a 300 → 1000 K ramp, one
